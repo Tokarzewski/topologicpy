@@ -2,7 +2,10 @@
 
 #Importing libraries
 import topologicpy 
-import topologic_core as topologic
+try:
+    import topologic_core as topologic
+except Exception:
+    topologic = None
 from topologicpy.Aperture import Aperture
 from topologicpy.Vertex import Vertex
 from topologicpy.Edge import Edge

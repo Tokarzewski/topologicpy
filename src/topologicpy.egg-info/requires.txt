@@ -1,0 +1,11 @@
+numpy>=1.18.0
+scipy>=1.4.1
+pandas
+shapely
+plotly
+lark
+webcolors
+topologic_core>=7.0.1
+
+[test]
+pytest-xdist>=2.4.0

@@ -22,10 +22,25 @@ def same_vertex(a: Any, b: Any, tolerance: float = 0.0001) -> bool:
 
 
 def unique_by_uuid(items: Iterable[Any]) -> list:
+    """
+    Two wrapper objects extracted from the same underlying OCCT (sub-)shape
+    (e.g. the shared endpoint of two adjacent edges) get distinct Python
+    identity and distinct `_uuid`s, but should still be treated as the same
+    topological entity. Prefer OCCT shape identity (HashCode) over `_uuid`.
+    """
     result = []
     seen = set()
     for item in items:
-        key = getattr(item, "_uuid", id(item))
+        shape = getattr(item, "shape", None)
+        key = None
+        if shape is not None and hasattr(shape, "IsNull"):
+            try:
+                if not shape.IsNull():
+                    key = ("shape", hash(shape))
+            except Exception:
+                key = None
+        if key is None:
+            key = ("uuid", getattr(item, "_uuid", id(item)))
         if key not in seen:
             seen.add(key)
             result.append(item)

@@ -3,12 +3,38 @@ from __future__ import annotations
 from dataclasses import dataclass
 from .topology import Topology
 from .shell import Shell
-from .face import FaceUtility
+from .face import Face, FaceUtility
 from .wire import Wire
 from .edge import Edge
 from .vertex import Vertex
 from .occ_utils import make_occ_cell
-from .helpers import edge_key, unique_by_uuid
+from .helpers import edge_key, vertex_key
+
+
+def _dedupe_vertices(vertices, tolerance: float = 0.0001):
+    """
+    Deduplicates Vertex wrapper objects by geometric coordinate rather than
+    OCCT shape identity/hash.
+
+    unique_by_uuid (helpers.py) prefers hash(shape) for dedup, which is the
+    right call when sub-shapes genuinely come from the same parent shape
+    (e.g. two Edge wrappers extracted from the same shared OCCT edge). But a
+    Cell built via Cell.ByFaces out of independently constructed Faces (e.g.
+    six Face.ByVertices calls forming a box) never shares OCCT vertex/edge
+    sub-shapes between faces even where they are geometrically coincident
+    (each Face.ByVertices call makes its own fresh vertices/edges) -- so
+    shape-hash dedup leaves 3 duplicate Vertex wrappers per shared corner.
+    """
+    result = []
+    seen = set()
+    for v in vertices:
+        if not isinstance(v, Vertex):
+            continue
+        key = vertex_key(v, tolerance)
+        if key not in seen:
+            seen.add(key)
+            result.append(v)
+    return result
 
 
 @dataclass(eq=False)
@@ -71,9 +97,15 @@ class Cell(Topology):
 
     def Edges(self, hostTopology=None, edges=None):
         result = []
+        seen_keys = set()
         for face in self.Faces():
-            result.extend(FaceUtility.Edges(face) or [])
-        result = unique_by_uuid(result)
+            for edge in FaceUtility.Edges(face) or []:
+                if not isinstance(edge, Edge):
+                    continue
+                key = edge_key(edge)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    result.append(edge)
         if edges is not None:
             edges.extend(result)
             return 0
@@ -83,7 +115,7 @@ class Cell(Topology):
         result = []
         for edge in self.Edges():
             result.extend([edge.start, edge.end])
-        result = unique_by_uuid([v for v in result if isinstance(v, Vertex)])
+        result = _dedupe_vertices([v for v in result if isinstance(v, Vertex)])
         if vertices is not None:
             vertices.extend(result)
             return 0
@@ -97,10 +129,247 @@ class Cell(Topology):
         return result
 
 
+def _cell_by_box(width: float = 1.0, length: float = 1.0, height: float = 1.0,
+                  origin=None, direction=None, placement: str = "center", tolerance: float = 0.0001):
+    """
+    Builds an axis-aligned box Cell directly via BRepPrimAPI_MakeBox, then
+    orients/places it. This mirrors the algorithm-layer Cell.Box contract
+    (width/length/height + origin + placement), but the algorithm-layer
+    Cell.Box (src/topologicpy/Cell.py) actually delegates to Cell.Prism, so
+    this backend-level Cell.ByBox only matters to callers that go through
+    Core.Cell.ByBox directly.
+    """
+    try:
+        from OCC.Core.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCC.Core.gp import gp_Pnt
+    except Exception:
+        return None
+
+    xOffset = yOffset = zOffset = 0.0
+    placement = (placement or "center").lower()
+    if placement == "center":
+        xOffset = -width * 0.5
+        yOffset = -length * 0.5
+        zOffset = -height * 0.5
+    elif placement == "bottom":
+        xOffset = -width * 0.5
+        yOffset = -length * 0.5
+
+    ox = origin.x if isinstance(origin, Vertex) else 0.0
+    oy = origin.y if isinstance(origin, Vertex) else 0.0
+    oz = origin.z if isinstance(origin, Vertex) else 0.0
+
+    try:
+        occ_box = BRepPrimAPI_MakeBox(
+            gp_Pnt(ox + xOffset, oy + yOffset, oz + zOffset),
+            float(width), float(length), float(height),
+        ).Shape()
+    except Exception:
+        return None
+
+    result = Topology.ByOcctShape(occ_box)
+    if result is None or direction in (None, [0, 0, 1], (0, 0, 1)):
+        return result
+
+    # Reorient from the default [0, 0, 1] up-direction to the requested one.
+    try:
+        from .topology import Topology as _T
+        origin_vertex = origin if isinstance(origin, Vertex) else Vertex.ByCoordinates(ox, oy, oz)
+        oriented = _reorient(result, origin_vertex, [0, 0, 1], direction, tolerance)
+        if oriented is not None:
+            return oriented
+    except Exception:
+        pass
+    return result
+
+
+def _reorient(topology, origin, dirA, dirB, tolerance=0.0001):
+    """
+    Small local re-implementation of the rotate-to-align-directions step used
+    by Topology.Orient (src/topologicpy/Topology.py), for backend-level
+    primitive constructors (Cell.ByBox) that need it without depending on the
+    algorithm layer.
+    """
+    import math
+
+    def _normalize(v):
+        n = math.sqrt(sum(c * c for c in v))
+        if n == 0:
+            return [0.0, 0.0, 1.0]
+        return [c / n for c in v]
+
+    a = _normalize(dirA)
+    b = _normalize(dirB)
+    cross = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    sin_a = math.sqrt(sum(c * c for c in cross))
+    cos_a = sum(a[i] * b[i] for i in range(3))
+    if sin_a < 1e-12:
+        if cos_a > 0:
+            return topology
+        # 180 degree flip: pick any axis perpendicular to a.
+        axis = [1.0, 0.0, 0.0] if abs(a[0]) < 0.9 else [0.0, 1.0, 0.0]
+        cross = [a[1] * axis[2] - a[2] * axis[1], a[2] * axis[0] - a[0] * axis[2], a[0] * axis[1] - a[1] * axis[0]]
+        cross = _normalize(cross)
+        angle = 180.0
+    else:
+        cross = [c / sin_a for c in cross]
+        angle = math.degrees(math.atan2(sin_a, cos_a))
+    return topology.Rotate(origin, cross[0], cross[1], cross[2], angle)
+
+
+Cell.ByBox = staticmethod(_cell_by_box)
+
+
+def _cell_by_wires(wires, close: bool = False, tolerance: float = 0.0001, silent: bool = False):
+    """
+    Builds a Cell by lofting through a list of profile Wires and capping the
+    first/last profiles: side faces come from Shell.ByWires (loft between
+    consecutive wires), plus a bottom cap Face.ByWire(wires[0]) and a top cap
+    Face.ByWire(wires[-1]).
+
+    The algorithm-layer Cell.ByWires (src/topologicpy/Cell.py) is a larger,
+    fully self-contained implementation that does not call into
+    Core.Cell.ByWires, so this backend-level method only matters to callers
+    that go through Core.Cell.ByWires directly.
+    """
+    if not isinstance(wires, list):
+        if not silent:
+            print("Cell.ByWires - Error: The input wires parameter is not a valid list. Returning None.")
+        return None
+    wire_list = [w for w in wires if isinstance(w, Wire)]
+    if len(wire_list) < 2:
+        if not silent:
+            print("Cell.ByWires - Error: At least two valid wires are required. Returning None.")
+        return None
+    if close:
+        wire_list = wire_list + [wire_list[0]]
+
+    side_shell = Shell.ByWires(wire_list, tolerance=tolerance, silent=silent)
+    if side_shell is None:
+        if not silent:
+            print("Cell.ByWires - Error: Could not create the side faces. Returning None.")
+        return None
+
+    faces = list(getattr(side_shell, "faces", []) or [])
+    bottom_cap = Face.ByWire(wire_list[0])
+    if bottom_cap is not None:
+        faces.append(bottom_cap)
+    if not close:
+        top_cap = Face.ByWire(wire_list[-1])
+        if top_cap is not None:
+            faces.append(top_cap)
+
+    return Cell.ByFaces(faces, tolerance=tolerance, silent=silent)
+
+
+Cell.ByWires = staticmethod(_cell_by_wires)
+
+
+def _cell_internal_vertex(cell, tolerance: float = 0.0001):
+    return CellUtility.InternalVertex(cell, tolerance=tolerance)
+
+
+Cell.InternalVertex = _cell_internal_vertex
+
+
 class CellUtility:
     @staticmethod
     def Volume(cell):
-        return None
+        """
+        Returns the volume of the input Cell via OCCT's volume properties
+        (same brepgprop.VolumeProperties call already used successfully by
+        Topology.CenterOfMass in topology.py for Cell/CellComplex/Cluster
+        shapes).
+        """
+        if not isinstance(cell, Cell):
+            return None
+        shape = getattr(cell, "shape", None)
+        if shape is None or (hasattr(shape, "IsNull") and shape.IsNull()):
+            return None
+        try:
+            from OCC.Core.GProp import GProp_GProps
+            from OCC.Core.BRepGProp import brepgprop
+            props = GProp_GProps()
+            brepgprop.VolumeProperties(shape, props)
+            return props.Mass()
+        except Exception:
+            return None
+
+    @staticmethod
+    def Contains(cell, vertex, tolerance: float = 0.0001):
+        """
+        Classifies vertex against cell's solid shape using
+        BRepClass3d_SolidClassifier. Returns the topologic_core convention:
+        0 = inside (TopAbs_IN), 1 = on the boundary (TopAbs_ON),
+        2 = outside (TopAbs_OUT or anything else) -- matching the int
+        contract expected by the algorithm-layer Cell.ContainmentStatus
+        (src/topologicpy/Cell.py), which does:
+            result = Core.CellUtility.Contains(cell, v, tolerance)
+            status = 0 if result == 0 else (1 if result == 1 else 2)
+        """
+        if not isinstance(cell, Cell) or not isinstance(vertex, Vertex):
+            return 2
+        shape = getattr(cell, "shape", None)
+        if shape is None or (hasattr(shape, "IsNull") and shape.IsNull()):
+            return 2
+        try:
+            from OCC.Core.BRepClass3d import BRepClass3d_SolidClassifier
+            from OCC.Core.gp import gp_Pnt
+            from OCC.Core.TopAbs import TopAbs_IN, TopAbs_ON, TopAbs_OUT
+            classifier = BRepClass3d_SolidClassifier(shape)
+            classifier.Perform(gp_Pnt(float(vertex.x), float(vertex.y), float(vertex.z)), float(tolerance))
+            state = classifier.State()
+            if state == TopAbs_IN:
+                return 0
+            if state == TopAbs_ON:
+                return 1
+            return 2
+        except Exception:
+            return 2
+
+    @staticmethod
+    def InternalVertex(cell, tolerance: float = 0.0001):
+        """
+        Returns a Vertex guaranteed to lie strictly inside the Cell.
+
+        Tries Topology.CenterOfMass first (cheap, correct for convex cells
+        and most everyday shapes); confirms it with CellUtility.Contains.
+        If the centroid is not strictly inside (e.g. a non-convex cell whose
+        centroid falls outside or on the boundary), falls back to sampling a
+        small grid of points within the cell's bounding box until one tests
+        strictly inside.
+        """
+        if not isinstance(cell, Cell):
+            return None
+        shape = getattr(cell, "shape", None)
+        if shape is None or (hasattr(shape, "IsNull") and shape.IsNull()):
+            return None
+
+        center = Topology.CenterOfMass(cell)
+        if isinstance(center, Vertex) and CellUtility.Contains(cell, center, tolerance) == 0:
+            return center
+
+        try:
+            from OCC.Core.Bnd import Bnd_Box
+            from OCC.Core.BRepBndLib import brepbndlib
+            box = Bnd_Box()
+            brepbndlib.Add(shape, box)
+            xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+        except Exception:
+            return center if isinstance(center, Vertex) else None
+
+        steps = 6
+        for i in range(1, steps):
+            for j in range(1, steps):
+                for k in range(1, steps):
+                    x = xmin + (xmax - xmin) * i / steps
+                    y = ymin + (ymax - ymin) * j / steps
+                    z = zmin + (zmax - zmin) * k / steps
+                    candidate = Vertex.ByCoordinates(x, y, z)
+                    if CellUtility.Contains(cell, candidate, tolerance) == 0:
+                        return candidate
+
+        return center if isinstance(center, Vertex) else None
 
 # ---------------------------------------------------------------------------
 # Explicit unsupported Cell API
@@ -119,10 +388,6 @@ def _cell_utility_not_implemented(name, return_value=None):
         return _not_implemented(f"CellUtility.{name}", return_value)
     return _method
 
-
-Cell.ByBox = staticmethod(_cell_not_implemented("ByBox"))
-Cell.ByWires = staticmethod(_cell_not_implemented("ByWires"))
-Cell.InternalVertex = _cell_not_implemented("InternalVertex")
-CellUtility.Volume = staticmethod(_cell_utility_not_implemented("Volume"))
-CellUtility.InternalVertex = staticmethod(_cell_utility_not_implemented("InternalVertex"))
-CellUtility.Contains = staticmethod(_cell_utility_not_implemented("Contains", False))
+# Cell.ByBox, Cell.ByWires, Cell.InternalVertex, CellUtility.Volume,
+# CellUtility.Contains, and CellUtility.InternalVertex are implemented above
+# -- do not clobber them here.

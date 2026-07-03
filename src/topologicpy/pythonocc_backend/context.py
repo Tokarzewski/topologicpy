@@ -28,5 +28,4 @@ def _context_not_implemented(name, return_value=None):
     return _method
 
 
-# This placeholder does not yet implement true topologic_core context semantics.
-Context.ByTopologyParameters = staticmethod(_context_not_implemented("ByTopologyParameters"))
+# Context.ByTopologyParameters is implemented above.

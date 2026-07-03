@@ -7,7 +7,10 @@ import sys
 sys.path.append("C:/Users/sarwj/OneDrive - Cardiff University/Documents/GitHub/topologicpy/src")
 
 import topologicpy 
-import topologic_core as topologic
+try:
+    import topologic_core as topologic
+except Exception:
+    topologic = None
 from topologicpy.Aperture import Aperture
 from topologicpy.Vertex import Vertex
 from topologicpy.Edge import Edge
@@ -425,10 +428,10 @@ def test_main():
     print("Case 36")
     # test 1
     graphTo1 = Graph.Topology(graph_ae)
-    assert isinstance (graphTo1, topologic.Cluster)
+    assert Topology.IsInstance(graphTo1, "Cluster")
     # test 2
     graphTo2 = Graph.Topology(graph_avs1)
-    assert isinstance (graphTo2, topologic.Cluster)
+    assert Topology.IsInstance(graphTo2, "Cluster")
 
     # Case 37 - Tree
     print("Case 37")

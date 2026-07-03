@@ -84,5 +84,5 @@ def _cluster_not_implemented(name, return_value=None):
 
 
 Cluster.ByTopologiesCluster = staticmethod(_cluster_not_implemented("ByTopologiesCluster"))
-Cluster.SelfMerge = _cluster_not_implemented("SelfMerge")
+# Cluster.SelfMerge is inherited from Topology.SelfMerge (real implementation).
 Cluster.FreeTopologies = _cluster_not_implemented("FreeTopologies", [])

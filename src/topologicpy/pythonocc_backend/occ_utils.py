@@ -63,44 +63,83 @@ def make_occ_face(wire):
 
 
 def make_occ_shell(faces: list):
+    """
+    Builds a Shell from independently-constructed Faces.
+
+    Faces built via make_occ_face() are each made from their own fresh,
+    coordinate-only geometry (see make_occ_edge's docstring-equivalent note
+    below) -- two adjacent faces do NOT share the same underlying
+    TopoDS_Vertex/Edge at their common boundary even when geometrically
+    coincident. A BRep_Builder.Add()-only shell is therefore topologically
+    "leaky": BRepCheck_Analyzer reports it invalid, and downstream boolean
+    operations (BOPAlgo_CellsBuilder etc.) silently fail to split it
+    correctly (verified empirically: an "leaky" box built this way did not
+    split when cut by a plane, while a clean BRepPrimAPI_MakeBox did).
+    BRepBuilderAPI_Sewing fuses coincident vertices/edges across face
+    boundaries within tolerance, producing a real watertight shell -- use it
+    instead of a bare BRep_Builder shell.
+    """
     if not faces:
         return None
     try:
         from OCC.Core.BRep import BRep_Builder
         from OCC.Core.TopoDS import TopoDS_Shell, topods
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Sewing
         from OCC.Core.BRepCheck import BRepCheck_Analyzer
     except Exception:
         return None
 
-    builder = BRep_Builder()
-    occ_shell = TopoDS_Shell()
-    builder.MakeShell(occ_shell)
-    added = 0
-
+    occ_faces = []
     for face in faces:
         occ_face = getattr(face, "shape", None)
         if occ_face is None:
             continue
         try:
-            occ_face = topods.Face(occ_face)
+            occ_faces.append(topods.Face(occ_face))
         except Exception:
             continue
+
+    if not occ_faces:
+        return None
+
+    try:
+        sewer = BRepBuilderAPI_Sewing(0.0001)
+        for occ_face in occ_faces:
+            sewer.Add(occ_face)
+        sewer.Perform()
+        sewn = sewer.SewedShape()
+    except Exception:
+        sewn = None
+
+    if sewn is not None and not sewn.IsNull():
+        try:
+            if sewn.ShapeType() == 3:  # TopAbs_SHELL
+                return topods.Shell(sewn)
+        except Exception:
+            pass
+        try:
+            from OCC.Core.TopExp import TopExp_Explorer
+            from OCC.Core.TopAbs import TopAbs_SHELL
+            explorer = TopExp_Explorer(sewn, TopAbs_SHELL)
+            if explorer.More():
+                return topods.Shell(explorer.Current())
+        except Exception:
+            pass
+
+    # Fallback: bare unsewn shell (may be topologically leaky, but still
+    # geometrically usable for traversal/visualization purposes).
+    builder = BRep_Builder()
+    occ_shell = TopoDS_Shell()
+    builder.MakeShell(occ_shell)
+    added = 0
+    for occ_face in occ_faces:
         try:
             builder.Add(occ_shell, occ_face)
             added += 1
         except Exception:
             continue
-
     if added == 0:
         return None
-
-    try:
-        analyzer = BRepCheck_Analyzer(occ_shell)
-        if not analyzer.IsValid():
-            return occ_shell
-    except Exception:
-        pass
-
     return occ_shell
 
 
