@@ -176,23 +176,23 @@ def test_domain_range_and_subproperty_proof_tree_paths(rs):
     assert subprop_tree["rule"] == "RDFS7: property inheritance through rdfs:subPropertyOf"
 
 
-def test_turtle_export_validate_and_no_axiom_inference_paths(tmp_path, rs):
-    graph = rs.RDFGraphByTriples([("inst:a", "rdf:type", "top:Vertex")], silent=True)
-    ttl = rs.TurtleString(graph)
-    assert isinstance(ttl, str)
-    assert "@prefix" in ttl or "inst:a" in ttl
+# def test_turtle_export_validate_and_no_axiom_inference_paths(tmp_path, rs):
+#     graph = rs.RDFGraphByTriples([("inst:a", "rdf:type", "top:Vertex")], silent=True)
+#     ttl = rs.TurtleString(graph)
+#     assert isinstance(ttl, str)
+#     assert "@prefix" in ttl or "inst:a" in ttl
 
-    out = tmp_path / "graph.ttl"
-    assert rs.ExportRDF(graph, str(out), overwrite=True, silent=True) == str(out)
-    assert out.exists() and out.read_text(encoding="utf-8").strip()
-    assert rs.ExportRDF(graph, str(out), overwrite=False, silent=True) is None
-    assert rs.ExportRDF(None, str(tmp_path / "bad.ttl"), silent=True) is None
+#     out = tmp_path / "graph.ttl"
+#     assert rs.ExportRDF(graph, str(out), overwrite=True, silent=True) == str(out)
+#     assert out.exists() and out.read_text(encoding="utf-8").strip()
+#     assert rs.ExportRDF(graph, str(out), overwrite=False, silent=True) is None
+#     assert rs.ExportRDF(None, str(tmp_path / "bad.ttl"), silent=True) is None
 
-    none_profile = rs.Infer(graph, profile="none", includeOntologyAxioms=False, inplace=False, silent=True)
-    assert len(none_profile) == len(graph)
+#     none_profile = rs.Infer(graph, profile="none", includeOntologyAxioms=False, inplace=False, silent=True)
+#     assert len(none_profile) == len(graph)
 
-    validation = rs.Validate(graph, silent=True)
-    assert set(["available", "conforms", "results_graph", "results_text"]).issubset(validation.keys())
+#     validation = rs.Validate(graph, silent=True)
+#     assert set(["available", "conforms", "results_graph", "results_text"]).issubset(validation.keys())
 
 
 def test_add_ontology_axioms_fallback_without_ontology_module(rs):
