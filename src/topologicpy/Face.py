@@ -1260,7 +1260,7 @@ class Face():
         return Face.ByWire(wire, tolerance=tolerance)
 
     @staticmethod
-    def Compactness(face, mantissa: int = 6) -> float:
+    def Compactness(face, mantissa: int = 6, silent: bool = False) -> float:
         """
         Returns the compactness measure of the input face. See https://en.wikipedia.org/wiki/Compactness_measure_of_a_shape
 
@@ -1270,6 +1270,8 @@ class Face():
             The input face.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -1279,6 +1281,11 @@ class Face():
         """
         from topologicpy.Topology import Topology
         from topologicpy.Edge import Edge
+
+        if not Topology.IsInstance(face, "Face"):
+            if not silent:
+                print("Face.Compactness - Error: The input face parameter is not a valid face. Returning None.")
+            return None
 
         exb = Face.ExternalBoundary(face)
         edges = Topology.Edges(exb)
@@ -1602,7 +1609,7 @@ class Face():
         return Face.ByWire(c_shape_wire, tolerance=tolerance, silent=silent)
 
     @staticmethod
-    def Edges(face) -> list:
+    def Edges(face, silent: bool = False) -> list:
         """
         Returns the edges of the input face.
 
@@ -1610,6 +1617,8 @@ class Face():
         ----------
         face : topologic_core.Face
             The input face.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -1620,6 +1629,8 @@ class Face():
         from topologicpy.Topology import Topology
 
         if not Topology.IsInstance(face, "Face"):
+            if not silent:
+                print("Face.Edges - Error: The input face parameter is not a valid face. Returning None.")
             return None
         edges = []
         # _ = face.Edges(None, edges) # H to Core
@@ -1666,7 +1677,22 @@ class Face():
         return f
     
     @staticmethod
-    def Ellipse(origin= None, inputMode: int = 1, width: float = 2.0, length: float = 1.0, focalLength: float = 0.866025, eccentricity: float = 0.866025, majorAxisLength: float = 1.0, minorAxisLength: float = 0.5, sides: float = 32, fromAngle: float = 0.0, toAngle: float = 360.0, close: bool = True, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001):
+    def Ellipse(origin= None,
+                inputMode: int = 1,
+                width: float = 2.0,
+                length: float = 1.0,
+                focalLength: float = 0.866025,
+                eccentricity: float = 0.866025,
+                majorAxisLength: float = 1.0,
+                minorAxisLength: float = 0.5,
+                sides: float = 32,
+                fromAngle: float = 0.0,
+                toAngle: float = 360.0,
+                close: bool = True,
+                direction: list = [0, 0, 1],
+                placement: str = "center",
+                tolerance: float = 0.0001,
+                silent: bool = False):
         """
         Creates an ellipse and returns all its geometry and parameters.
 
@@ -1707,6 +1733,8 @@ class Face():
             The description of the placement of the origin of the ellipse. This can be "center", or "lowerleft". It is case insensitive. Default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -1715,13 +1743,18 @@ class Face():
 
         """
         from topologicpy.Wire import Wire
+        from topologicpy.Topology import Topology
         w = Wire.Ellipse(origin=origin, inputMode=inputMode, width=width, length=length,
                          focalLength=focalLength, eccentricity=eccentricity,
                          majorAxisLength=majorAxisLength, minorAxisLength=minorAxisLength,
                          sides=sides, fromAngle=fromAngle, toAngle=toAngle,
                          close=close, direction=direction,
                          placement=placement, tolerance=tolerance)
-        return Face.ByWire(w)
+        if not Topology.IsInstance(w, "Wire"):
+            if not silent:
+                print("Face.Ellipse - Error: Could not create an ellipse. Returning None.")
+            return None
+        return Face.ByWire(w, tolerance=tolerance, silent=silent)
     
     @staticmethod
     def ExteriorAngles(face, includeInternalBoundaries=False, mantissa: int = 6) -> list:
@@ -2380,26 +2413,53 @@ class Face():
         Parameters
         ----------
         face : topologic_core.Face
-            The  input face.
+            The input face.
         mantissa : int , optional
             The length of the desired mantissa. Default is 6.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
+
         Returns
         -------
         bool
-            True if the nput face is convex. False otherwise.
+            True if the input face is convex. False otherwise.
 
         """
         from topologicpy.Topology import Topology
-        
+
         if not Topology.IsInstance(face, "face"):
             if not silent:
                 print("Face.IsConvex - Error: The input face parameter is not a valid topologic face. Returning None.")
             return None
-        eb = Face.ExternalBoundary(face)
-        eb = Face.ByWire(eb)
-        return all(Face.InteriorAngles(eb)) < 180
+
+        eb = Face.ExternalBoundary(face, silent=silent)
+        if not Topology.IsInstance(eb, "wire"):
+            if not silent:
+                print("Face.IsConvex - Error: Could not retrieve a valid external boundary. Returning None.")
+            return None
+
+        test_face = Face.ByWire(eb, silent=silent)
+        if not Topology.IsInstance(test_face, "face"):
+            if not silent:
+                print("Face.IsConvex - Error: Could not create a valid face from the external boundary. Returning None.")
+            return None
+
+        angles = Face.InteriorAngles(test_face, mantissa=mantissa)
+        if not isinstance(angles, list) or len(angles) < 3:
+            if not silent:
+                print("Face.IsConvex - Error: Could not compute valid interior angles. Returning None.")
+            return None
+
+        for angle in angles:
+            if not isinstance(angle, (int, float)):
+                if not silent:
+                    print("Face.IsConvex - Error: The computed interior angles contain a non-numeric value. Returning None.")
+                return None
+
+            if angle > 180:
+                return False
+
+        return True
 
     @staticmethod
     def IsCoplanar(faceA, faceB, mantissa: int = 6, tolerance: float = 0.0001) -> bool:

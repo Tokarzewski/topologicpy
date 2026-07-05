@@ -179,17 +179,21 @@ class LLM:
         """
         try:
             provider = LLM._normalize_provider(provider)
+            if provider not in LLM._PROVIDERS:
+                if not silent:
+                    print(f"LLM.ByParameters - Warning: Unknown provider '{provider}'. Using 'openai-compatible'.")
+                provider = "openai-compatible"
             info = LLM._PROVIDERS.get(provider, LLM._PROVIDERS["openai-compatible"])
             return _LLMConfig(
                 provider=provider,
-                model=model or info.get("default_model"),
+                model=str(model).strip() if model is not None and str(model).strip() else info.get("default_model"),
                 apiKey=apiKey,
-                baseURL=baseURL or info.get("default_base_url"),
-                temperature=temperature,
-                maxOutputTokens=maxOutputTokens,
-                timeout=timeout,
+                baseURL=(str(baseURL).strip().rstrip("/") if baseURL is not None and str(baseURL).strip() else info.get("default_base_url")),
+                temperature=LLM._coerce_temperature(temperature),
+                maxOutputTokens=LLM._positive_int(maxOutputTokens, default=None),
+                timeout=LLM._positive_int(timeout, default=60),
                 systemPrompt=systemPrompt,
-                silent=silent,
+                silent=bool(silent),
             )
         except Exception as e:
             if not silent:
@@ -397,13 +401,19 @@ class LLM:
             return LLM._error("unknown_provider", "The input llm object is None.", None, None, silent=silent)
 
         provider = LLM._normalize_provider(getattr(llm, "provider", "openai"))
+        if provider not in LLM._PROVIDERS:
+            provider = "openai-compatible"
         mode = LLM._PROVIDERS.get(provider, {}).get("mode", "openai")
         model = getattr(llm, "model", None)
-        temp = getattr(llm, "temperature", 0.2) if temperature is None else temperature
-        mot = getattr(llm, "maxOutputTokens", None) if maxOutputTokens is None else maxOutputTokens
-        tout = getattr(llm, "timeout", 60) if timeout is None else timeout
+        temp = LLM._coerce_temperature(getattr(llm, "temperature", 0.2) if temperature is None else temperature)
+        mot = LLM._positive_int(getattr(llm, "maxOutputTokens", None) if maxOutputTokens is None else maxOutputTokens, default=None)
+        tout = LLM._positive_int(getattr(llm, "timeout", 60) if timeout is None else timeout, default=60)
         sp = systemPrompt if systemPrompt is not None else getattr(llm, "systemPrompt", None)
         effective_silent = bool(silent or getattr(llm, "silent", False))
+
+        if model is None or str(model).strip() == "":
+            return LLM._error("model_error", f"No model is configured for provider '{provider}'.", provider, model, silent=effective_silent)
+        model = str(model).strip()
 
         try:
             messages = LLM._messages(prompt, sp)
@@ -448,6 +458,8 @@ class LLM:
             return LLM._error("unknown_provider", "The input llm object is None.", None, None, silent=silent)
 
         provider = LLM._normalize_provider(getattr(llm, "provider", "openai"))
+        if provider not in LLM._PROVIDERS:
+            provider = "openai-compatible"
         model = getattr(llm, "model", None)
         effective_silent = bool(silent or getattr(llm, "silent", False))
 
@@ -500,6 +512,8 @@ class LLM:
             return None
 
         provider = LLM._normalize_provider(getattr(llm, "provider", "openai"))
+        if provider not in LLM._PROVIDERS:
+            provider = "openai-compatible"
         effective_silent = bool(silent or getattr(llm, "silent", False))
 
         try:
@@ -620,9 +634,10 @@ class LLM:
             request = {
                 "model": model,
                 "messages": anthropic_messages,
-                "temperature": temperature,
                 "max_tokens": max_tokens or 512,
             }
+            if temperature is not None:
+                request["temperature"] = temperature
             if system:
                 request["system"] = system
 
@@ -663,7 +678,9 @@ class LLM:
             from google.genai import types
 
             client = genai.Client(api_key=api_key)
-            config_args = {"temperature": temperature}
+            config_args = {}
+            if temperature is not None:
+                config_args["temperature"] = temperature
             if max_tokens is not None:
                 config_args["max_output_tokens"] = max_tokens
 
@@ -680,9 +697,9 @@ class LLM:
                 import google.generativeai as genai_old
 
                 genai_old.configure(api_key=api_key)
-                generation_config = {
-                    "temperature": temperature,
-                }
+                generation_config = {}
+                if temperature is not None:
+                    generation_config["temperature"] = temperature
                 if max_tokens is not None:
                     generation_config["max_output_tokens"] = max_tokens
 
@@ -702,7 +719,9 @@ class LLM:
             import requests
             base_url = (getattr(llm, "baseURL", None) or LLM._PROVIDERS["ollama"]["default_base_url"]).rstrip("/")
             url = base_url + "/api/chat"
-            options = {"temperature": temperature}
+            options = {}
+            if temperature is not None:
+                options["temperature"] = temperature
             if max_tokens is not None:
                 options["num_predict"] = max_tokens
 
@@ -737,6 +756,35 @@ class LLM:
     # -------------------------------------------------------------------------
     # Internal helpers
     # -------------------------------------------------------------------------
+    @staticmethod
+    def _positive_int(value, default=None, minimum=1):
+        """Returns value as an int >= minimum, or default if invalid/None."""
+        if value is None:
+            return default
+        try:
+            value = int(value)
+        except Exception:
+            return default
+        if value < minimum:
+            return default
+        return value
+
+    @staticmethod
+    def _coerce_temperature(value, default=None):
+        """Returns temperature as a float when valid, otherwise default.
+
+        The method deliberately does not clamp values because providers differ:
+        some accept 0-1, others 0-2, and local providers may accept broader
+        ranges. Unsupported values are handled by provider-side errors and the
+        retry path where applicable.
+        """
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except Exception:
+            return default
+
     @staticmethod
     def _openai_reasoning_or_frontier_model(model):
         """
@@ -912,8 +960,9 @@ class LLM:
         if not s:
             return None
 
-        # Remove common markdown fences.
-        fence = re.match(r"^```(?:json|JSON)?\s*(.*?)\s*```$", s, flags=re.DOTALL)
+        # Remove common markdown fences with any info string, including
+        # ```JSON, ```jsonc, or provider-specific labels.
+        fence = re.match(r"^```[A-Za-z0-9_-]*\s*(.*?)\s*```$", s, flags=re.DOTALL)
         if fence:
             s = fence.group(1).strip()
 
@@ -925,24 +974,65 @@ class LLM:
         if not repair:
             return None
 
-        # Try to extract the first object or array.
-        candidates = []
-        obj_start = s.find("{")
-        obj_end = s.rfind("}")
-        if obj_start >= 0 and obj_end > obj_start:
-            candidates.append(s[obj_start:obj_end + 1])
-
-        arr_start = s.find("[")
-        arr_end = s.rfind("]")
-        if arr_start >= 0 and arr_end > arr_start:
-            candidates.append(s[arr_start:arr_end + 1])
-
-        for c in candidates:
+        # Try balanced extraction rather than naive first-{ to last-}. This
+        # allows explanatory text with several JSON fragments and preserves the
+        # first complete object/array that parses.
+        for start, opening, closing in LLM._json_candidate_spans(s):
+            candidate = LLM._balanced_json_substring(s, start, opening, closing)
+            if candidate is None:
+                continue
             try:
-                return json.loads(c)
+                return json.loads(candidate)
             except Exception:
                 continue
 
+        return None
+
+    @staticmethod
+    def _json_candidate_spans(text):
+        """Yields plausible JSON starts outside quoted strings."""
+        in_string = False
+        escaped = False
+        for i, ch in enumerate(text):
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\" and in_string:
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if not in_string and ch in "[{":
+                yield (i, ch, "}" if ch == "{" else "]")
+
+    @staticmethod
+    def _balanced_json_substring(text, start, opening, closing):
+        """Returns a balanced JSON object/array substring starting at start."""
+        stack = []
+        in_string = False
+        escaped = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\" and in_string:
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in "[{":
+                stack.append("}" if ch == "{" else "]")
+            elif ch in "]}":
+                if not stack or ch != stack[-1]:
+                    return None
+                stack.pop()
+                if not stack:
+                    return text[start:i + 1]
         return None
 
     @staticmethod

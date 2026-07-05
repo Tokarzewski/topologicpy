@@ -1,0 +1,712 @@
+issue_type,severity,element,element_index,ifc_type,ontology_class,brick_class,message,architectural_element,architectural_index,architectural_ifc_type,edge_index,predicate
+missing_penetration_or_opening,high,87,5855,,brick:Equipment,brick:Equipment,"MEP distribution element intersects an architectural barrier, but no matching opening was found.",63.0,1846.0,,,
+missing_penetration_or_opening,high,122,13480,,brick:Equipment,brick:Equipment,"MEP distribution element intersects an architectural barrier, but no matching opening was found.",63.0,1846.0,,,
+missing_penetration_or_opening,high,110,28466,,brick:Equipment,brick:Equipment,"MEP distribution element intersects an architectural barrier, but no matching opening was found.",63.0,1846.0,,,
+terminal_not_located_in_space,medium,21,21,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,22,22,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,23,23,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,24,24,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,25,25,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,26,26,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,27,27,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,28,28,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,29,29,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,30,30,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,31,31,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,32,32,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,33,33,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,34,34,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,35,35,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,36,36,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,37,37,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,38,38,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,39,39,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,40,40,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,41,41,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,42,42,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,43,43,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,44,44,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,45,45,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,46,46,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,47,47,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,48,48,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,49,49,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,50,50,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,51,51,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,52,52,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,53,53,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,54,54,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,55,55,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,56,56,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,57,57,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,58,58,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,59,59,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,60,60,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,61,61,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,62,62,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,63,63,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,64,64,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,65,65,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,66,66,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,67,67,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,68,68,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,69,69,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,70,70,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,71,71,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,72,72,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,73,73,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,74,74,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,75,75,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,76,76,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,77,77,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,78,78,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,79,79,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,80,80,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,81,81,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,82,82,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,83,83,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,84,84,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,85,85,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,86,86,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,87,87,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,88,88,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,89,89,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,90,90,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,91,91,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,92,92,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,93,93,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,94,94,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,95,95,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,96,96,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,97,97,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,98,98,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,99,99,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,100,100,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,101,101,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,102,102,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,122,122,,brick:Luminaire,brick:Luminaire,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,123,123,,brick:Luminaire,brick:Luminaire,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,124,124,,brick:Luminaire,brick:Luminaire,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,125,125,,brick:Outlet,brick:Outlet,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,821,14179,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,822,14180,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,823,14181,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,824,14182,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,825,14183,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,826,14184,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,827,14185,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,828,14186,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,829,14187,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,830,14188,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,831,14189,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,832,14190,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,833,14191,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,834,14192,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,835,14193,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,836,14194,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,837,14195,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,838,14196,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,839,14197,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,840,14198,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,841,14199,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,842,14200,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,843,14201,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,844,14202,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,845,14203,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,846,14204,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,847,14205,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,848,14206,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,849,14207,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,850,14208,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,851,14209,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,852,14210,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,853,14211,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,854,14212,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,855,14213,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,856,14214,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,857,14215,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,858,14216,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,859,14217,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,860,14218,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,861,14219,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,862,14220,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,863,14221,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,864,14222,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,865,14223,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,866,14224,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,867,14225,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,868,14226,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,869,14227,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,870,14228,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,871,14229,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,872,14230,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,873,14231,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,874,14232,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,875,14233,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,876,14234,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,877,14235,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,878,14236,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,879,14237,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,880,14238,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,881,14239,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,882,14240,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,883,14241,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,884,14242,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,885,14243,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,886,14244,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,887,14245,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,888,14246,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,889,14247,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,890,14248,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,891,14249,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,892,14250,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,893,14251,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,894,14252,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,895,14253,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,896,14254,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,897,14255,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,898,14256,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,899,14257,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,900,14258,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,901,14259,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,902,14260,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,903,14261,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,904,14262,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,905,14263,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,906,14264,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,907,14265,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,908,14266,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,909,14267,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,910,14268,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,911,14269,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,912,14270,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,913,14271,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,914,14272,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,915,14273,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,916,14274,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,917,14275,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,918,14276,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,919,14277,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,920,14278,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,921,14279,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,922,14280,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,923,14281,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,924,14282,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,925,14283,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1477,14835,,brick:Luminaire,brick:Luminaire,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1478,14836,,brick:Luminaire,brick:Luminaire,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1479,14837,,brick:Luminaire,brick:Luminaire,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1480,14838,,brick:Outlet,brick:Outlet,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1481,14839,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1482,14840,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1483,14841,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1484,14842,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1485,14843,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1486,14844,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,482,28838,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,483,28839,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,484,28840,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,485,28841,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,486,28842,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,487,28843,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,488,28844,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,489,28845,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,490,28846,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,491,28847,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,492,28848,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,493,28849,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,494,28850,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,495,28851,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,496,28852,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,497,28853,,brick:Terminal_Unit,brick:Terminal_Unit,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1542,29898,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1543,29899,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1544,29900,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1545,29901,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1546,29902,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+terminal_not_located_in_space,medium,1547,29903,,brick:Plumbing_Fixture,brick:Plumbing_Fixture,Terminal/equipment has no derived architectural space location.,,,,,
+overasserted_flow_direction,high,498,28854,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23474.0,brick:feeds
+overasserted_flow_direction,high,500,28856,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23475.0,brick:feeds
+overasserted_flow_direction,high,502,28858,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23476.0,brick:feeds
+overasserted_flow_direction,high,504,28860,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23477.0,brick:feeds
+overasserted_flow_direction,high,506,28862,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23478.0,brick:feeds
+overasserted_flow_direction,high,508,28864,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23479.0,brick:feeds
+overasserted_flow_direction,high,510,28866,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23480.0,brick:feeds
+overasserted_flow_direction,high,512,28868,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23481.0,brick:feeds
+overasserted_flow_direction,high,514,28870,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23482.0,brick:feeds
+overasserted_flow_direction,high,516,28872,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23483.0,brick:feeds
+overasserted_flow_direction,high,518,28874,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23484.0,brick:feeds
+overasserted_flow_direction,high,520,28876,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23485.0,brick:feeds
+overasserted_flow_direction,high,522,28878,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23486.0,brick:feeds
+overasserted_flow_direction,high,524,28880,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23487.0,brick:feeds
+overasserted_flow_direction,high,526,28882,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23488.0,brick:feeds
+overasserted_flow_direction,high,528,28884,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23489.0,brick:feeds
+overasserted_flow_direction,high,530,28886,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23490.0,brick:feeds
+overasserted_flow_direction,high,532,28888,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23491.0,brick:feeds
+overasserted_flow_direction,high,534,28890,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23492.0,brick:feeds
+overasserted_flow_direction,high,536,28892,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23493.0,brick:feeds
+overasserted_flow_direction,high,538,28894,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23494.0,brick:feeds
+overasserted_flow_direction,high,540,28896,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23495.0,brick:feeds
+overasserted_flow_direction,high,542,28898,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23496.0,brick:feeds
+overasserted_flow_direction,high,544,28900,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23497.0,brick:feeds
+overasserted_flow_direction,high,546,28902,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23498.0,brick:feeds
+overasserted_flow_direction,high,548,28904,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23499.0,brick:feeds
+overasserted_flow_direction,high,550,28906,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23500.0,brick:feeds
+overasserted_flow_direction,high,552,28908,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23501.0,brick:feeds
+overasserted_flow_direction,high,554,28910,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23502.0,brick:feeds
+overasserted_flow_direction,high,556,28912,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23503.0,brick:feeds
+overasserted_flow_direction,high,558,28914,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23504.0,brick:feeds
+overasserted_flow_direction,high,560,28916,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23505.0,brick:feeds
+overasserted_flow_direction,high,562,28918,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23506.0,brick:feeds
+overasserted_flow_direction,high,564,28920,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23507.0,brick:feeds
+overasserted_flow_direction,high,566,28922,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23508.0,brick:feeds
+overasserted_flow_direction,high,568,28924,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23509.0,brick:feeds
+overasserted_flow_direction,high,570,28926,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23510.0,brick:feeds
+overasserted_flow_direction,high,572,28928,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23511.0,brick:feeds
+overasserted_flow_direction,high,574,28930,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23512.0,brick:feeds
+overasserted_flow_direction,high,576,28932,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23513.0,brick:feeds
+overasserted_flow_direction,high,578,28934,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23514.0,brick:feeds
+overasserted_flow_direction,high,580,28936,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23515.0,brick:feeds
+overasserted_flow_direction,high,582,28938,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23516.0,brick:feeds
+overasserted_flow_direction,high,584,28940,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23517.0,brick:feeds
+overasserted_flow_direction,high,586,28942,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23518.0,brick:feeds
+overasserted_flow_direction,high,588,28944,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23519.0,brick:feeds
+overasserted_flow_direction,high,590,28946,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23520.0,brick:feeds
+overasserted_flow_direction,high,592,28948,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23521.0,brick:feeds
+overasserted_flow_direction,high,594,28950,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23522.0,brick:feeds
+overasserted_flow_direction,high,596,28952,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23523.0,brick:feeds
+overasserted_flow_direction,high,598,28954,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23524.0,brick:feeds
+overasserted_flow_direction,high,600,28956,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23525.0,brick:feeds
+overasserted_flow_direction,high,602,28958,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23526.0,brick:feeds
+overasserted_flow_direction,high,604,28960,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23527.0,brick:feeds
+overasserted_flow_direction,high,606,28962,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23528.0,brick:feeds
+overasserted_flow_direction,high,608,28964,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23529.0,brick:feeds
+overasserted_flow_direction,high,610,28966,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23530.0,brick:feeds
+overasserted_flow_direction,high,612,28968,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23531.0,brick:feeds
+overasserted_flow_direction,high,614,28970,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23532.0,brick:feeds
+overasserted_flow_direction,high,616,28972,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23533.0,brick:feeds
+overasserted_flow_direction,high,618,28974,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23534.0,brick:feeds
+overasserted_flow_direction,high,620,28976,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23535.0,brick:feeds
+overasserted_flow_direction,high,622,28978,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23536.0,brick:feeds
+overasserted_flow_direction,high,624,28980,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23537.0,brick:feeds
+overasserted_flow_direction,high,626,28982,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23538.0,brick:feeds
+overasserted_flow_direction,high,628,28984,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23539.0,brick:feeds
+overasserted_flow_direction,high,630,28986,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23540.0,brick:feeds
+overasserted_flow_direction,high,632,28988,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23541.0,brick:feeds
+overasserted_flow_direction,high,634,28990,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23542.0,brick:feeds
+overasserted_flow_direction,high,636,28992,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23543.0,brick:feeds
+overasserted_flow_direction,high,638,28994,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23544.0,brick:feeds
+overasserted_flow_direction,high,640,28996,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23545.0,brick:feeds
+overasserted_flow_direction,high,642,28998,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23546.0,brick:feeds
+overasserted_flow_direction,high,644,29000,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23547.0,brick:feeds
+overasserted_flow_direction,high,646,29002,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23548.0,brick:feeds
+overasserted_flow_direction,high,648,29004,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23549.0,brick:feeds
+overasserted_flow_direction,high,650,29006,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23550.0,brick:feeds
+overasserted_flow_direction,high,652,29008,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23551.0,brick:feeds
+overasserted_flow_direction,high,654,29010,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23552.0,brick:feeds
+overasserted_flow_direction,high,656,29012,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23553.0,brick:feeds
+overasserted_flow_direction,high,658,29014,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23554.0,brick:feeds
+overasserted_flow_direction,high,660,29016,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23555.0,brick:feeds
+overasserted_flow_direction,high,662,29018,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23556.0,brick:feeds
+overasserted_flow_direction,high,664,29020,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23557.0,brick:feeds
+overasserted_flow_direction,high,666,29022,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23558.0,brick:feeds
+overasserted_flow_direction,high,668,29024,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23559.0,brick:feeds
+overasserted_flow_direction,high,670,29026,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23560.0,brick:feeds
+overasserted_flow_direction,high,672,29028,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23561.0,brick:feeds
+overasserted_flow_direction,high,674,29030,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23562.0,brick:feeds
+overasserted_flow_direction,high,676,29032,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23563.0,brick:feeds
+overasserted_flow_direction,high,678,29034,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23564.0,brick:feeds
+overasserted_flow_direction,high,680,29036,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23565.0,brick:feeds
+overasserted_flow_direction,high,682,29038,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23566.0,brick:feeds
+overasserted_flow_direction,high,684,29040,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23567.0,brick:feeds
+overasserted_flow_direction,high,686,29042,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23568.0,brick:feeds
+overasserted_flow_direction,high,688,29044,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23569.0,brick:feeds
+overasserted_flow_direction,high,690,29046,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23570.0,brick:feeds
+overasserted_flow_direction,high,692,29048,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23571.0,brick:feeds
+overasserted_flow_direction,high,694,29050,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23572.0,brick:feeds
+overasserted_flow_direction,high,696,29052,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23573.0,brick:feeds
+overasserted_flow_direction,high,698,29054,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23574.0,brick:feeds
+overasserted_flow_direction,high,700,29056,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23575.0,brick:feeds
+overasserted_flow_direction,high,702,29058,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23576.0,brick:feeds
+overasserted_flow_direction,high,704,29060,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23577.0,brick:feeds
+overasserted_flow_direction,high,706,29062,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23578.0,brick:feeds
+overasserted_flow_direction,high,708,29064,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23579.0,brick:feeds
+overasserted_flow_direction,high,710,29066,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23580.0,brick:feeds
+overasserted_flow_direction,high,712,29068,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23581.0,brick:feeds
+overasserted_flow_direction,high,714,29070,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23582.0,brick:feeds
+overasserted_flow_direction,high,716,29072,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23583.0,brick:feeds
+overasserted_flow_direction,high,718,29074,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23584.0,brick:feeds
+overasserted_flow_direction,high,720,29076,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23585.0,brick:feeds
+overasserted_flow_direction,high,722,29078,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23586.0,brick:feeds
+overasserted_flow_direction,high,724,29080,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23587.0,brick:feeds
+overasserted_flow_direction,high,726,29082,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23588.0,brick:feeds
+overasserted_flow_direction,high,728,29084,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23589.0,brick:feeds
+overasserted_flow_direction,high,730,29086,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23590.0,brick:feeds
+overasserted_flow_direction,high,732,29088,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23591.0,brick:feeds
+overasserted_flow_direction,high,734,29090,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23592.0,brick:feeds
+overasserted_flow_direction,high,736,29092,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23593.0,brick:feeds
+overasserted_flow_direction,high,738,29094,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23594.0,brick:feeds
+overasserted_flow_direction,high,740,29096,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23595.0,brick:feeds
+overasserted_flow_direction,high,742,29098,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23596.0,brick:feeds
+overasserted_flow_direction,high,744,29100,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23597.0,brick:feeds
+overasserted_flow_direction,high,746,29102,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23598.0,brick:feeds
+overasserted_flow_direction,high,748,29104,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23599.0,brick:feeds
+overasserted_flow_direction,high,750,29106,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23600.0,brick:feeds
+overasserted_flow_direction,high,752,29108,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23601.0,brick:feeds
+overasserted_flow_direction,high,754,29110,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23602.0,brick:feeds
+overasserted_flow_direction,high,756,29112,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23603.0,brick:feeds
+overasserted_flow_direction,high,758,29114,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23604.0,brick:feeds
+overasserted_flow_direction,high,760,29116,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23605.0,brick:feeds
+overasserted_flow_direction,high,762,29118,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23606.0,brick:feeds
+overasserted_flow_direction,high,764,29120,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23607.0,brick:feeds
+overasserted_flow_direction,high,766,29122,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23608.0,brick:feeds
+overasserted_flow_direction,high,768,29124,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23609.0,brick:feeds
+overasserted_flow_direction,high,770,29126,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23610.0,brick:feeds
+overasserted_flow_direction,high,772,29128,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23611.0,brick:feeds
+overasserted_flow_direction,high,774,29130,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23612.0,brick:feeds
+overasserted_flow_direction,high,776,29132,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23613.0,brick:feeds
+overasserted_flow_direction,high,778,29134,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23614.0,brick:feeds
+overasserted_flow_direction,high,780,29136,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23615.0,brick:feeds
+overasserted_flow_direction,high,782,29138,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23616.0,brick:feeds
+overasserted_flow_direction,high,784,29140,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23617.0,brick:feeds
+overasserted_flow_direction,high,786,29142,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23618.0,brick:feeds
+overasserted_flow_direction,high,788,29144,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23619.0,brick:feeds
+overasserted_flow_direction,high,790,29146,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23620.0,brick:feeds
+overasserted_flow_direction,high,792,29148,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23621.0,brick:feeds
+overasserted_flow_direction,high,794,29150,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23622.0,brick:feeds
+overasserted_flow_direction,high,796,29152,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23623.0,brick:feeds
+overasserted_flow_direction,high,798,29154,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23624.0,brick:feeds
+overasserted_flow_direction,high,800,29156,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23625.0,brick:feeds
+overasserted_flow_direction,high,802,29158,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23626.0,brick:feeds
+overasserted_flow_direction,high,804,29160,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23627.0,brick:feeds
+overasserted_flow_direction,high,806,29162,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23628.0,brick:feeds
+overasserted_flow_direction,high,808,29164,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23629.0,brick:feeds
+overasserted_flow_direction,high,810,29166,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23630.0,brick:feeds
+overasserted_flow_direction,high,812,29168,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23631.0,brick:feeds
+overasserted_flow_direction,high,814,29170,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23632.0,brick:feeds
+overasserted_flow_direction,high,816,29172,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23633.0,brick:feeds
+overasserted_flow_direction,high,818,29174,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23634.0,brick:feeds
+overasserted_flow_direction,high,820,29176,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23635.0,brick:feeds
+overasserted_flow_direction,high,822,29178,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23636.0,brick:feeds
+overasserted_flow_direction,high,824,29180,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23637.0,brick:feeds
+overasserted_flow_direction,high,826,29182,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23638.0,brick:feeds
+overasserted_flow_direction,high,828,29184,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23639.0,brick:feeds
+overasserted_flow_direction,high,830,29186,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23640.0,brick:feeds
+overasserted_flow_direction,high,832,29188,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23641.0,brick:feeds
+overasserted_flow_direction,high,834,29190,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23642.0,brick:feeds
+overasserted_flow_direction,high,836,29192,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23643.0,brick:feeds
+overasserted_flow_direction,high,838,29194,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23644.0,brick:feeds
+overasserted_flow_direction,high,840,29196,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23645.0,brick:feeds
+overasserted_flow_direction,high,842,29198,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23646.0,brick:feeds
+overasserted_flow_direction,high,844,29200,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23647.0,brick:feeds
+overasserted_flow_direction,high,846,29202,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23648.0,brick:feeds
+overasserted_flow_direction,high,848,29204,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23649.0,brick:feeds
+overasserted_flow_direction,high,850,29206,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23650.0,brick:feeds
+overasserted_flow_direction,high,852,29208,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23651.0,brick:feeds
+overasserted_flow_direction,high,854,29210,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23652.0,brick:feeds
+overasserted_flow_direction,high,856,29212,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23653.0,brick:feeds
+overasserted_flow_direction,high,858,29214,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23654.0,brick:feeds
+overasserted_flow_direction,high,860,29216,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23655.0,brick:feeds
+overasserted_flow_direction,high,862,29218,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23656.0,brick:feeds
+overasserted_flow_direction,high,864,29220,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23657.0,brick:feeds
+overasserted_flow_direction,high,866,29222,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23658.0,brick:feeds
+overasserted_flow_direction,high,868,29224,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23659.0,brick:feeds
+overasserted_flow_direction,high,870,29226,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23660.0,brick:feeds
+overasserted_flow_direction,high,872,29228,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23661.0,brick:feeds
+overasserted_flow_direction,high,874,29230,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23662.0,brick:feeds
+overasserted_flow_direction,high,876,29232,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23663.0,brick:feeds
+overasserted_flow_direction,high,878,29234,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23664.0,brick:feeds
+overasserted_flow_direction,high,880,29236,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23665.0,brick:feeds
+overasserted_flow_direction,high,882,29238,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23666.0,brick:feeds
+overasserted_flow_direction,high,884,29240,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23667.0,brick:feeds
+overasserted_flow_direction,high,886,29242,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23668.0,brick:feeds
+overasserted_flow_direction,high,888,29244,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23669.0,brick:feeds
+overasserted_flow_direction,high,890,29246,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23670.0,brick:feeds
+overasserted_flow_direction,high,892,29248,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23671.0,brick:feeds
+overasserted_flow_direction,high,894,29250,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23672.0,brick:feeds
+overasserted_flow_direction,high,896,29252,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23673.0,brick:feeds
+overasserted_flow_direction,high,898,29254,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23674.0,brick:feeds
+overasserted_flow_direction,high,900,29256,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23675.0,brick:feeds
+overasserted_flow_direction,high,902,29258,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23676.0,brick:feeds
+overasserted_flow_direction,high,904,29260,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23677.0,brick:feeds
+overasserted_flow_direction,high,906,29262,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23678.0,brick:feeds
+overasserted_flow_direction,high,908,29264,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23679.0,brick:feeds
+overasserted_flow_direction,high,910,29266,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23680.0,brick:feeds
+overasserted_flow_direction,high,912,29268,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23681.0,brick:feeds
+overasserted_flow_direction,high,914,29270,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23682.0,brick:feeds
+overasserted_flow_direction,high,916,29272,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23683.0,brick:feeds
+overasserted_flow_direction,high,918,29274,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23684.0,brick:feeds
+overasserted_flow_direction,high,920,29276,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23685.0,brick:feeds
+overasserted_flow_direction,high,922,29278,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23686.0,brick:feeds
+overasserted_flow_direction,high,924,29280,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23687.0,brick:feeds
+overasserted_flow_direction,high,926,29282,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23688.0,brick:feeds
+overasserted_flow_direction,high,928,29284,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23689.0,brick:feeds
+overasserted_flow_direction,high,930,29286,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23690.0,brick:feeds
+overasserted_flow_direction,high,932,29288,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23691.0,brick:feeds
+overasserted_flow_direction,high,934,29290,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23692.0,brick:feeds
+overasserted_flow_direction,high,936,29292,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23693.0,brick:feeds
+overasserted_flow_direction,high,938,29294,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23694.0,brick:feeds
+overasserted_flow_direction,high,940,29296,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23695.0,brick:feeds
+overasserted_flow_direction,high,942,29298,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23696.0,brick:feeds
+overasserted_flow_direction,high,944,29300,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23697.0,brick:feeds
+overasserted_flow_direction,high,946,29302,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23698.0,brick:feeds
+overasserted_flow_direction,high,948,29304,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23699.0,brick:feeds
+overasserted_flow_direction,high,950,29306,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23700.0,brick:feeds
+overasserted_flow_direction,high,952,29308,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23701.0,brick:feeds
+overasserted_flow_direction,high,954,29310,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23702.0,brick:feeds
+overasserted_flow_direction,high,956,29312,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23703.0,brick:feeds
+overasserted_flow_direction,high,958,29314,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23704.0,brick:feeds
+overasserted_flow_direction,high,960,29316,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23705.0,brick:feeds
+overasserted_flow_direction,high,962,29318,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23706.0,brick:feeds
+overasserted_flow_direction,high,964,29320,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23707.0,brick:feeds
+overasserted_flow_direction,high,966,29322,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23708.0,brick:feeds
+overasserted_flow_direction,high,968,29324,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23709.0,brick:feeds
+overasserted_flow_direction,high,970,29326,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23710.0,brick:feeds
+overasserted_flow_direction,high,972,29328,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23711.0,brick:feeds
+overasserted_flow_direction,high,974,29330,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23712.0,brick:feeds
+overasserted_flow_direction,high,976,29332,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23713.0,brick:feeds
+overasserted_flow_direction,high,978,29334,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23714.0,brick:feeds
+overasserted_flow_direction,high,980,29336,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23715.0,brick:feeds
+overasserted_flow_direction,high,982,29338,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23716.0,brick:feeds
+overasserted_flow_direction,high,984,29340,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23717.0,brick:feeds
+overasserted_flow_direction,high,986,29342,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23718.0,brick:feeds
+overasserted_flow_direction,high,988,29344,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23719.0,brick:feeds
+overasserted_flow_direction,high,990,29346,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23720.0,brick:feeds
+overasserted_flow_direction,high,992,29348,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23721.0,brick:feeds
+overasserted_flow_direction,high,994,29350,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23722.0,brick:feeds
+overasserted_flow_direction,high,996,29352,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23723.0,brick:feeds
+overasserted_flow_direction,high,998,29354,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23724.0,brick:feeds
+overasserted_flow_direction,high,1000,29356,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23725.0,brick:feeds
+overasserted_flow_direction,high,1002,29358,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23726.0,brick:feeds
+overasserted_flow_direction,high,1004,29360,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23727.0,brick:feeds
+overasserted_flow_direction,high,1006,29362,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23728.0,brick:feeds
+overasserted_flow_direction,high,1008,29364,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23729.0,brick:feeds
+overasserted_flow_direction,high,1010,29366,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23730.0,brick:feeds
+overasserted_flow_direction,high,1012,29368,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23731.0,brick:feeds
+overasserted_flow_direction,high,1014,29370,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23732.0,brick:feeds
+overasserted_flow_direction,high,1016,29372,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23733.0,brick:feeds
+overasserted_flow_direction,high,1018,29374,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23734.0,brick:feeds
+overasserted_flow_direction,high,1020,29376,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23735.0,brick:feeds
+overasserted_flow_direction,high,1022,29378,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23736.0,brick:feeds
+overasserted_flow_direction,high,1024,29380,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23737.0,brick:feeds
+overasserted_flow_direction,high,1026,29382,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23738.0,brick:feeds
+overasserted_flow_direction,high,1028,29384,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23739.0,brick:feeds
+overasserted_flow_direction,high,1030,29386,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23740.0,brick:feeds
+overasserted_flow_direction,high,1032,29388,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23741.0,brick:feeds
+overasserted_flow_direction,high,1034,29390,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23742.0,brick:feeds
+overasserted_flow_direction,high,1036,29392,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23743.0,brick:feeds
+overasserted_flow_direction,high,1038,29394,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23744.0,brick:feeds
+overasserted_flow_direction,high,1040,29396,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23745.0,brick:feeds
+overasserted_flow_direction,high,1042,29398,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23746.0,brick:feeds
+overasserted_flow_direction,high,1044,29400,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23747.0,brick:feeds
+overasserted_flow_direction,high,1046,29402,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23748.0,brick:feeds
+overasserted_flow_direction,high,1048,29404,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23749.0,brick:feeds
+overasserted_flow_direction,high,1050,29406,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23750.0,brick:feeds
+overasserted_flow_direction,high,1052,29408,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23751.0,brick:feeds
+overasserted_flow_direction,high,1054,29410,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23752.0,brick:feeds
+overasserted_flow_direction,high,1056,29412,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23753.0,brick:feeds
+overasserted_flow_direction,high,1058,29414,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23754.0,brick:feeds
+overasserted_flow_direction,high,1060,29416,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23755.0,brick:feeds
+overasserted_flow_direction,high,1062,29418,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23756.0,brick:feeds
+overasserted_flow_direction,high,1064,29420,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23757.0,brick:feeds
+overasserted_flow_direction,high,1066,29422,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23758.0,brick:feeds
+overasserted_flow_direction,high,1068,29424,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23759.0,brick:feeds
+overasserted_flow_direction,high,1070,29426,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23760.0,brick:feeds
+overasserted_flow_direction,high,1072,29428,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23761.0,brick:feeds
+overasserted_flow_direction,high,1074,29430,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23762.0,brick:feeds
+overasserted_flow_direction,high,1076,29432,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23763.0,brick:feeds
+overasserted_flow_direction,high,1078,29434,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23764.0,brick:feeds
+overasserted_flow_direction,high,1080,29436,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23765.0,brick:feeds
+overasserted_flow_direction,high,1082,29438,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23766.0,brick:feeds
+overasserted_flow_direction,high,1084,29440,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23767.0,brick:feeds
+overasserted_flow_direction,high,1086,29442,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23768.0,brick:feeds
+overasserted_flow_direction,high,1088,29444,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23769.0,brick:feeds
+overasserted_flow_direction,high,1090,29446,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23770.0,brick:feeds
+overasserted_flow_direction,high,1092,29448,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23771.0,brick:feeds
+overasserted_flow_direction,high,1094,29450,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23772.0,brick:feeds
+overasserted_flow_direction,high,1096,29452,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23773.0,brick:feeds
+overasserted_flow_direction,high,1098,29454,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23774.0,brick:feeds
+overasserted_flow_direction,high,1100,29456,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23775.0,brick:feeds
+overasserted_flow_direction,high,1102,29458,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23776.0,brick:feeds
+overasserted_flow_direction,high,1104,29460,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23777.0,brick:feeds
+overasserted_flow_direction,high,1106,29462,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23778.0,brick:feeds
+overasserted_flow_direction,high,1108,29464,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23779.0,brick:feeds
+overasserted_flow_direction,high,1110,29466,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23780.0,brick:feeds
+overasserted_flow_direction,high,1112,29468,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23781.0,brick:feeds
+overasserted_flow_direction,high,1114,29470,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23782.0,brick:feeds
+overasserted_flow_direction,high,1116,29472,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23783.0,brick:feeds
+overasserted_flow_direction,high,1118,29474,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23784.0,brick:feeds
+overasserted_flow_direction,high,1120,29476,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23785.0,brick:feeds
+overasserted_flow_direction,high,1122,29478,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23786.0,brick:feeds
+overasserted_flow_direction,high,1124,29480,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23787.0,brick:feeds
+overasserted_flow_direction,high,1126,29482,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23788.0,brick:feeds
+overasserted_flow_direction,high,1128,29484,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23789.0,brick:feeds
+overasserted_flow_direction,high,1130,29486,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23790.0,brick:feeds
+overasserted_flow_direction,high,1132,29488,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23791.0,brick:feeds
+overasserted_flow_direction,high,1134,29490,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23792.0,brick:feeds
+overasserted_flow_direction,high,1136,29492,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23793.0,brick:feeds
+overasserted_flow_direction,high,1138,29494,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23794.0,brick:feeds
+overasserted_flow_direction,high,1140,29496,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23795.0,brick:feeds
+overasserted_flow_direction,high,1142,29498,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23796.0,brick:feeds
+overasserted_flow_direction,high,1144,29500,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23797.0,brick:feeds
+overasserted_flow_direction,high,1146,29502,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23798.0,brick:feeds
+overasserted_flow_direction,high,1148,29504,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23799.0,brick:feeds
+overasserted_flow_direction,high,1150,29506,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23800.0,brick:feeds
+overasserted_flow_direction,high,1152,29508,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23801.0,brick:feeds
+overasserted_flow_direction,high,1154,29510,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23802.0,brick:feeds
+overasserted_flow_direction,high,1156,29512,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23803.0,brick:feeds
+overasserted_flow_direction,high,1158,29514,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23804.0,brick:feeds
+overasserted_flow_direction,high,1160,29516,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23805.0,brick:feeds
+overasserted_flow_direction,high,1162,29518,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23806.0,brick:feeds
+overasserted_flow_direction,high,1164,29520,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23807.0,brick:feeds
+overasserted_flow_direction,high,1166,29522,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23808.0,brick:feeds
+overasserted_flow_direction,high,1168,29524,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23809.0,brick:feeds
+overasserted_flow_direction,high,1170,29526,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23810.0,brick:feeds
+overasserted_flow_direction,high,1172,29528,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23811.0,brick:feeds
+overasserted_flow_direction,high,1174,29530,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23812.0,brick:feeds
+overasserted_flow_direction,high,1176,29532,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23813.0,brick:feeds
+overasserted_flow_direction,high,1178,29534,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23814.0,brick:feeds
+overasserted_flow_direction,high,1180,29536,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23815.0,brick:feeds
+overasserted_flow_direction,high,1182,29538,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23816.0,brick:feeds
+overasserted_flow_direction,high,1184,29540,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23817.0,brick:feeds
+overasserted_flow_direction,high,1186,29542,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23818.0,brick:feeds
+overasserted_flow_direction,high,1188,29544,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23819.0,brick:feeds
+overasserted_flow_direction,high,1190,29546,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23820.0,brick:feeds
+overasserted_flow_direction,high,1192,29548,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23821.0,brick:feeds
+overasserted_flow_direction,high,1194,29550,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23822.0,brick:feeds
+overasserted_flow_direction,high,1196,29552,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23823.0,brick:feeds
+overasserted_flow_direction,high,1198,29554,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23824.0,brick:feeds
+overasserted_flow_direction,high,1200,29556,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23825.0,brick:feeds
+overasserted_flow_direction,high,1202,29558,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23826.0,brick:feeds
+overasserted_flow_direction,high,1204,29560,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23827.0,brick:feeds
+overasserted_flow_direction,high,1206,29562,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23828.0,brick:feeds
+overasserted_flow_direction,high,1208,29564,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23829.0,brick:feeds
+overasserted_flow_direction,high,1210,29566,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23830.0,brick:feeds
+overasserted_flow_direction,high,1212,29568,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23831.0,brick:feeds
+overasserted_flow_direction,high,1214,29570,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23832.0,brick:feeds
+overasserted_flow_direction,high,1216,29572,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23833.0,brick:feeds
+overasserted_flow_direction,high,1218,29574,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23834.0,brick:feeds
+overasserted_flow_direction,high,1220,29576,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23835.0,brick:feeds
+overasserted_flow_direction,high,1222,29578,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23836.0,brick:feeds
+overasserted_flow_direction,high,1224,29580,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23837.0,brick:feeds
+overasserted_flow_direction,high,1226,29582,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23838.0,brick:feeds
+overasserted_flow_direction,high,1228,29584,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23839.0,brick:feeds
+overasserted_flow_direction,high,1230,29586,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23840.0,brick:feeds
+overasserted_flow_direction,high,1232,29588,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23841.0,brick:feeds
+overasserted_flow_direction,high,1234,29590,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23842.0,brick:feeds
+overasserted_flow_direction,high,1236,29592,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23843.0,brick:feeds
+overasserted_flow_direction,high,1238,29594,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23844.0,brick:feeds
+overasserted_flow_direction,high,1240,29596,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23845.0,brick:feeds
+overasserted_flow_direction,high,1242,29598,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23846.0,brick:feeds
+overasserted_flow_direction,high,1244,29600,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23847.0,brick:feeds
+overasserted_flow_direction,high,1246,29602,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23848.0,brick:feeds
+overasserted_flow_direction,high,1248,29604,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23849.0,brick:feeds
+overasserted_flow_direction,high,1250,29606,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23850.0,brick:feeds
+overasserted_flow_direction,high,1252,29608,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23851.0,brick:feeds
+overasserted_flow_direction,high,1254,29610,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23852.0,brick:feeds
+overasserted_flow_direction,high,1256,29612,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23853.0,brick:feeds
+overasserted_flow_direction,high,1258,29614,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23854.0,brick:feeds
+overasserted_flow_direction,high,1260,29616,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23855.0,brick:feeds
+overasserted_flow_direction,high,1262,29618,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23856.0,brick:feeds
+overasserted_flow_direction,high,1264,29620,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23857.0,brick:feeds
+overasserted_flow_direction,high,1266,29622,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23858.0,brick:feeds
+overasserted_flow_direction,high,1268,29624,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23859.0,brick:feeds
+overasserted_flow_direction,high,1270,29626,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23860.0,brick:feeds
+overasserted_flow_direction,high,1272,29628,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23861.0,brick:feeds
+overasserted_flow_direction,high,1274,29630,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23862.0,brick:feeds
+overasserted_flow_direction,high,1276,29632,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23863.0,brick:feeds
+overasserted_flow_direction,high,1278,29634,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23864.0,brick:feeds
+overasserted_flow_direction,high,1280,29636,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23865.0,brick:feeds
+overasserted_flow_direction,high,1282,29638,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23866.0,brick:feeds
+overasserted_flow_direction,high,1284,29640,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23867.0,brick:feeds
+overasserted_flow_direction,high,1286,29642,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23868.0,brick:feeds
+overasserted_flow_direction,high,1288,29644,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23869.0,brick:feeds
+overasserted_flow_direction,high,1290,29646,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23870.0,brick:feeds
+overasserted_flow_direction,high,1292,29648,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23871.0,brick:feeds
+overasserted_flow_direction,high,1294,29650,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23872.0,brick:feeds
+overasserted_flow_direction,high,1296,29652,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23873.0,brick:feeds
+overasserted_flow_direction,high,1298,29654,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23874.0,brick:feeds
+overasserted_flow_direction,high,1300,29656,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23875.0,brick:feeds
+overasserted_flow_direction,high,1302,29658,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23876.0,brick:feeds
+overasserted_flow_direction,high,1304,29660,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23877.0,brick:feeds
+overasserted_flow_direction,high,1306,29662,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23878.0,brick:feeds
+overasserted_flow_direction,high,1308,29664,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23879.0,brick:feeds
+overasserted_flow_direction,high,1310,29666,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23880.0,brick:feeds
+overasserted_flow_direction,high,1312,29668,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23881.0,brick:feeds
+overasserted_flow_direction,high,1314,29670,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23882.0,brick:feeds
+overasserted_flow_direction,high,1316,29672,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23883.0,brick:feeds
+overasserted_flow_direction,high,1318,29674,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23884.0,brick:feeds
+overasserted_flow_direction,high,1320,29676,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23885.0,brick:feeds
+overasserted_flow_direction,high,1322,29678,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23886.0,brick:feeds
+overasserted_flow_direction,high,1324,29680,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23887.0,brick:feeds
+overasserted_flow_direction,high,1326,29682,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23888.0,brick:feeds
+overasserted_flow_direction,high,1328,29684,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23889.0,brick:feeds
+overasserted_flow_direction,high,1330,29686,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23890.0,brick:feeds
+overasserted_flow_direction,high,1332,29688,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23891.0,brick:feeds
+overasserted_flow_direction,high,1334,29690,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23892.0,brick:feeds
+overasserted_flow_direction,high,1336,29692,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23893.0,brick:feeds
+overasserted_flow_direction,high,1338,29694,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23894.0,brick:feeds
+overasserted_flow_direction,high,1340,29696,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23895.0,brick:feeds
+overasserted_flow_direction,high,1342,29698,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23896.0,brick:feeds
+overasserted_flow_direction,high,1344,29700,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23897.0,brick:feeds
+overasserted_flow_direction,high,1346,29702,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23898.0,brick:feeds
+overasserted_flow_direction,high,1348,29704,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23899.0,brick:feeds
+overasserted_flow_direction,high,1350,29706,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23900.0,brick:feeds
+overasserted_flow_direction,high,1352,29708,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23901.0,brick:feeds
+overasserted_flow_direction,high,1354,29710,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23902.0,brick:feeds
+overasserted_flow_direction,high,1356,29712,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23903.0,brick:feeds
+overasserted_flow_direction,high,1358,29714,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23904.0,brick:feeds
+overasserted_flow_direction,high,1360,29716,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23905.0,brick:feeds
+overasserted_flow_direction,high,1362,29718,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23906.0,brick:feeds
+overasserted_flow_direction,high,1364,29720,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23907.0,brick:feeds
+overasserted_flow_direction,high,1366,29722,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23908.0,brick:feeds
+overasserted_flow_direction,high,1368,29724,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23909.0,brick:feeds
+overasserted_flow_direction,high,1370,29726,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23910.0,brick:feeds
+overasserted_flow_direction,high,1372,29728,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23911.0,brick:feeds
+overasserted_flow_direction,high,1374,29730,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23912.0,brick:feeds
+overasserted_flow_direction,high,1376,29732,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23913.0,brick:feeds
+overasserted_flow_direction,high,1378,29734,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23914.0,brick:feeds
+overasserted_flow_direction,high,1380,29736,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23915.0,brick:feeds
+overasserted_flow_direction,high,1382,29738,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23916.0,brick:feeds
+overasserted_flow_direction,high,1384,29740,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23917.0,brick:feeds
+overasserted_flow_direction,high,1386,29742,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23918.0,brick:feeds
+overasserted_flow_direction,high,1388,29744,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23919.0,brick:feeds
+overasserted_flow_direction,high,1390,29746,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23920.0,brick:feeds
+overasserted_flow_direction,high,1392,29748,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23921.0,brick:feeds
+overasserted_flow_direction,high,1394,29750,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23922.0,brick:feeds
+overasserted_flow_direction,high,1396,29752,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23923.0,brick:feeds
+overasserted_flow_direction,high,1398,29754,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23924.0,brick:feeds
+overasserted_flow_direction,high,1400,29756,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23925.0,brick:feeds
+overasserted_flow_direction,high,1402,29758,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23926.0,brick:feeds
+overasserted_flow_direction,high,1404,29760,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23927.0,brick:feeds
+overasserted_flow_direction,high,1406,29762,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23928.0,brick:feeds
+overasserted_flow_direction,high,1408,29764,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23929.0,brick:feeds
+overasserted_flow_direction,high,1410,29766,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23930.0,brick:feeds
+overasserted_flow_direction,high,1412,29768,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23931.0,brick:feeds
+overasserted_flow_direction,high,1414,29770,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23932.0,brick:feeds
+overasserted_flow_direction,high,1416,29772,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23933.0,brick:feeds
+overasserted_flow_direction,high,1418,29774,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23934.0,brick:feeds
+overasserted_flow_direction,high,1420,29776,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23935.0,brick:feeds
+overasserted_flow_direction,high,1422,29778,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23936.0,brick:feeds
+overasserted_flow_direction,high,1424,29780,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23937.0,brick:feeds
+overasserted_flow_direction,high,1426,29782,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23938.0,brick:feeds
+overasserted_flow_direction,high,1428,29784,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23939.0,brick:feeds
+overasserted_flow_direction,high,1430,29786,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23940.0,brick:feeds
+overasserted_flow_direction,high,1432,29788,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23941.0,brick:feeds
+overasserted_flow_direction,high,1434,29790,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23942.0,brick:feeds
+overasserted_flow_direction,high,1436,29792,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23943.0,brick:feeds
+overasserted_flow_direction,high,1438,29794,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23944.0,brick:feeds
+overasserted_flow_direction,high,1440,29796,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23945.0,brick:feeds
+overasserted_flow_direction,high,1442,29798,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23946.0,brick:feeds
+overasserted_flow_direction,high,1444,29800,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23947.0,brick:feeds
+overasserted_flow_direction,high,1446,29802,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23948.0,brick:feeds
+overasserted_flow_direction,high,1448,29804,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23949.0,brick:feeds
+overasserted_flow_direction,high,1450,29806,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23950.0,brick:feeds
+overasserted_flow_direction,high,1452,29808,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23951.0,brick:feeds
+overasserted_flow_direction,high,1454,29810,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23952.0,brick:feeds
+overasserted_flow_direction,high,1456,29812,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23953.0,brick:feeds
+overasserted_flow_direction,high,1458,29814,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23954.0,brick:feeds
+overasserted_flow_direction,high,1460,29816,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23955.0,brick:feeds
+overasserted_flow_direction,high,1462,29818,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23956.0,brick:feeds
+overasserted_flow_direction,high,1464,29820,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23957.0,brick:feeds
+overasserted_flow_direction,high,1466,29822,,top:Port,,IfcRelConnectsPorts was mapped directly to brick:feeds. Use top:connectsPort unless flow direction is proven.,,,,23958.0,brick:feeds

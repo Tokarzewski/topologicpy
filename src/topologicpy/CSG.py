@@ -54,16 +54,18 @@ class CSG():
             return {}
 
         if isinstance(obj, dict):
-            d = obj.get("dictionary", None)
-            if isinstance(d, dict):
-                return dict(d)
-            # TGraph records often store useful fields at top level as well.
             out = {}
+
+            # TGraph records often store useful fields at the top level. Preserve
+            # those first, then let the nested dictionary override duplicates.
             for key, value in obj.items():
                 if key not in ["dictionary", "representation", "topology", "object"]:
                     out[key] = value
+
+            d = obj.get("dictionary", None)
             if isinstance(d, dict):
                 out.update(d)
+
             return out
 
         try:
@@ -149,7 +151,11 @@ class CSG():
             for keys in [("x", "y", "z"), ("X", "Y", "Z")]:
                 if all(k in d for k in keys):
                     try:
-                        return [round(float(d[keys[0]]), mantissa), round(float(d[keys[1]]), mantissa), round(float(d[keys[2]]), mantissa)]
+                        return [
+                            round(float(d[keys[0]]), mantissa),
+                            round(float(d[keys[1]]), mantissa),
+                            round(float(d[keys[2]]), mantissa),
+                        ]
                     except Exception:
                         pass
             coords = vertex.get("coordinates", None) or vertex.get("coords", None)
@@ -265,7 +271,7 @@ class CSG():
             return CSG._normalise_index(aid) == CSG._normalise_index(bid)
         try:
             from topologicpy.Topology import Topology
-            return bool(Topology.IsSame(a, b))
+            return bool(Topology.IsSame(CSG._vertex_representation(a), CSG._vertex_representation(b)))
         except Exception:
             return False
 
@@ -273,13 +279,45 @@ class CSG():
     def _vertex_lookup(vertices):
         """Returns a lookup dictionary for vertex ids/indices."""
         lookup = {}
-        for i, vertex in enumerate(vertices or []):
-            for value in [i, str(i), CSG._vertex_index(vertex, i)]:
-                if value is None:
-                    continue
-                value = CSG._normalise_index(value)
+
+        def _add(value, vertex, overwrite=True):
+            if value is None:
+                return
+            value = CSG._normalise_index(value)
+
+            if overwrite or value not in lookup:
                 lookup[value] = vertex
-                lookup[str(value)] = vertex
+
+            value_str = str(value)
+            if overwrite or value_str not in lookup:
+                lookup[value_str] = vertex
+
+        for i, vertex in enumerate(vertices or []):
+            # Positional indices are only fallbacks. They must not overwrite explicit
+            # graph ids stored on records or dictionaries.
+            _add(i, vertex, overwrite=False)
+            _add(str(i), vertex, overwrite=False)
+
+            if isinstance(vertex, dict):
+                # Explicit top-level identifiers.
+                for key in ["index", "id", "node_id", "vertex_id"]:
+                    _add(vertex.get(key, None), vertex, overwrite=True)
+
+                # Explicit nested dictionary identifiers.
+                d = vertex.get("dictionary", None)
+                if isinstance(d, dict):
+                    for key in ["index", "id", "node_id", "vertex_id"]:
+                        _add(d.get(key, None), vertex, overwrite=True)
+
+                # Merged dictionary view, for compatibility with _python_dictionary.
+                d_py = CSG._python_dictionary(vertex)
+                for key in ["index", "id", "node_id", "vertex_id"]:
+                    _add(d_py.get(key, None), vertex, overwrite=True)
+
+            else:
+                for key in ["index", "id", "node_id", "vertex_id"]:
+                    _add(CSG._dictionary_value(vertex, key, None), vertex, overwrite=True)
+
         return lookup
 
     @staticmethod
@@ -359,6 +397,8 @@ class CSG():
     @staticmethod
     def _graph_by_vertices_edges(vertices, edges, asTGraph: bool = False, ontology: bool = False, tolerance: float = 0.0001, silent: bool = False):
         """Constructs either a legacy Graph or a TGraph from vertices and edges."""
+        vertices = vertices or []
+        edges = edges or []
         if asTGraph:
             try:
                 from topologicpy.TGraph import TGraph
@@ -408,18 +448,58 @@ class CSG():
                 return graph
         try:
             from topologicpy.Graph import Graph
-            return Graph.AddVertex(graph, vertex, tolerance=tolerance, silent=silent)
+            result = Graph.AddVertex(graph, vertex, tolerance=tolerance, silent=silent)
+            return result if result is not None else graph
         except Exception:
             return graph
+
+    @staticmethod
+    def _operation_name(operation):
+        """Returns a canonical operation name or None if the operation is invalid."""
+        if not isinstance(operation, str):
+            return None
+        op = operation.strip().lower()
+        aliases = {
+            "union": "union",
+            "intersect": "intersection",
+            "intersection": "intersection",
+            "difference": "difference",
+            "subtract": "difference",
+            "subtraction": "difference",
+            "xor": "xor",
+            "symdif": "xor",
+            "symmetricdifference": "xor",
+            "symmetric_difference": "xor",
+            "sym": "xor",
+            "merge": "merge",
+            "impose": "impose",
+            "imprint": "imprint",
+            "slice": "slice",
+        }
+        return aliases.get(op, None)
+
+
+    @staticmethod
+    def _call_with_optional_silent(fn, *args, silent: bool = True, **kwargs):
+        """Calls a TopologicPy function with silent support when available."""
+        try:
+            return fn(*args, silent=silent, **kwargs)
+        except TypeError:
+            return fn(*args, **kwargs)
 
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _unique_coords(used_coords=[], width=10, length=10, height=10, max_attempts=1000, mantissa=6, tolerance=0.0001):
+    def _unique_coords(used_coords=None, width=10, length=10, height=10, max_attempts=1000, mantissa=6, tolerance=0.0001):
         import math
         import random
+
+        if used_coords is None:
+            used_coords = []
+
+        used_coords = [list(c) for c in used_coords if isinstance(c, (list, tuple)) and len(c) >= 3]
 
         def is_too_close(p1, p2):
             return math.dist(p1, p2) < tolerance
@@ -472,17 +552,34 @@ class CSG():
         from topologicpy.Matrix import Matrix
         from topologicpy.Topology import Topology
 
+        if graph is not None and not CSG._is_graph_like(graph):
+            if not silent:
+                print("CSG.AddTopologyVertex - Error: The input graph parameter is not a valid Graph or TGraph. Returning None.")
+            return None
+
+        if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("CSG.AddTopologyVertex - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+
         if matrix is None:
             matrix = Matrix.Identity()
+
         used_coords = []
         if graph is not None:
             used_coords = [c for c in [CSG._coordinates(v, mantissa=mantissa) for v in CSG._vertices(graph, asTopologic=False)] if c is not None]
+
         loc = CSG._unique_coords(used_coords=used_coords, width=10, length=10, height=10, max_attempts=1000, mantissa=mantissa, tolerance=tolerance)
-        v = Vertex.ByCoordinates(loc)
+        try:
+            v = Vertex.ByCoordinates(loc)
+        except TypeError:
+            v = Vertex.ByCoordinates(loc[0], loc[1], loc[2])
+
+        brep = CSG._call_with_optional_silent(Topology.BREPString, topology, silent=True)
         keys = ["brep", "brepType", "brepTypeString", "matrix", "type", "id"]
-        values = [Topology.BREPString(topology), Topology.Type(topology), Topology.TypeAsString(topology), matrix, "topology", Topology.UUID(v)]
+        values = [brep, Topology.Type(topology), Topology.TypeAsString(topology), matrix, "topology", Topology.UUID(v)]
         d = Dictionary.ByKeysValues(keys, values)
-        v = Topology.SetDictionary(v, d)
+        v = Topology.SetDictionary(v, d, silent=True)
 
         if graph is not None:
             _ = CSG._add_vertex(graph, v, tolerance=tolerance, silent=silent)
@@ -499,7 +596,7 @@ class CSG():
             The input CSG graph.
         operation : str
             The operation to perform. Options include "union", "difference",
-            "intersection", "xor", "merge", "impose", "imprint", and "slice".
+            "intersection", "intersect", "xor", "symdif", "merge", "impose", "imprint", and "slice".
         a : topologic_core.Vertex or dict
             The first input vertex. For ordered operations, this is operand A.
         b : topologic_core.Vertex or dict
@@ -524,18 +621,38 @@ class CSG():
         from topologicpy.Dictionary import Dictionary
         from topologicpy.Topology import Topology
 
+        if graph is not None and not CSG._is_graph_like(graph):
+            if not silent:
+                print("CSG.AddOperationVertex - Error: The input graph parameter is not a valid Graph or TGraph. Returning None.")
+            return None
+
+        operation = CSG._operation_name(operation)
+        if operation is None:
+            if not silent:
+                print("CSG.AddOperationVertex - Error: The input operation parameter is not recognized. Returning None.")
+            return None
+
+        a_id = CSG._dictionary_value(a, "id", None)
+        b_id = CSG._dictionary_value(b, "id", None)
+        if a_id is None or b_id is None:
+            if not silent:
+                print("CSG.AddOperationVertex - Error: Could not find valid ids for the input operand vertices. Returning None.")
+            return None
+
         used_coords = []
         if graph is not None:
             used_coords = [c for c in [CSG._coordinates(v, mantissa=mantissa) for v in CSG._vertices(graph, asTopologic=False)] if c is not None]
+
         loc = CSG._unique_coords(used_coords=used_coords, width=10, length=10, height=10, max_attempts=1000, mantissa=mantissa, tolerance=tolerance)
-        v = Vertex.ByCoordinates(loc)
-        a_id = CSG._dictionary_value(a, "id", None)
-        b_id = CSG._dictionary_value(b, "id", None)
+        try:
+            v = Vertex.ByCoordinates(loc)
+        except TypeError:
+            v = Vertex.ByCoordinates(loc[0], loc[1], loc[2])
 
         keys = ["brep", "brepType", "brepTypeString", "matrix", "type", "id", "operation", "a_id", "b_id"]
         values = [None, None, None, matrix, "operation", Topology.UUID(v), operation, a_id, b_id]
         d = Dictionary.ByKeysValues(keys, values)
-        v = Topology.SetDictionary(v, d)
+        v = Topology.SetDictionary(v, d, silent=True)
 
         if graph is not None:
             _ = CSG._add_vertex(graph, v, tolerance=tolerance, silent=silent)
@@ -583,7 +700,15 @@ class CSG():
                 print("CSG.Connect - Error: The input vertexB parameter is not a valid vertex. Returning None.")
             return None
 
-        edge = Edge.ByVertices(va, vb, tolerance=tolerance, silent=silent)
+        try:
+            edge = Edge.ByVertices(va, vb, tolerance=tolerance, silent=silent)
+        except TypeError:
+            edge = Edge.ByVertices([va, vb], tolerance=tolerance, silent=silent)
+
+        if edge is None:
+            if not silent:
+                print("CSG.Connect - Error: Could not create an edge between the input vertices. Returning None.")
+            return None
 
         # Store src/dst ids for TGraph and for robust endpoint recovery.
         a_id = CSG._dictionary_value(vertexA, "id", CSG._dictionary_value(va, "id", None))
@@ -660,74 +785,116 @@ class CSG():
                 print("CSG.Invoke - Error: The input graph parameter is not a valid Graph or TGraph. Returning None.")
             return None
         
+        visited = set()
+
         def traverse(vertex):
+            key = CSG._dictionary_value(vertex, "id", None)
+            if key is None:
+                key = id(vertex)
+            if key in visited:
+                if not silent:
+                    print("CSG.Invoke - Error: Cycle detected in CSG graph. Returning None.")
+                return None
+            visited.add(key)
+
             d_py = CSG._python_dictionary(vertex)
             node_type = d_py.get("type", None)
 
             if node_type == "topology":
-                topology = Topology.ByBREPString(d_py.get("brep", None))
+                brep = d_py.get("brep", None)
+                if brep in [None, ""]:
+                    if not silent:
+                        print("CSG.Invoke - Error: Topology node is missing BREP data. Returning None.")
+                    visited.remove(key)
+                    return None
+                topology = CSG._call_with_optional_silent(Topology.ByBREPString, brep, silent=True)
+                if topology is None:
+                    if not silent:
+                        print("CSG.Invoke - Error: Could not reconstruct topology from BREP. Returning None.")
+                    visited.remove(key)
+                    return None
                 matrix = d_py.get("matrix", None)
                 if matrix is not None:
-                    topology = Topology.Transform(topology, matrix)
+                    topology = CSG._call_with_optional_silent(Topology.Transform, topology, matrix, silent=True)
                 try:
                     d = Dictionary.ByPythonDictionary(d_py)
                     topology = Topology.SetDictionary(topology, d, silent=True)
                 except Exception:
                     pass
+                visited.remove(key)
                 return topology
 
             elif node_type == "operation":
-                op = d_py.get("operation", None)
+                op = CSG._operation_name(d_py.get("operation", None))
+                if op is None:
+                    if not silent:
+                        print(f"CSG.Invoke - Error: Unknown operation '{d_py.get('operation', None)}'. Returning None.")
+                    visited.remove(key)
+                    return None
+
                 a_id = d_py.get("a_id", None)
+                b_id = d_py.get("b_id", None)
 
                 children = CSG._incoming_vertices(graph, vertex, directed=True)
                 if len(children) != 2:
                     if not silent:
                         print(f"CSG.Invoke - Error: Operation '{op}' must have exactly 2 children. Returning None.")
+                    visited.remove(key)
                     return None
                 
-                child_0 = children[0]
-                child_1 = children[1]
-                child_0_id = CSG._dictionary_value(child_0, "id", None)
-                if child_0_id != a_id:
-                    child_0 = children[1]
-                    child_1 = children[0]
+                child_a = None
+                child_b = None
+                for child in children:
+                    child_id = CSG._dictionary_value(child, "id", None)
+                    if child_id == a_id:
+                        child_a = child
+                    elif child_id == b_id:
+                        child_b = child
 
-                a = traverse(child_0)
-                b = traverse(child_1)
+                # Fall back to original order when ids are incomplete or one child
+                # cannot be resolved. This preserves older graph behaviour while
+                # making id-aware graphs deterministic.
+                if child_a is None or child_b is None:
+                    child_a = children[0]
+                    child_b = children[1]
+
+                a = traverse(child_a)
+                b = traverse(child_b)
                 if a is None or b is None:
+                    visited.remove(key)
                     return None
 
-                op_l = str(op or "").lower()
-                if op_l == "union":
+                if op == "union":
                     result = Topology.Union(a, b, silent=silent)
-                elif op_l == "intersection":
+                elif op == "intersection":
                     result = Topology.Intersect(a, b, silent=silent)
-                elif op_l == "difference":
+                elif op == "difference":
                     result = Topology.Difference(a, b, silent=silent)
-                elif op_l == "xor" or "sym" in op_l:
-                    try:
+                elif op == "xor":
+                    if hasattr(Topology, "SymmetricDifference"):
                         result = Topology.SymmetricDifference(a, b, silent=silent)
-                    except AttributeError:
-                        result = Topology.SymmeticDifference(a, b, silent=silent)
-                elif op_l == "merge":
+                    else:
+                        result = Topology.SymDif(a, b, silent=silent)
+                elif op == "merge":
                     result = Topology.Merge(a, b, silent=silent)
-                elif op_l == "impose":
+                elif op == "impose":
                     result = Topology.Impose(a, b, silent=silent)
-                elif op_l == "imprint":
+                elif op == "imprint":
                     result = Topology.Imprint(a, b, silent=silent)
-                elif op_l == "slice":
+                elif op == "slice":
                     result = Topology.Slice(a, b, silent=silent)
                 else:
                     if not silent:
                         print(f"CSG.Invoke - Error: Unknown operation '{op}'. Returning None.")
+                    visited.remove(key)
                     return None
 
                 if result is None:
+                    visited.remove(key)
                     return None
 
                 update = {
-                    "brep": Topology.BREPString(result),
+                    "brep": CSG._call_with_optional_silent(Topology.BREPString, result, silent=True),
                     "brepType": Topology.Type(result),
                     "brepTypeString": Topology.TypeAsString(result),
                 }
@@ -735,16 +902,18 @@ class CSG():
                 d_py.update(update)
                 matrix = d_py.get("matrix", None)
                 if matrix is not None:
-                    result = Topology.Transform(result, matrix)
+                    result = CSG._call_with_optional_silent(Topology.Transform, result, matrix, silent=True)
                 try:
                     d = Dictionary.ByPythonDictionary(d_py)
                     result = Topology.SetDictionary(result, d, silent=True)
                 except Exception:
                     pass
+                visited.remove(key)
                 return result
             else:
                 if not silent:
                     print(f"CSG.Invoke - Error: Unknown node type '{node_type}'. Returning None.")
+                visited.remove(key)
                 return None
 
         roots = [v for v in CSG._vertices(graph, asTopologic=False) if not CSG._outgoing_vertices(graph, v, directed=True)]
@@ -788,21 +957,33 @@ class CSG():
                 print("CSG.Topologies - Error: The input graph parameter is not a valid Graph or TGraph. Returning None.")
             return None
 
+        try:
+            scale = float(scale)
+        except Exception:
+            if not silent:
+                print("CSG.Topologies - Error: The input scale parameter is not numeric. Returning None.")
+            return None
+
         placed_topologies = []
         for vertex in CSG._vertices(graph, asTopologic=False):
             brep = CSG._dictionary_value(vertex, "brep", None)
             if brep in [None, ""]:
                 continue
-            geom = Topology.ByBREPString(brep)
+            geom = CSG._call_with_optional_silent(Topology.ByBREPString, brep, silent=True)
             if geom is None:
                 continue
-            originA = Topology.Centroid(geom)
-            geom = Topology.Scale(geom, origin=originA, x=scale, y=scale, z=scale)
+            originA = CSG._call_with_optional_silent(Topology.Centroid, geom, silent=True)
+            if originA is None:
+                continue
+            geom = CSG._call_with_optional_silent(Topology.Scale, geom, origin=originA, x=scale, y=scale, z=scale, silent=True)
             originB = CSG._vertex_representation(vertex)
             if originB is None:
                 continue
-            placed = Topology.Place(geom, originA, originB)
-            placed = Topology.Translate(placed, x=xOffset, y=yOffset, z=zOffset)
-            placed_topologies.append(placed)
+            placed = CSG._call_with_optional_silent(Topology.Place, geom, originA, originB, silent=True)
+            if placed is None:
+                continue
+            placed = CSG._call_with_optional_silent(Topology.Translate, placed, x=xOffset, y=yOffset, z=zOffset, silent=True)
+            if placed is not None:
+                placed_topologies.append(placed)
 
         return placed_topologies

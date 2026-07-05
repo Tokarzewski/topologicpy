@@ -16,12 +16,115 @@
 
 from __future__ import annotations
 
-import plotly.colors
 import math
+import numbers
+import os
+import re
+import warnings
+
+import plotly.colors
+
 
 class Color:
+    @staticmethod
+    def _flatten(items):
+        """Internal: flattens nested lists/tuples."""
+        result = []
+        for item in items:
+            if isinstance(item, (list, tuple)):
+                result.extend(Color._flatten(item))
+            else:
+                result.append(item)
+        return result
 
-    def AddHex(*colors):
+    @staticmethod
+    def _is_real(value) -> bool:
+        return isinstance(value, numbers.Real) and not isinstance(value, bool) and math.isfinite(float(value))
+
+    @staticmethod
+    def _valid_alpha(alpha) -> bool:
+        return alpha is None or (Color._is_real(alpha) and 0.0 <= float(alpha) <= 1.0)
+
+    @staticmethod
+    def _valid_hex(value: str) -> bool:
+        if not isinstance(value, str):
+            return False
+        value = value.strip().lstrip("#")
+        return len(value) == 6 and re.fullmatch(r"[0-9a-fA-F]{6}", value) is not None
+
+    @staticmethod
+    def _normalize_hex(value: str):
+        if not Color._valid_hex(value):
+            return None
+        return "#" + value.strip().lstrip("#").upper()
+
+    @staticmethod
+    def _rgb_channels(rgb):
+        if not isinstance(rgb, (list, tuple)) or len(rgb) < 3:
+            return None
+        channels = []
+        for value in rgb[:3]:
+            if not Color._is_real(value):
+                return None
+            value = int(round(float(value)))
+            if not 0 <= value <= 255:
+                return None
+            channels.append(value)
+        return channels
+
+    @staticmethod
+    def _cmyk_channels(cmyk):
+        if not isinstance(cmyk, (list, tuple)) or len(cmyk) != 4:
+            return None
+        channels = []
+        for value in cmyk:
+            if not Color._is_real(value):
+                return None
+            value = float(value)
+            if not 0.0 <= value <= 1.0:
+                return None
+            channels.append(value)
+        return channels
+
+    @staticmethod
+    def _import_webcolors(caller_name: str):
+        try:
+            import webcolors
+            return webcolors
+        except Exception:
+            print(f"Color.{caller_name} - Information: Installing required webcolors library.")
+            try:
+                os.system("pip install webcolors")
+            except Exception:
+                os.system("pip install webcolors --user")
+            try:
+                import webcolors
+                print(f"Color.{caller_name} - Information: webcolors library installed correctly.")
+                return webcolors
+            except Exception:
+                warnings.warn(
+                    f"Color.{caller_name} - Error: Could not import webcolors library. Please manually install webcolors. Returning None."
+                )
+                return None
+
+    @staticmethod
+    def _css_color_names(webcolors):
+        try:
+            return list(webcolors.names("css3"))
+        except Exception:
+            pass
+        try:
+            return list(webcolors.CSS3_NAMES_TO_HEX.keys())
+        except Exception:
+            pass
+        try:
+            return list(webcolors.CSS3_HEX_TO_NAMES.values())
+        except Exception:
+            pass
+        return Color.CSSNamedColors()
+
+    @staticmethod
+    def AddHex(*colors, silent: bool = False):
         """
         Adds the input hexadecimal color codes channel-wise, clipping each channel to a max of 255.
 
@@ -29,146 +132,117 @@ class Color:
         ----------
         colors : *list or str
             The input list of hexadecimal colors.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         str
-            The resulting hex color after addition (e.g., '#FF88FF').
+            The resulting hex color after addition (e.g. '#FF88FF').
         """
-        import inspect
-        from topologicpy.Helper import Helper
-        
-        def add(hex1, hex2):
-            # Remove "#" if present
-            hex1 = hex1.lstrip('#')
-            hex2 = hex2.lstrip('#')
+        color_list = Color._flatten(list(colors))
+        color_list = [Color.AnyToHex(c) for c in color_list]
+        color_list = [c for c in color_list if Color._valid_hex(c)]
 
-            # Convert to RGB integers
-            r1, g1, b1 = int(hex1[0:2], 16), int(hex1[2:4], 16), int(hex1[4:6], 16)
-            r2, g2, b2 = int(hex2[0:2], 16), int(hex2[2:4], 16), int(hex2[4:6], 16)
+        if len(color_list) == 0:
+            if not silent:
+                print("Color.AddHex - Error: The input colors parameter does not contain any valid colors. Returning None.")
+            return None
 
-            # Add each channel, clip to 255
-            r = min(r1 + r2, 255)
-            g = min(g1 + g2, 255)
-            b = min(b1 + b2, 255)
+        r = g = b = 0
+        for hex_color in color_list:
+            hex_color = hex_color.lstrip("#")
+            r = min(r + int(hex_color[0:2], 16), 255)
+            g = min(g + int(hex_color[2:4], 16), 255)
+            b = min(b + int(hex_color[4:6], 16), 255)
 
-            # Return as hex string
-            return f"#{r:02X}{g:02X}{b:02X}"
+        return f"#{r:02X}{g:02X}{b:02X}"
 
     @staticmethod
-    def AnyToHex(color):
+    def AnyToHex(color, silent: bool = False):
         """
         Converts a color to a hexadecimal color string.
 
         Parameters
         ----------
         color : list or str
-            The input color parameter which can be any of RGB, CMYK, CSS Named Color, or Hex
+            The input color parameter which can be any of RGB, CMYK, CSS named color, or HEX.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         str
             A hexadecimal color string in the format '#RRGGBB'.
         """
-        return_hex = None
         if isinstance(color, list) and all(isinstance(item, str) for item in color):
-            return Color.Average(color)
-        if isinstance(color, list):
-            if len(color) == 4: # Probably CMYK
-                if all(0 <= x <= 1 for x in color[:4]):
-                    return_hex = Color.CMYKToHex(color[:4])
+            return Color.Average(color, silent=silent)
+
+        if isinstance(color, (list, tuple)):
+            if len(color) == 4:
+                cmyk = Color._cmyk_channels(color)
+                if cmyk is not None:
+                    return Color.CMYKToHex(cmyk, silent=silent).upper()
             elif len(color) == 3:
-                if all(0 <= x <= 255 for x in color[:3]):
-                    return_hex = Color.RGBToHex(color[:3])
-        elif isinstance(color, str): # Probably a CSSColor
-            if color.lower() in [x.lower() for x in Color.CSSNamedColors()]:
-                rgb = Color.ByCSSNamedColor(color.lower())
-                return_hex = Color.RGBToHex(rgb)
-            else: # Probably already a HEX or other Plotly-compatible string
-                return_hex = color
+                rgb = Color._rgb_channels(color)
+                if rgb is not None:
+                    return Color.RGBToHex(rgb, silent=silent)
 
-        if not isinstance(return_hex, str):
+        elif isinstance(color, str):
+            value = color.strip()
+            normalized = Color._normalize_hex(value)
+            if normalized is not None:
+                return normalized
+
+            if value.lower() in [x.lower() for x in Color.CSSNamedColors()]:
+                rgb = Color.ByCSSNamedColor(value.lower(), silent=silent)
+                return Color.RGBToHex(rgb, silent=silent) if rgb else None
+
+        if not silent:
             print("Color.AnyToHex - Error: Could not recognize the input parameter. Returning None.")
-            return None
+        return None
 
-        return return_hex.upper()
-    
     @staticmethod
     def Average(*colors, silent: bool = False):
         """
-        Averages the input list of hex colors.
+        Averages the input list of colors after conversion to HEX.
 
         Parameters
         ----------
         colors : *list or str
-            The input color parameter which can be any of RGB, CMYK, CSS Named Color, or Hex
+            The input color parameter which can be any of RGB, CMYK, CSS named color, or HEX.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         str
             A hexadecimal color string in the format '#RRGGBB'.
         """
-        from topologicpy.Helper import Helper
-        import inspect
+        color_list = Color._flatten(list(colors))
+        color_list = [Color.AnyToHex(c, silent=True) for c in color_list]
+        color_list = [c for c in color_list if Color._valid_hex(c)]
 
-        def avg(hex1, hex2):
-            # Remove leading "#" if present
-            hex1 = hex1.lstrip('#')
-            hex2 = hex2.lstrip('#')
-
-            # Convert to RGB components
-            r1, g1, b1 = int(hex1[0:2], 16), int(hex1[2:4], 16), int(hex1[4:6], 16)
-            r2, g2, b2 = int(hex2[0:2], 16), int(hex2[2:4], 16), int(hex2[4:6], 16)
-
-            # Compute average for each channel
-            r_avg = (r1 + r2) // 2
-            g_avg = (g1 + g2) // 2
-            b_avg = (b1 + b2) // 2
-
-            # Return as hex string
-            return f"#{r_avg:02X}{g_avg:02X}{b_avg:02X}"
-        
-        if len(colors) == 0:
+        if len(color_list) == 0:
             if not silent:
-                print("Color.AverageColors - Error: The input colors parameter is an empty list. Returning None.")
-                curframe = inspect.currentframe()
-                calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
+                print("Color.Average - Error: The input colors parameter does not contain any valid colors. Returning None.")
             return None
-        if len(colors) == 1:
-            colorList = colors[0]
-            if isinstance(colorList, list):
-                if len(colorList) == 0:
-                    if not silent:
-                        print("Color.AverageHex - Error: The input colors parameter is an empty list. Returning None.")
-                        curframe = inspect.currentframe()
-                        calframe = inspect.getouterframes(curframe, 2)
-                        print('caller name:', calframe[1][3])
-                    return None
-            else:
-                if not silent:
-                    print("Color.AverageHex - Warning: The input colors parameter contains only one color. Returning the same topology.")
-                    curframe = inspect.currentframe()
-                    calframe = inspect.getouterframes(curframe, 2)
-                    print('caller name:', calframe[1][3])
-                return colorList
-        else:
-            colorList = Helper.Flatten(list(colors))
-            colorList = [x for x in colorList if isinstance(x, str)]
-        if len(colorList) == 0:
-            if not silent:
-                print("Color.AverageHex - Error: The input parameters do not contain any valid colors. Returning None.")
-                curframe = inspect.currentframe()
-                calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
-            return None
-        final_color = Color.AnyToHex(colorList[0])
-        for clr in colorList[1:]:
-            final_color = avg(final_color, Color.AnyToHex(clr))
-        return final_color
+
+        r_total = g_total = b_total = 0
+        for hex_color in color_list:
+            hex_color = hex_color.lstrip("#")
+            r_total += int(hex_color[0:2], 16)
+            g_total += int(hex_color[2:4], 16)
+            b_total += int(hex_color[4:6], 16)
+
+        n = len(color_list)
+        r = int(round(r_total / n))
+        g = int(round(g_total / n))
+        b = int(round(b_total / n))
+        return f"#{r:02X}{g:02X}{b:02X}"
 
     @staticmethod
-    def ByCSSNamedColor(color, alpha: float = None):
+    def ByCSSNamedColor(color, alpha: float = None, silent: bool = False):
         """
         Creates a Color from a CSS named color string. See https://developer.mozilla.org/en-US/docs/Web/CSS/named-color
 
@@ -177,47 +251,41 @@ class Color:
         color : str
             A CSS named color.
         alpha : float , optional
-            THe desired alpha (transparency value). Default is None which means no alpha value will be included in the returned list.
+            The desired alpha (transparency value). Default is None which means no alpha value will be included in the returned list.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         list
             The color expressed as an [r, g, b] or an [r, g, b, a] list.
         """
-        import warnings
-        import os
-        try:
-            import webcolors
-        except:
-            print("Color.ByCSSNamedColor - Information: Installing required webcolors library.")
-            try:
-                os.system("pip install webcolors")
-            except:
-                os.system("pip install webcolors --user")
-            try:
-                import webcolors
-                print("Color.ByCSSNamedColor - Information: webcolors library installed correctly.")
-            except:
-                warnings.warn("Color.ByCSSNamedColor - Error: Could not import webcolors library. Please manually install webcolors. Returning None.")
-                return None
-
-        if not alpha == None:
-            if not 0.0 <= alpha <= 1.0:
-                print("Color.ByCSSNamedColor - Error: alpha is not within the valid range of 0 to 1. Returning None.")
-                return None
-        try:
-            # Get RGB values from the named CSS color
-            rgbList = list(webcolors.name_to_rgb(color))
-            if not alpha == None:
-                rgbList.append(alpha)
-            return rgbList
-
-        except ValueError:
-            print(f"Color.ByCSSNamedColor - Error: '{color}' is not a valid named CSS color. Returning None.")
+        webcolors = Color._import_webcolors("ByCSSNamedColor")
+        if webcolors is None:
             return None
-    
+
+        if not isinstance(color, str):
+            if not silent:
+                print("Color.ByCSSNamedColor - Error: The input color parameter is not a valid string. Returning None.")
+            return None
+
+        if not Color._valid_alpha(alpha):
+            if not silent:
+                print("Color.ByCSSNamedColor - Error: alpha is not within the valid range of 0 to 1. Returning None.")
+            return None
+
+        try:
+            rgb_list = list(webcolors.name_to_rgb(color.strip().lower()))
+            if alpha is not None:
+                rgb_list.append(float(alpha))
+            return rgb_list
+        except Exception:
+            if not silent:
+                print(f"Color.ByCSSNamedColor - Error: '{color}' is not a valid named CSS color. Returning None.")
+            return None
+
     @staticmethod
-    def ByHEX(hex: str, alpha: float = None):
+    def ByHEX(hex: str, alpha: float = None, silent: bool = False):
         """
         Converts a hexadecimal color string to RGB color values.
 
@@ -226,299 +294,256 @@ class Color:
         hex : str
             A hexadecimal color string in the format '#RRGGBB'.
         alpha : float , optional
-            The transparency value. 0.0 means the color is fully transparent, 1.0 means the color is fully opaque. Default is None
-            which means no transparency value will be included in the returned color.
-        
+            The transparency value. 0.0 means the color is fully transparent, 1.0 means the color is fully opaque. Default is None.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
         Returns
         -------
         list
             The color expressed as an [r, g, b] or an [r, g, b, a] list.
-
         """
         if not isinstance(hex, str):
-            print("Color.HEXtoRGB - Error: The input hex parameter is not a valid string. Returning None.")
+            if not silent:
+                print("Color.ByHEX - Error: The input hex parameter is not a valid string. Returning None.")
             return None
-        if not alpha == None:
-            if not 0.0 <= alpha <= 1.0:
+
+        if not Color._valid_alpha(alpha):
+            if not silent:
                 print("Color.ByHEX - Error: alpha is not within the valid range of 0 to 1. Returning None.")
-                return None
-        hex = hex.lstrip('#')
-        if len(hex) != 6:
-            print("Color.HEXtoRGB - Error: Invalid hexadecimal color format. It should be a 6-digit hex value. Returning None.")
             return None
-        r = int(hex[0:2], 16)
-        g = int(hex[2:4], 16)
-        b = int(hex[4:6], 16)
-        rgbList = [r, g, b]
-        if not alpha == None:
-            rgbList.append(alpha)
-        return rgbList
+
+        normalized = Color._normalize_hex(hex)
+        if normalized is None:
+            if not silent:
+                print("Color.ByHEX - Error: Invalid hexadecimal color format. It should be a 6-digit hex value. Returning None.")
+            return None
+
+        value = normalized.lstrip("#")
+        rgb_list = [int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)]
+        if alpha is not None:
+            rgb_list.append(float(alpha))
+        return rgb_list
 
     @staticmethod
-    def ByValueInRange(value: float = 0.5, minValue: float = 0.0, maxValue: float = 1.0, alpha: float = None, colorScale="viridis"):
+    def ByValueInRange(value: float = 0.5,
+                       minValue: float = 0.0,
+                       maxValue: float = 1.0,
+                       alpha: float = None,
+                       colorScale="viridis",
+                       silent: bool = False):
         """
-        Returns the r, g, b, (and optionally) a list of numbers representing the red, green, blue and alpha color elements.
-        
+        Returns the r, g, b, and optionally a, values corresponding to a value in a range.
+
         Parameters
         ----------
         value : float , optional
             The input value. Default is 0.5.
         minValue : float , optional
-            the input minimum value. Default is 0.0.
+            The input minimum value. Default is 0.0.
         maxValue : float , optional
             The input maximum value. Default is 1.0.
         alpha : float , optional
-            The alpha (transparency) value. 0.0 means the color is fully transparent, 1.0 means the color is fully opaque. Default is 1.0.
-        useAlpha : bool , optional
-            If set to True, the returns list includes the alpha value as a fourth element in the list.
+            The alpha value. Default is None.
         colorScale : str , optional
-            The desired type of plotly color scales to use (e.g. 'Viridis', 'Plasma'). Default is 'Viridis'. For a full list of names, see https://plotly.com/python/builtin-colorscales/.
+            The Plotly color scale name, or 'default'. Default is 'viridis'.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         list
             The color expressed as an [r, g, b] or an [r, g, b, a] list.
-
         """
-        if not alpha == None:
-            if not 0.0 <= alpha <= 1.0:
+        if not Color._is_real(value):
+            if not silent:
+                print("Color.ByValueInRange - Error: value is not a valid number. Returning None.")
+            return None
+        if not Color._is_real(minValue):
+            if not silent:
+                print("Color.ByValueInRange - Error: minValue is not a valid number. Returning None.")
+            return None
+        if not Color._is_real(maxValue):
+            if not silent:
+                print("Color.ByValueInRange - Error: maxValue is not a valid number. Returning None.")
+            return None
+        if not Color._valid_alpha(alpha):
+            if not silent:
                 print("Color.ByValueInRange - Error: alpha is not within the valid range of 0 to 1. Returning None.")
-                return None
-        # Code based on: https://stackoverflow.com/questions/62710057/access-color-from-plotly-color-scale
+            return None
 
-        def hex_to_rgb(value):
-            value = str(value)
-            value = value.lstrip('#')
-            lv = len(value)
-            returnValue = tuple(int(value[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
-            return str(returnValue)
+        value = float(value)
+        minValue = float(minValue)
+        maxValue = float(maxValue)
+        if minValue > maxValue:
+            minValue, maxValue = maxValue, minValue
 
-        def get_color(colorscale_name, loc):
-            from _plotly_utils.basevalidators import ColorscaleValidator
-            # first parameter: Name of the property being validated
-            # second parameter: a string, doesn't really matter in our use case
-            cv = ColorscaleValidator("colorscale", "")
-            # colorscale will be a list of lists: [[loc1, "rgb1"], [loc2, "rgb2"], ...] 
-            colorscale = cv.validate_coerce(colorscale_name)
-            if hasattr(loc, "__iter__"):
-                return [get_continuous_color(colorscale, x) for x in loc]
-            color = get_continuous_color(colorscale, loc)
-            color = color.replace("rgb", "")
-            color = color.replace("(", "")
-            color = color.replace(")", "")
-            color = color.split(",")
-            final_colors = []
-            for c in color:
-                final_colors.append(math.floor(float(c)))
-            return final_colors
+        value = max(min(value, maxValue), minValue)
+        ratio = (value - minValue) / (maxValue - minValue) if maxValue != minValue else 0.0
 
-        def get_continuous_color(colorscale, intermed):
-            """
-            Plotly continuous colorscales assign colors to the range [0, 1]. This function computes the intermediate
-            color for any value in that range.
+        def _default_color(ratio_value):
+            ratio_value = max(0.0, min(float(ratio_value), 1.0))
+            if 0.0 <= ratio_value <= 0.25:
+                r, g, b = 0.0, 4.0 * ratio_value, 1.0
+            elif ratio_value <= 0.5:
+                r, g, b = 0.0, 1.0, 1.0 - 4.0 * (ratio_value - 0.25)
+            elif ratio_value <= 0.75:
+                r, g, b = 4.0 * (ratio_value - 0.5), 1.0, 0.0
+            else:
+                r, g, b = 1.0, 1.0 - 4.0 * (ratio_value - 0.75), 0.0
+            return [int(round(255 * max(min(r, 1.0), 0.0))),
+                    int(round(255 * max(min(g, 1.0), 0.0))),
+                    int(round(255 * max(min(b, 1.0), 0.0)))]
 
-            Plotly doesn't make the colorscales directly accessible in a common format.
-            Some are ready to use:
-            
-                colorscale = plotly.colors.PLOTLY_SCALES["Greens"]
+        def _hex_to_rgb_string(value):
+            rgb = Color.ByHEX(value, silent=True)
+            return f"rgb({rgb[0]}, {rgb[1]}, {rgb[2]})"
 
-            Others are just swatches that need to be constructed into a colorscale:
-
-                viridis_colors, scale = plotly.colors.convert_colors_to_same_type(plotly.colors.sequential.Viridis)
-                colorscale = plotly.colors.make_colorscale(viridis_colors, scale=scale)
-
-            :param colorscale: A plotly continuous colorscale defined with RGB string colors.
-            :param intermed: value in the range [0, 1]
-            :return: color in rgb string format
-            :rtype: str
-            """
-
+        def _continuous_color(colorscale, intermed):
             if len(colorscale) < 1:
                 raise ValueError("colorscale must have at least one color")
             if intermed <= 0 or len(colorscale) == 1:
                 c = colorscale[0][1]
-                return c if c[0] != "#" else hex_to_rgb(c)
+                return c if not str(c).startswith("#") else _hex_to_rgb_string(c)
             if intermed >= 1:
                 c = colorscale[-1][1]
-                return c if c[0] != "#" else hex_to_rgb(c)
+                return c if not str(c).startswith("#") else _hex_to_rgb_string(c)
+
+            low_cutoff, low_color = colorscale[0]
+            high_cutoff, high_color = colorscale[-1]
             for cutoff, color in colorscale:
                 if intermed > cutoff:
                     low_cutoff, low_color = cutoff, color
                 else:
                     high_cutoff, high_color = cutoff, color
                     break
-            if (low_color[0] == "#") or (high_color[0] == "#"):
-                # some color scale names (such as cividis) returns:
-                # [[loc1, "hex1"], [loc2, "hex2"], ...]
-                low_color = hex_to_rgb(low_color)
-                high_color = hex_to_rgb(high_color)
+
+            if str(low_color).startswith("#"):
+                low_color = _hex_to_rgb_string(low_color)
+            if str(high_color).startswith("#"):
+                high_color = _hex_to_rgb_string(high_color)
+
+            local_t = (intermed - low_cutoff) / (high_cutoff - low_cutoff) if high_cutoff != low_cutoff else 0.0
             return plotly.colors.find_intermediate_color(
                 lowcolor=low_color,
                 highcolor=high_color,
-                intermed=((intermed - low_cutoff) / (high_cutoff - low_cutoff)),
+                intermed=local_t,
                 colortype="rgb",
             )
-        
-        def get_color_default(ratio):
-            r = 0.0
-            g = 0.0
-            b = 0.0
 
-            finalRatio = ratio;
-            if (finalRatio < 0.0):
-                finalRatio = 0.0
-            elif(finalRatio > 1.0):
-                finalRatio = 1.0
-
-            if (finalRatio >= 0.0 and finalRatio <= 0.25):
-                r = 0.0
-                g = 4.0 * finalRatio
-                b = 1.0
-            elif (finalRatio > 0.25 and finalRatio <= 0.5):
-                r = 0.0
-                g = 1.0
-                b = 1.0 - 4.0 * (finalRatio - 0.25)
-            elif (finalRatio > 0.5 and finalRatio <= 0.75):
-                r = 4.0*(finalRatio - 0.5);
-                g = 1.0
-                b = 0.0
-            else:
-                r = 1.0
-                g = 1.0 - 4.0 * (finalRatio - 0.75)
-                b = 0.0
-
-            rcom =  (max(min(r, 1.0), 0.0))
-            gcom =  (max(min(g, 1.0), 0.0))
-            bcom =  (max(min(b, 1.0), 0.0))
-
-            return [rcom,gcom,bcom]
-        
-        if minValue > maxValue:
-            temp = minValue;
-            maxValue = minValue
-            maxValue = temp
-
-        val = value
-        val = max(min(val,maxValue), minValue) # bracket value to the min and max values
-        if (maxValue - minValue) != 0:
-            val = (val - minValue)/(maxValue - minValue)
+        if not colorScale or str(colorScale).lower() == "default":
+            rgb_list = _default_color(ratio)
         else:
-            val = 0
-        if not colorScale or colorScale.lower() == "default":
-            rgbList = get_color_default(val)
-        else:
-            rgbList = get_color(colorScale, val)
-        if not alpha == None:
-            rgbList.append(alpha)
-        return rgbList
-    
+            try:
+                from _plotly_utils.basevalidators import ColorscaleValidator
+                cv = ColorscaleValidator("colorscale", "")
+                colorscale = cv.validate_coerce(colorScale)
+                color_string = _continuous_color(colorscale, ratio)
+                color_string = color_string.replace("rgba", "").replace("rgb", "")
+                color_string = color_string.replace("(", "").replace(")", "")
+                parts = [p.strip() for p in color_string.split(",")]
+                rgb_list = [int(math.floor(float(parts[i]))) for i in range(3)]
+                rgb_list = [max(0, min(255, c)) for c in rgb_list]
+            except Exception:
+                if not silent:
+                    print("Color.ByValueInRange - Error: Could not process the input colorScale. Returning None.")
+                return None
+
+        if alpha is not None:
+            rgb_list.append(float(alpha))
+        return rgb_list
+
     @staticmethod
-    def CMYKToHex(cmyk):
+    def CMYKToHex(cmyk, silent: bool = False):
         """
-        Convert a CMYK color (list of 4 values) to its hexadecimal representation.
-        
+        Converts a CMYK color to its hexadecimal representation.
+
         Parameters
         ----------
-        color : list
-            cmyk (list or tuple): CMYK color values as [C, M, Y, K], each in the range 0 to 1.
+        cmyk : list or tuple
+            CMYK values as [C, M, Y, K], each in the range 0 to 1.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
-        str: The hexadecimal color string for Plotly (e.g., '#FFFFFF').
+        str
+            The hexadecimal color string for Plotly (e.g., '#FFFFFF').
         """
-        c, m, y, k = cmyk
-        
-        # Convert CMYK to RGB
-        r = 255 * (1 - c) * (1 - k)
-        g = 255 * (1 - m) * (1 - k)
-        b = 255 * (1 - y) * (1 - k)
-        
-        # Clamp RGB values to 0-255 range and convert to integers
-        r, g, b = int(round(r)), int(round(g)), int(round(b))
-        
-        # Convert RGB to hex format
-        hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
-        return hex_color
-    
+        channels = Color._cmyk_channels(cmyk)
+        if channels is None:
+            if not silent:
+                print("Color.CMYKToHex - Error: The input cmyk parameter is not a valid list of four values between 0 and 1. Returning None.")
+            return None
+
+        c, m, y, k = channels
+        r = int(round(255 * (1 - c) * (1 - k)))
+        g = int(round(255 * (1 - m) * (1 - k)))
+        b = int(round(255 * (1 - y) * (1 - k)))
+        r = max(0, min(255, r))
+        g = max(0, min(255, g))
+        b = max(0, min(255, b))
+        return f"#{r:02X}{g:02X}{b:02X}"
+
     @staticmethod
-    def CSSNamedColor(color):
+    def CSSNamedColor(color, silent: bool = False):
         """
-        Returns the CSS Named color that most closely matches the input color. The input color is assumed to be
-        in the format [r, g, b]. See https://developer.mozilla.org/en-US/docs/Web/CSS/named-color
+        Returns the CSS named color that most closely matches the input RGB color.
 
         Parameters
         ----------
         color : list
-            The input color. This is assumed to be in the format [r, g, b]
-        
+            The input color in the format [r, g, b].
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
         Returns
         -------
         str
             The CSS named color that most closely matches the input color.
         """
-        import numbers
-        import warnings
-        import os
-        try:
-            import webcolors
-        except:
-            print("Color.CSSNamedColor - Information: Installing required webcolors library.")
-            try:
-                os.system("pip install webcolors")
-            except:
-                os.system("pip install webcolors --user")
-            try:
-                import webcolors
-                print("Color.CSSNamedColor - Information: webcolors library installed correctly.")
-            except:
-                warnings.warn("Color.CSSNamedColor - Error: Could not import webcolors library. Please manually install webcolors. Returning None.")
-                return None
+        webcolors = Color._import_webcolors("CSSNamedColor")
+        if webcolors is None:
+            return None
 
-        if not isinstance(color, list):
-            print("Color.CSSNamedColor - Error: The input color parameter is not a valid list. Returning None.")
-            return None
-        color = [int(x) for x in color if isinstance(x, numbers.Real)]
-        if len(color) < 3:
-            print("Color.CSSNamedColor - Error: The input color parameter does not contain valid r, g, b values. Returning None.")
-            return None
-        color = color[0:3]
-        for x in color:
-            if not (0 <= x <= 255):
+        rgb = Color._rgb_channels(color)
+        if rgb is None:
+            if not silent:
                 print("Color.CSSNamedColor - Error: The input color parameter does not contain valid r, g, b values. Returning None.")
-                return None
+            return None
 
-        def est_color(requested_color):
-            min_colors = {}
-            for key, name in webcolors.CSS3_HEX_TO_NAMES.items():
-                r_c, g_c, b_c = webcolors.hex_to_rgb(key)
-                rd = (r_c - requested_color[0]) ** 2
-                gd = (g_c - requested_color[1]) ** 2
-                bd = (b_c - requested_color[2]) ** 2
-                min_colors[(rd + gd + bd)] = name
-            return min_colors[min(min_colors.keys())]
-
+        rgb_tuple = tuple(rgb)
         try:
-            closest_color_name = webcolors.rgb_to_name(color)
-        except ValueError:
-            closest_color_name = est_color(color)
-        return closest_color_name
+            return webcolors.rgb_to_name(rgb_tuple)
+        except Exception:
+            pass
+
+        min_distance = float("inf")
+        closest_name = None
+        for name in Color._css_color_names(webcolors):
+            try:
+                candidate = webcolors.name_to_rgb(name)
+                candidate_tuple = (candidate.red, candidate.green, candidate.blue)
+            except Exception:
+                continue
+            distance = sum((candidate_tuple[i] - rgb_tuple[i]) ** 2 for i in range(3))
+            if distance < min_distance:
+                min_distance = distance
+                closest_name = name
+
+        return closest_name
 
     @staticmethod
     def CSSNamedColors():
         """
         Returns a list of all CSS named colors. See https://developer.mozilla.org/en-US/docs/Web/CSS/named-color
 
-        Parameters
-        ----------
-
         Returns
         -------
         list
             The list of all CSS named colors.
-
         """
-        # List of CSS named colors
-        css_named_colors = [
+        return [
             "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige", "bisque", "black", "blanchedalmond",
             "blue", "blueviolet", "brown", "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue",
             "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod", "darkgray", "darkgreen", "darkgrey",
@@ -539,66 +564,75 @@ class Color:
             "teal", "thistle", "tomato", "turquoise", "violet", "wheat", "white", "whitesmoke", "yellow", "yellowgreen"
         ]
 
-        return css_named_colors
-
     @staticmethod
-    def PlotlyColor(color, alpha=1.0, useAlpha=False):
+    def PlotlyColor(color, alpha=1.0, useAlpha=False, silent: bool = False):
         """
-        Returns a plotly color string based on the input list of [r, g, b] or [r, g, b, a]. If your list is [r, g, b], you can optionally specify an alpha value
+        Returns a Plotly color string based on an RGB or RGBA list.
 
         Parameters
         ----------
         color : list
-            The input color list. This is assumed to be in the format [r, g, b] or [r, g, b, a] where the range is from 0 to 255.
+            The input color list in the format [r, g, b] or [r, g, b, a].
         alpha : float , optional
-            The transparency value. 0.0 means the color is fully transparent, 1.0 means the color is fully opaque. Default is 1.0.
+            The transparency value. Default is 1.0.
         useAlpha : bool , optional
-            If set to True, the returns list includes the alpha value as a fourth element in the list.
+            If set to True, the returned string uses rgba(...). Default is False.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         str
-            The plotly color string.
-
+            The Plotly color string.
         """
         if not isinstance(color, list):
-            print("Color.PlotlyColor - Error: The input color parameter is not a valid list. Returning None.")
+            if not silent:
+                print("Color.PlotlyColor - Error: The input color parameter is not a valid list. Returning None.")
             return None
-        if len(color) < 3:
-            print("Color.PlotlyColor - Error: The input color parameter contains less than the minimum three elements. Returning None.")
+
+        rgb = Color._rgb_channels(color)
+        if rgb is None:
+            if not silent:
+                print("Color.PlotlyColor - Error: The input color parameter does not contain valid r, g, b values. Returning None.")
             return None
-        if len(color) == 4:
+
+        if len(color) >= 4:
             alpha = color[3]
-        alpha = min(max(alpha, 0), 1)
+
+        if not Color._valid_alpha(alpha):
+            if not silent:
+                print("Color.PlotlyColor - Error: alpha is not within the valid range of 0 to 1. Returning None.")
+            return None
+
+        alpha = float(alpha)
         if alpha < 1:
             useAlpha = True
+
         if useAlpha:
-            return "rgba("+str(color[0])+","+str(color[1])+","+str(color[2])+","+str(alpha)+")"
-        return "rgb("+str(color[0])+","+str(color[1])+","+str(color[2])+")"
-    
+            return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{alpha})"
+        return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
     @staticmethod
-    def RGBToHex(rgb):
+    def RGBToHex(rgb, silent: bool = False):
         """
         Converts RGB color values to a hexadecimal color string.
 
         Parameters
         ----------
-        rgb : tuple
-            A tuple containing three integers representing the RGB values.
+        rgb : list or tuple
+            Three integer-like RGB values in the range 0 to 255.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         str
             A hexadecimal color string in the format '#RRGGBB'.
         """
-        if not isinstance(rgb, list):
-            print("Color.RGBToHex - Error: The input rgb parameter is not a valid list. Returning None.")
+        channels = Color._rgb_channels(rgb)
+        if channels is None:
+            if not silent:
+                print("Color.RGBToHex - Error: The input rgb parameter is not a valid list of three values between 0 and 255. Returning None.")
             return None
-        r, g, b = rgb
-        r = int(r)
-        g = int(g)
-        b = int(b)
-        hex_value = "#{:02x}{:02x}{:02x}".format(r, g, b)
-        return hex_value.upper()
-    
-    
+        r, g, b = channels
+        return f"#{r:02X}{g:02X}{b:02X}"

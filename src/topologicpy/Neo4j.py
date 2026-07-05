@@ -20,6 +20,7 @@ import json
 import os
 import re
 import warnings
+import uuid
 from typing import Any, Dict, List, Optional
 
 try:
@@ -81,8 +82,12 @@ def _unique_preserve_order(values: List[Any]) -> List[Any]:
     seen = set()
     out = []
     for value in values or []:
-        if value not in seen:
-            seen.add(value)
+        try:
+            key = value if isinstance(value, (str, int, float, bool, type(None))) else json.dumps(_make_json_safe(value), sort_keys=True)
+        except Exception:
+            key = repr(value)
+        if key not in seen:
+            seen.add(key)
             out.append(value)
     return out
 
@@ -260,12 +265,21 @@ def _tgraph_edges(graph: Any) -> List[Dict[str, Any]]:
 
 
 def _record_dictionary(record: Any) -> Dict[str, Any]:
-    """Returns the dictionary stored in a TGraph vertex/edge record."""
-    if isinstance(record, dict):
-        if isinstance(record.get("dictionary"), dict):
-            return dict(record.get("dictionary") or {})
-        return dict(record)
-    return {}
+    """Returns the metadata dictionary stored in a TGraph vertex/edge record.
+
+    TGraph records commonly store structural metadata such as ``index``, ``src``,
+    ``dst``, ``label``, and coordinates at the top level, with user metadata under
+    a nested ``dictionary`` key. Preserve both layers so Neo4j export does not
+    drop record ids, labels, coordinates, or relationship endpoints. Nested
+    dictionary values intentionally override same-named top-level values.
+    """
+    if not isinstance(record, dict):
+        return {}
+    out = {k: v for k, v in record.items() if k != "dictionary"}
+    nested = record.get("dictionary")
+    if isinstance(nested, dict):
+        out.update(nested)
+    return out
 
 
 def _tgraph_coordinates(graph: Any, record: Dict[str, Any], index: int = 0, mantissa: int = 6) -> List[float]:
@@ -539,14 +553,20 @@ class Neo4j:
 
     @staticmethod
     def _node_properties(node):
-        props = dict(node.items())
+        try:
+            props = dict(node.items())
+        except Exception:
+            props = {}
         props["id"] = getattr(node, "element_id", None)
-        props["labels"] = list(getattr(node, "labels", []))
+        props["labels"] = list(getattr(node, "labels", []) or [])
         return props
 
     @staticmethod
     def _relationship_properties(relationship):
-        props = dict(relationship.items())
+        try:
+            props = dict(relationship.items())
+        except Exception:
+            props = {}
         props["id"] = getattr(relationship, "element_id", None)
         props["type"] = getattr(relationship, "type", None)
         return props
@@ -749,7 +769,9 @@ class Neo4j:
             statements = [
                 "CREATE CONSTRAINT graph_id_unique IF NOT EXISTS FOR (g:Graph) REQUIRE g.id IS UNIQUE",
                 "CREATE CONSTRAINT vertex_graph_id_id_unique IF NOT EXISTS FOR (v:Vertex) REQUIRE (v.graph_id, v.id) IS UNIQUE",
+                "CREATE CONSTRAINT vertex_uid_unique IF NOT EXISTS FOR (v:Vertex) REQUIRE v.uid IS UNIQUE",
                 "CREATE INDEX vertex_graph_id_index IF NOT EXISTS FOR (v:Vertex) ON (v.graph_id)",
+                "CREATE INDEX vertex_uid_index IF NOT EXISTS FOR (v:Vertex) ON (v.uid)",
                 "CREATE INDEX vertex_label_index IF NOT EXISTS FOR (v:Vertex) ON (v.label)",
                 "CREATE INDEX graph_ontology_class_index IF NOT EXISTS FOR (g:Graph) ON (g.ontology_class)",
                 "CREATE INDEX graph_category_index IF NOT EXISTS FOR (g:Graph) ON (g.category)",
@@ -761,7 +783,11 @@ class Neo4j:
                 "CREATE INDEX edge_category_index IF NOT EXISTS FOR ()-[r:Edge]-() ON (r.category)",
             ]
             for stmt in statements:
-                Neo4j.Execute(manager, stmt, write=True, database=database, silent=True)
+                result = Neo4j.Execute(manager, stmt, write=True, database=database, silent=True)
+                if result is None:
+                    if not silent:
+                        print(f"Neo4j.EnsureSchema - Error: Could not execute schema statement: {stmt}. Returning False.")
+                    return False
             return True
         except Exception as ex:
             if not silent:
@@ -1146,7 +1172,18 @@ class Neo4j:
             edges = mesh_data.get("edges", []) or []
             e_props = mesh_data.get("edgeDictionaries", mesh_data.get("edge_dicts", [])) or []
 
-            edge_count = len(edges) * (2 if bidirectional else 1)
+            edge_count = 0
+            for _edge_indices in edges:
+                try:
+                    _a_index = int(_edge_indices[0])
+                    _b_index = int(_edge_indices[1])
+                except Exception:
+                    continue
+                if _a_index < 0 or _b_index < 0 or _a_index >= len(verts) or _b_index >= len(verts):
+                    continue
+                edge_count += 1
+                if bidirectional and _a_index != _b_index:
+                    edge_count += 1
 
             # ------------------------------------------------------------
             # Store graph card.
@@ -1797,7 +1834,7 @@ class Neo4j:
     def DeleteGraph(manager, graphID: str, database=None, silent: bool = False) -> bool:
         try:
             graphID = str(graphID)
-            Neo4j.Execute(
+            result_edges = Neo4j.Execute(
                 manager,
                 """
                 MATCH (a:Vertex)-[r:Edge]->(b:Vertex)
@@ -1809,9 +1846,9 @@ class Neo4j:
                 database=database,
                 silent=silent,
             )
-            Neo4j.Execute(manager, "MATCH (v:Vertex) WHERE v.graph_id = $gid DELETE v", parameters={"gid": graphID}, write=True, database=database, silent=silent)
-            Neo4j.Execute(manager, "MATCH (g:Graph) WHERE g.id = $gid DELETE g", parameters={"gid": graphID}, write=True, database=database, silent=silent)
-            return True
+            result_vertices = Neo4j.Execute(manager, "MATCH (v:Vertex) WHERE v.graph_id = $gid DELETE v", parameters={"gid": graphID}, write=True, database=database, silent=silent)
+            result_graph = Neo4j.Execute(manager, "MATCH (g:Graph) WHERE g.id = $gid DELETE g", parameters={"gid": graphID}, write=True, database=database, silent=silent)
+            return result_edges is not None and result_vertices is not None and result_graph is not None
         except Exception as ex:
             if not silent:
                 print(f"Neo4j.DeleteGraph - Error: {ex}. Returning False.")
@@ -2305,7 +2342,26 @@ class Neo4j:
                 d = _graph_dictionary(graph)
                 d[graphIDKey] = str(graphID).strip()
                 graph = _set_graph_dictionary(graph, d, silent=True)
-            gid = Neo4j.UpsertGraph(driver, graph, graphIDKey=graphIDKey, vertexIDKey=None, vertexLabelKey=nodeLabelKey, mantissa=mantissa, database=database, ontology=ontology, silent=silent)
+            gid = Neo4j.UpsertGraph(
+                driver,
+                graph,
+                graphIDKey=graphIDKey,
+                vertexIDKey=None,
+                vertexLabelKey=nodeLabelKey,
+                defaultVertexLabel=defaultNodeLabel,
+                vertexCategoryKey=nodeCategoryKey,
+                defaultVertexCategory=defaultNodeCategory,
+                edgeLabelKey=relationshipTypeKey,
+                defaultEdgeLabel=defaultRelationshipType,
+                edgeCategoryKey=relationshipCategoryKey,
+                defaultEdgeCategory=defaultRelationshipCategory,
+                bidirectional=bidirectional,
+                overwrite=overwrite,
+                mantissa=mantissa,
+                database=database,
+                ontology=ontology,
+                silent=silent,
+            )
             return driver if gid is not None else None
         except Exception as ex:
             if not silent:
@@ -2334,7 +2390,25 @@ class Neo4j:
         """
         Compatibility wrapper. Uses canonical UpsertGraph and returns the driver.
         """
-        gid = Neo4j.UpsertGraph(driver, graph, graphIDKey="graph_id", vertexIDKey=None, vertexLabelKey=nodeLabelKey, mantissa=mantissa, database=database, ontology=ontology, silent=silent)
+        gid = Neo4j.UpsertGraph(
+            driver,
+            graph,
+            graphIDKey="graph_id",
+            vertexIDKey=None,
+            vertexLabelKey=nodeLabelKey,
+            defaultVertexLabel=defaultNodeLabel,
+            vertexCategoryKey=nodeCategoryKey,
+            defaultVertexCategory=defaultNodeCategory,
+            edgeLabelKey=relationshipTypeKey,
+            defaultEdgeLabel=defaultRelationshipType,
+            edgeCategoryKey=relationshipCategoryKey,
+            defaultEdgeCategory=defaultRelationshipCategory,
+            bidirectional=bidirectional,
+            mantissa=mantissa,
+            database=database,
+            ontology=ontology,
+            silent=silent,
+        )
         return driver if gid is not None else None
 
 

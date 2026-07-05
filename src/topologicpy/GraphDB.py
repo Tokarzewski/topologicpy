@@ -52,6 +52,85 @@ class GraphDB:
         GraphDB.EnsureSchema(graphdb)
     """
 
+
+    # -------------------------------------------------------------------------
+    # Internal validation helpers
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _normalise_provider(provider):
+        """Returns a canonical provider name, or None if invalid."""
+        if provider is None:
+            return None
+        provider = str(provider).strip().lower()
+        if provider == "":
+            return None
+        aliases = {
+            "kuzu": "kuzu",
+            "kùzu": "kuzu",
+            "neo4j": "neo4j",
+            "neo": "neo4j",
+            "ladybug": "ladybugdb",
+            "ladybugdb": "ladybugdb",
+            "lbug": "ladybugdb",
+        }
+        return aliases.get(provider, provider)
+
+    @staticmethod
+    def _valid_provider(provider) -> bool:
+        """Returns True if the provider is supported."""
+        return provider in ["kuzu", "neo4j", "ladybugdb"]
+
+    @staticmethod
+    def _copy_options(options, silent: bool = False):
+        """Returns a defensive copy of provider options, or None on error."""
+        if options is None:
+            return {}
+        if isinstance(options, dict):
+            return dict(options)
+        try:
+            return dict(options)
+        except Exception:
+            if not silent:
+                print("GraphDB.ByParameters - Error: The input options parameter is not a valid dictionary. Returning None.")
+            return None
+
+    @staticmethod
+    def _is_descriptor(graphdb) -> bool:
+        """Returns True if the input object behaves like a GraphDB descriptor."""
+        return isinstance(graphdb, dict) and "provider" in graphdb
+
+    @staticmethod
+    def _filter_call_kwargs(method, kwargs: dict) -> dict:
+        """
+        Filters keyword arguments against a backend method signature when the
+        signature is inspectable and the method does not accept **kwargs.
+
+        This keeps GraphDB tolerant of backend API drift while still allowing
+        dynamic backend methods that accept arbitrary keyword arguments.
+        """
+        if not isinstance(kwargs, dict):
+            return {}
+        try:
+            import inspect
+            signature = inspect.signature(method)
+            params = signature.parameters
+        except Exception:
+            return dict(kwargs)
+
+        try:
+            for p in params.values():
+                if p.kind == p.VAR_KEYWORD:
+                    return dict(kwargs)
+
+            allowed = {
+                name for name, p in params.items()
+                if p.kind in [p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY]
+            }
+            return {k: v for k, v in kwargs.items() if k in allowed}
+        except Exception:
+            return dict(kwargs)
+
     # -------------------------------------------------------------------------
     # Construction and inspection
     # -------------------------------------------------------------------------
@@ -68,7 +147,7 @@ class GraphDB:
         Parameters
         ----------
         provider : str
-            The backend provider name. Supported values are "kuzu" and "neo4j" and "ladybug".
+            The backend provider name. Supported values are "kuzu", "neo4j", and "ladybugdb".
         manager : object , optional
             The backend-specific manager. For Kuzu, this is usually the object
             returned by Kuzu.Manager(...). For Neo4j, this is usually the driver
@@ -86,30 +165,25 @@ class GraphDB:
             A graph database descriptor, or None on error.
         """
         try:
+            provider = GraphDB._normalise_provider(provider)
             if provider is None:
                 if not silent:
-                    print("GraphDB.ByParameters - Error: The input provider is None. Returning None.")
+                    print("GraphDB.ByParameters - Error: The input provider is not a valid string. Returning None.")
                 return None
-            provider = str(provider).strip().lower()
-            aliases = {
-                "kuzu": "kuzu",
-                "kùzu": "kuzu",
-                "neo4j": "neo4j",
-                "neo": "neo4j",
-                "ladybug": "ladybugdb",
-                "ladybugdb": "ladybugdb",
-                "lbug": "ladybugdb",
-            }
-            provider = aliases.get(provider, provider)
-            if provider not in ["kuzu", "neo4j", "ladybugdb"]:
+            if not GraphDB._valid_provider(provider):
                 if not silent:
                     print(f"GraphDB.ByParameters - Error: Unsupported provider '{provider}'. Returning None.")
                 return None
+
+            options = GraphDB._copy_options(options, silent=silent)
+            if options is None:
+                return None
+
             return {
                 "provider": provider,
                 "manager": manager,
                 "database": database,
-                "options": dict(options or {}),
+                "options": options,
             }
         except Exception as e:
             if not silent:
@@ -134,7 +208,20 @@ class GraphDB:
             The provider string, or None on error.
         """
         try:
-            return str(graphdb.get("provider")).strip().lower()
+            if not isinstance(graphdb, dict):
+                if not silent:
+                    print("GraphDB.Provider - Error: The input graphdb parameter is not a valid dictionary. Returning None.")
+                return None
+            provider = GraphDB._normalise_provider(graphdb.get("provider", None))
+            if provider is None:
+                if not silent:
+                    print("GraphDB.Provider - Error: The graph database descriptor does not contain a valid provider. Returning None.")
+                return None
+            if not GraphDB._valid_provider(provider):
+                if not silent:
+                    print(f"GraphDB.Provider - Error: Unsupported provider '{provider}'. Returning None.")
+                return None
+            return provider
         except Exception as e:
             if not silent:
                 print(f"GraphDB.Provider - Error: {e}. Returning None.")
@@ -158,7 +245,11 @@ class GraphDB:
             The backend manager, or None on error.
         """
         try:
-            return graphdb.get("manager")
+            if not isinstance(graphdb, dict):
+                if not silent:
+                    print("GraphDB.Manager - Error: The input graphdb parameter is not a valid dictionary. Returning None.")
+                return None
+            return graphdb.get("manager", None)
         except Exception as e:
             if not silent:
                 print(f"GraphDB.Manager - Error: {e}. Returning None.")
@@ -182,7 +273,11 @@ class GraphDB:
             The database name, or None.
         """
         try:
-            return graphdb.get("database")
+            if not isinstance(graphdb, dict):
+                if not silent:
+                    print("GraphDB.Database - Error: The input graphdb parameter is not a valid dictionary. Returning None.")
+                return None
+            return graphdb.get("database", None)
         except Exception as e:
             if not silent:
                 print(f"GraphDB.Database - Error: {e}. Returning None.")
@@ -206,15 +301,20 @@ class GraphDB:
             The options dictionary, or None on error.
         """
         try:
-            return dict(graphdb.get("options") or {})
+            if not isinstance(graphdb, dict):
+                if not silent:
+                    print("GraphDB.Options - Error: The input graphdb parameter is not a valid dictionary. Returning None.")
+                return None
+            options = graphdb.get("options", None)
+            if options is None:
+                return {}
+            if isinstance(options, dict):
+                return dict(options)
+            return dict(options)
         except Exception as e:
             if not silent:
                 print(f"GraphDB.Options - Error: {e}. Returning None.")
             return None
-
-    # -------------------------------------------------------------------------
-    # Internal dispatch helpers
-    # -------------------------------------------------------------------------
 
     @staticmethod
     def _backend(graphdb, silent: bool = False):
@@ -257,7 +357,7 @@ class GraphDB:
                         print(f"GraphDB._backend - Error: Could not import Neo4j: {e}. Returning None.")
                     return None
             return Neo4j
-        
+
         if provider == "ladybugdb":
             try:
                 from topologicpy.LadybugDB import LadybugDB
@@ -318,7 +418,6 @@ class GraphDB:
         except Exception:
             return defaultValue
 
-    @staticmethod
     @staticmethod
     def _annotate_graph_ontology(graph,
                                  ontology: bool = True,
@@ -567,6 +666,12 @@ class GraphDB:
         explicit kwargs > graphdb["options"] > backend defaults
         """
         try:
+            if not isinstance(methodName, str) or methodName.strip() == "":
+                if not silent:
+                    print("GraphDB._call - Error: The input methodName parameter is not a valid string. Returning None.")
+                return None
+            methodName = methodName.strip()
+
             backend = GraphDB._backend(graphdb, silent=silent)
             if backend is None:
                 return None
@@ -582,6 +687,11 @@ class GraphDB:
             except Exception:
                 if not silent:
                     print(f"GraphDB.{methodName} - Error: Backend does not implement {methodName}. Returning None.")
+                return None
+
+            if not callable(method):
+                if not silent:
+                    print(f"GraphDB.{methodName} - Error: Backend attribute {methodName} is not callable. Returning None.")
                 return None
 
             provider = GraphDB.Provider(graphdb, silent=True)
@@ -619,23 +729,20 @@ class GraphDB:
                 if db is not None:
                     call_kwargs["database"] = db
 
-            # Kuzu does not use Neo4j database names.
+            # Kuzu and LadybugDB do not use Neo4j database names.
             if provider in ["kuzu", "ladybugdb"]:
                 call_kwargs.pop("database", None)
 
             if "silent" not in call_kwargs:
                 call_kwargs["silent"] = silent
 
+            call_kwargs = GraphDB._filter_call_kwargs(method, call_kwargs)
             return method(manager, *args, **call_kwargs)
 
         except Exception as e:
             if not silent:
                 print(f"GraphDB.{methodName} - Error: {e}. Returning None.")
             return None
-
-    # -------------------------------------------------------------------------
-    # Schema and persistence
-    # -------------------------------------------------------------------------
 
     @staticmethod
     def EnsureSchema(graphdb, silent: bool = False) -> bool:
@@ -788,7 +895,7 @@ class GraphDB:
         graph : topologic_core.Graph or topologicpy.TGraph
             The graph to be upserted.
         graphIDKey : str , optional
-            The dictionary key used to retrieve the graph id. Default is "id".
+            The dictionary key used to retrieve the graph id. Default is "graph_id".
         vertexIDKey : str , optional
             The dictionary key used to retrieve each vertex id. Default is "id".
         vertexLabelKey : str , optional
@@ -830,6 +937,10 @@ class GraphDB:
         str
             The graph id used, or None on error.
         """
+        if graph is None:
+            if not silent:
+                print("GraphDB.UpsertGraph - Error: The input graph parameter is None. Returning None.")
+            return None
 
         # GraphDB is the safest place to enforce ontology adherence before
         # the graph is persisted by a backend. This remains non-breaking because
@@ -1033,13 +1144,21 @@ class GraphDB:
         list
             Backend-normalized rows, or None on error.
         """
+        if not isinstance(ontologyClass, str) or ontologyClass.strip() == "":
+            if not silent:
+                print("GraphDB.VerticesByOntologyClass - Error: The input ontologyClass parameter is not a valid string. Returning None.")
+            return None
+        try:
+            limit = max(0, int(limit))
+        except Exception:
+            if not silent:
+                print("GraphDB.VerticesByOntologyClass - Error: The input limit parameter is not a valid integer. Returning None.")
+            return None
+
         provider = GraphDB.Provider(graphdb, silent=silent)
-        if provider == "neo4j":
+        if provider in ("neo4j", "kuzu"):
             query = "MATCH (n) WHERE n.ontology_class = $ontologyClass RETURN n LIMIT $limit"
-            return GraphDB.Query(graphdb, query, parameters={"ontologyClass": ontologyClass, "limit": int(limit)}, silent=silent)
-        if provider == "kuzu":
-            query = "MATCH (n) WHERE n.ontology_class = $ontologyClass RETURN n LIMIT $limit"
-            return GraphDB.Query(graphdb, query, parameters={"ontologyClass": ontologyClass, "limit": int(limit)}, silent=silent)
+            return GraphDB.Query(graphdb, query, parameters={"ontologyClass": ontologyClass, "limit": limit}, silent=silent)
         if not silent:
             print(f"GraphDB.VerticesByOntologyClass - Error: Unsupported provider '{provider}'. Returning None.")
         return None
@@ -1065,17 +1184,24 @@ class GraphDB:
         list
             Backend-normalized rows, or None on error.
         """
+        if not isinstance(category, str) or category.strip() == "":
+            if not silent:
+                print("GraphDB.VerticesByCategory - Error: The input category parameter is not a valid string. Returning None.")
+            return None
+        try:
+            limit = max(0, int(limit))
+        except Exception:
+            if not silent:
+                print("GraphDB.VerticesByCategory - Error: The input limit parameter is not a valid integer. Returning None.")
+            return None
+
         provider = GraphDB.Provider(graphdb, silent=silent)
         if provider in ("neo4j", "kuzu"):
             query = "MATCH (n) WHERE n.category = $category RETURN n LIMIT $limit"
-            return GraphDB.Query(graphdb, query, parameters={"category": category, "limit": int(limit)}, silent=silent)
+            return GraphDB.Query(graphdb, query, parameters={"category": category, "limit": limit}, silent=silent)
         if not silent:
             print(f"GraphDB.VerticesByCategory - Error: Unsupported provider '{provider}'. Returning None.")
         return None
-
-    # -------------------------------------------------------------------------
-    # Corpus analytics for GraphRAG
-    # -------------------------------------------------------------------------
 
     @staticmethod
     def FetchAllPairs(graphdb, undirected: bool = True, silent: bool = False):
@@ -1206,21 +1332,55 @@ class GraphDB:
         provider = GraphDB.Provider(graphdb, silent=silent)
         manager = GraphDB.Manager(graphdb, silent=silent)
         database = GraphDB.Database(graphdb, silent=True)
+
+        if not isinstance(query, str) or query.strip() == "":
+            if not silent:
+                print("GraphDB.Execute - Error: The input query parameter is not a valid string. Returning None.")
+            return None
+        query = query.strip()
+
+        if parameters is None:
+            parameters = {}
+        elif not isinstance(parameters, dict):
+            if not silent:
+                print("GraphDB.Execute - Error: The input parameters parameter is not a valid dictionary. Returning None.")
+            return None
+
         if manager is None:
             if not silent:
                 print("GraphDB.Execute - Error: The graph database manager is None. Returning None.")
             return None
 
         try:
-            if provider == "kuzu":
-                return manager.exec(query, parameters or {}, write=write)
-            if provider == "ladybugdb":
-                return manager.exec(query, parameters or {}, write=write)
+            if provider in ["kuzu", "ladybugdb"]:
+                exec_method = getattr(manager, "exec", None)
+                if callable(exec_method):
+                    return exec_method(query, parameters, write=write)
+
+                backend = GraphDB._backend(graphdb, silent=silent)
+                if backend is None:
+                    return None
+                backend_execute = getattr(backend, "Execute", None)
+                if not callable(backend_execute):
+                    if not silent:
+                        print(f"GraphDB.Execute - Error: Backend for provider '{provider}' does not implement Execute and manager has no exec method. Returning None.")
+                    return None
+                kwargs = GraphDB._filter_call_kwargs(
+                    backend_execute,
+                    {"parameters": parameters, "write": write, "silent": silent},
+                )
+                return backend_execute(manager, query, **kwargs)
+
             if provider == "neo4j":
                 backend = GraphDB._backend(graphdb, silent=silent)
                 if backend is None:
                     return None
-                return backend.Execute(manager, query, parameters=parameters or {}, write=write, database=database, silent=silent)
+                kwargs = GraphDB._filter_call_kwargs(
+                    backend.Execute,
+                    {"parameters": parameters, "write": write, "database": database, "silent": silent},
+                )
+                return backend.Execute(manager, query, **kwargs)
+
             if not silent:
                 print(f"GraphDB.Execute - Error: Unsupported provider '{provider}'. Returning None.")
             return None
@@ -1251,3 +1411,4 @@ class GraphDB:
             Backend-normalized result rows, or None on error.
         """
         return GraphDB.Execute(graphdb, query, parameters=parameters, write=False, silent=silent)
+

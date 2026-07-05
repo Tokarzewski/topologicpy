@@ -1601,39 +1601,10 @@ class TGraph:
         generatedBy: Any = None,
         element: str = "graph",
         index: Optional[int] = None,
+        silent: bool = False,
+        **kwargs,
     ) -> Optional["TGraph"]:
-        """
-        Annotates a graph, vertex, or edge dictionary with ontology metadata.
-
-        Parameters
-        ----------
-        graph : 'TGraph'
-            The input TGraph.
-        ontologyClass : Optional[str] , optional
-            The ontology class value. Default is None.
-        category : Optional[str] , optional
-            The ontology category value. Default is None.
-        label : Any , optional
-            The label value. Default is None.
-        uri : Optional[str] , optional
-            The URI value. Default is None.
-        source : Any , optional
-            The input source vertex, vertex index, or source identifier. Default is None.
-        derivedFrom : Any , optional
-            The provenance value identifying the source object. Default is None.
-        generatedBy : Any , optional
-            The provenance value identifying the generating method. Default is None.
-        element : str , optional
-            The graph element to annotate or query. Valid values are typically "graph",
-            "vertex", or "edge". Default is 'graph'.
-        index : Optional[int] , optional
-            The input index. Default is None.
-
-        Returns
-        -------
-        Optional[TGraph]
-            The resulting TGraph, or None if the operation fails.
-        """
+        """Annotates a graph, vertex, or edge dictionary with ontology metadata."""
         if not isinstance(graph, TGraph):
             return None
         if ontologyClass is not None:
@@ -2545,39 +2516,29 @@ class TGraph:
 
     @staticmethod
     def BOTClassByOntologyClass(ontologyClass: str, defaultValue: Any = None) -> Any:
-        """
-        Returns the BOT class corresponding to the input TopologicPy ontology class.
-
-        This method is a TGraph convenience wrapper around Ontology.BOTClassByClass
-        when Ontology.py is available. The local fallback keeps TGraph usable as a
-        standalone file.
-        """
+        """Returns the BOT class corresponding to the input ontology class."""
         if ontologyClass is None:
             return defaultValue
+        ontologyClass = TGraph._OntologyCanonicalClass(ontologyClass, defaultValue=ontologyClass)
         try:
             from topologicpy.Ontology import Ontology
             return Ontology.BOTClassByClass(ontologyClass, defaultValue=defaultValue)
         except Exception:
             pass
-        ontologyClass = str(ontologyClass).strip()
         config = TGraph._OntologyConfig()
         if ontologyClass in config["top_to_bot"]:
             return config["top_to_bot"].get(ontologyClass, defaultValue)
-        # Fallback superclass walk for common classes when Ontology.py is unavailable.
-        fallback_superclasses = {
-            "top:Room": ["top:Space", "top:Zone", "top:Cell", "top:Topology"],
-            "top:Space": ["top:Zone", "top:Cell", "top:Topology"],
-            "top:Wall": ["top:Element", "top:Topology"],
-            "top:Door": ["top:Element", "top:Topology"],
-            "top:Window": ["top:Element", "top:Topology"],
-            "top:Slab": ["top:Element", "top:Topology"],
-            "top:Roof": ["top:Element", "top:Topology"],
-            "top:Column": ["top:Element", "top:Topology"],
-            "top:Beam": ["top:Element", "top:Topology"],
-        }
-        for superclass in fallback_superclasses.get(ontologyClass, []):
+        # Fallback superclass walk.
+        visited = set()
+        stack = list(config.get("classes", {}).get(ontologyClass, []))
+        while stack:
+            superclass = stack.pop(0)
+            if superclass in visited:
+                continue
+            visited.add(superclass)
             if superclass in config["top_to_bot"]:
                 return config["top_to_bot"].get(superclass, defaultValue)
+            stack.extend(config.get("classes", {}).get(superclass, []))
         return defaultValue
     @staticmethod
     def BOTString(*args, **kwargs) -> Optional[str]:
@@ -3260,6 +3221,10 @@ class TGraph:
         g._invalidate_cache()
         return g
 
+
+
+
+
     @staticmethod
     def ByIFCFile(
         file,
@@ -3268,6 +3233,7 @@ class TGraph:
         storeBREP: bool = False,
         useInternalVertex: bool = False,
         includeTypes: list = None,
+        strictIncludeTypes: bool = True,
         excludeTypes: list = None,
         includeRels: list = None,
         excludeRels: list = None,
@@ -3314,6 +3280,8 @@ class TGraph:
         includeTypes : list , optional
             A list of IFC entity types to include as primary graph vertices. Default is
             None.
+        strictIncludeTypes : bool , optional
+            If set to True, only the entities that are in the includeTypes list are included in the graph. Default is True.
         excludeTypes : list , optional
             A list of IFC entity types to exclude from the graph. Default is None.
         includeRels : list , optional
@@ -3470,6 +3438,12 @@ class TGraph:
         # ---------------------------------------------------------------------
         # Basic IFC helpers.
         # ---------------------------------------------------------------------
+        def _passes_strict_include(entity):
+            if not strictIncludeTypes:
+                return True
+            if not include_type_set:
+                return True
+            return _passes_type_filter(entity)
 
         def _entity_global_id(entity):
             try:
@@ -3761,12 +3735,16 @@ class TGraph:
                 topologic_class = _ifc_topologic_class(str(etype))
                 brick_class = _ifc_brick_class(str(etype), entity=entity, metadata=d)
                 if brick_class:
-                    d["ontology_class"] = brick_class
-                    d["ontology_uri"] = _brick_uri(brick_class)
+                    # _005 policy: ontology_class remains a TopologicPy class.
+                    # Brick semantics are preserved separately so RDF export can
+                    # emit both top:Equipment and brick:* types without losing the
+                    # canonical TopologicPy class.
+                    d.setdefault("ontology_class", topologic_class)
+                    d.setdefault("ontology_uri", TGraph._OntologyExpandQName(topologic_class, defaultValue=None))
                     d["brick_class"] = brick_class
                     d["brick_uri"] = _brick_uri(brick_class)
                     d["topologic_class"] = topologic_class
-                    d["category"] = "equipment"
+                    d.setdefault("category", "equipment")
                     d["bot_class"] = "bot:Element"
                 else:
                     d.setdefault("ontology_class", topologic_class)
@@ -3805,7 +3783,7 @@ class TGraph:
                 return dict(mapping[key])
             if key.startswith("IFCREL"):
                 local = key[6:].lower()
-                return {"relationship": local or "relationship", "ontology_predicate": "top:" + (local or "relationship")}
+                return {"relationship": local or "relationship", "ontology_predicate": "top:connectsTo"}
             return {}
 
         def _relationship_dictionary(ifc_rel):
@@ -3866,7 +3844,7 @@ class TGraph:
                             d[k] = v
 
                 d.setdefault("relationship", str(rel_type))
-                d.setdefault("ontology_predicate", "top:relationship")
+                d.setdefault("ontology_predicate", "top:connectsTo")
 
             return d
 
@@ -4162,7 +4140,7 @@ class TGraph:
 
             try:
                 for entity in file.by_type("IfcRoot"):
-                    _add_entity(entity, respect_include_filter=True)
+                    _add_entity(entity, respect_include_filter=strictIncludeTypes)
             except Exception:
                 pass
 
@@ -4170,10 +4148,10 @@ class TGraph:
                 source, destinations = _relationship_endpoints(ifc_rel)
 
                 if source is not None:
-                    _add_entity(source, respect_include_filter=False)
+                    _add_entity(source, respect_include_filter=strictIncludeTypes)
 
                 for destination in destinations or []:
-                    _add_entity(destination, respect_include_filter=False)
+                    _add_entity(destination, respect_include_filter=strictIncludeTypes)
 
             return list(entity_by_key.values())
 
@@ -4294,7 +4272,253 @@ class TGraph:
 
             return index
 
-        def _apply_geometry_coordinates(vertices, vertex_dictionaries, key_to_index):
+        def _matrix_translation(matrix):
+            """Returns the translation column of a 4x4 IFC placement matrix."""
+            try:
+                return [float(matrix[0][3]), float(matrix[1][3]), float(matrix[2][3])]
+            except Exception:
+                pass
+            try:
+                return [float(matrix[0, 3]), float(matrix[1, 3]), float(matrix[2, 3])]
+            except Exception:
+                return None
+
+        def _transform_point_by_matrix(point, matrix):
+            """Transforms a 3D point by a 4x4 matrix without requiring numpy."""
+            if point is None:
+                return None
+            if matrix is None:
+                try:
+                    return [float(point[0]), float(point[1]), float(point[2])]
+                except Exception:
+                    return None
+            try:
+                x, y, z = float(point[0]), float(point[1]), float(point[2])
+                return [
+                    float(matrix[0][0]) * x + float(matrix[0][1]) * y + float(matrix[0][2]) * z + float(matrix[0][3]),
+                    float(matrix[1][0]) * x + float(matrix[1][1]) * y + float(matrix[1][2]) * z + float(matrix[1][3]),
+                    float(matrix[2][0]) * x + float(matrix[2][1]) * y + float(matrix[2][2]) * z + float(matrix[2][3]),
+                ]
+            except Exception:
+                pass
+            try:
+                # numpy-style matrix indexing fallback.
+                x, y, z = float(point[0]), float(point[1]), float(point[2])
+                return [
+                    float(matrix[0, 0]) * x + float(matrix[0, 1]) * y + float(matrix[0, 2]) * z + float(matrix[0, 3]),
+                    float(matrix[1, 0]) * x + float(matrix[1, 1]) * y + float(matrix[1, 2]) * z + float(matrix[1, 3]),
+                    float(matrix[2, 0]) * x + float(matrix[2, 1]) * y + float(matrix[2, 2]) * z + float(matrix[2, 3]),
+                ]
+            except Exception:
+                return None
+
+        def _ifc_cartesian_point_coordinates(point):
+            try:
+                coords = getattr(point, "Coordinates", None)
+                if coords is None:
+                    return None
+                coords = list(coords)
+                if len(coords) == 2:
+                    coords.append(0.0)
+                if len(coords) >= 3:
+                    return [float(coords[0]), float(coords[1]), float(coords[2])]
+            except Exception:
+                pass
+            return None
+
+        def _product_placement_matrix_fast(entity):
+            """Returns an IFC ObjectPlacement matrix without creating product geometry."""
+            try:
+                placement = getattr(entity, "ObjectPlacement", None)
+            except Exception:
+                placement = None
+
+            if placement is None:
+                return None
+
+            # Fastest and most reliable path when ifcopenshell.util.placement is available.
+            try:
+                import ifcopenshell.util.placement
+                return ifcopenshell.util.placement.get_local_placement(placement)
+            except Exception:
+                pass
+
+            # Conservative fallback: recursively accumulate local placement origins.
+            # This intentionally ignores axis rotation if the util helper is unavailable,
+            # but still gives a useful graph location without loading geometry.
+            def _placement_origin(local_placement, visited=None):
+                if local_placement is None:
+                    return [0.0, 0.0, 0.0]
+                if visited is None:
+                    visited = set()
+                try:
+                    pid = local_placement.id()
+                except Exception:
+                    pid = id(local_placement)
+                if pid in visited:
+                    return [0.0, 0.0, 0.0]
+                visited.add(pid)
+
+                parent = None
+                try:
+                    parent = getattr(local_placement, "PlacementRelTo", None)
+                except Exception:
+                    parent = None
+
+                base = _placement_origin(parent, visited) if parent is not None else [0.0, 0.0, 0.0]
+
+                rel = None
+                try:
+                    rel = getattr(local_placement, "RelativePlacement", None)
+                except Exception:
+                    rel = None
+
+                loc = None
+                try:
+                    loc = getattr(rel, "Location", None)
+                except Exception:
+                    loc = None
+
+                p = _ifc_cartesian_point_coordinates(loc) or [0.0, 0.0, 0.0]
+                return [base[0] + p[0], base[1] + p[1], base[2] + p[2]]
+
+            origin = _placement_origin(placement)
+            return [
+                [1.0, 0.0, 0.0, origin[0]],
+                [0.0, 1.0, 0.0, origin[1]],
+                [0.0, 0.0, 1.0, origin[2]],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+
+        def _fast_bounding_box_centroid(entity):
+            """Returns the transformed centre of an explicit IfcBoundingBox, if present."""
+            try:
+                representation = getattr(entity, "Representation", None)
+            except Exception:
+                representation = None
+
+            if representation is None:
+                return None, None
+
+            matrix = _product_placement_matrix_fast(entity)
+
+            try:
+                reps = list(getattr(representation, "Representations", []) or [])
+            except Exception:
+                reps = []
+
+            for shape_rep in reps:
+                try:
+                    items = list(getattr(shape_rep, "Items", []) or [])
+                except Exception:
+                    items = []
+
+                for item in items:
+                    try:
+                        is_box = item.is_a("IfcBoundingBox")
+                    except Exception:
+                        try:
+                            is_box = str(item.is_a()).lower() == "ifcboundingbox"
+                        except Exception:
+                            is_box = False
+
+                    if not is_box:
+                        continue
+
+                    try:
+                        corner = _ifc_cartesian_point_coordinates(getattr(item, "Corner", None))
+                        if corner is None:
+                            continue
+                        xdim = float(getattr(item, "XDim"))
+                        ydim = float(getattr(item, "YDim"))
+                        zdim = float(getattr(item, "ZDim"))
+                        local = [corner[0] + 0.5 * xdim, corner[1] + 0.5 * ydim, corner[2] + 0.5 * zdim]
+                        world = _transform_point_by_matrix(local, matrix)
+                        if world is not None:
+                            return world, "IFC.BoundingBox"
+                    except Exception:
+                        continue
+
+            return None, None
+
+        def _fast_entity_coordinates(entity):
+            """
+            Returns a fast representative XYZ for an IFC entity without creating
+            Topologic geometry. Preference order:
+            1. explicit IfcBoundingBox centre, transformed by ObjectPlacement;
+            2. ObjectPlacement origin;
+            3. None, allowing the caller to keep synthetic coordinates.
+            """
+            coords, source = _fast_bounding_box_centroid(entity)
+            if coords is not None:
+                return coords, source
+
+            matrix = _product_placement_matrix_fast(entity)
+            coords = _matrix_translation(matrix) if matrix is not None else None
+            if coords is not None:
+                return coords, "IFC.ObjectPlacement"
+
+            return None, None
+
+        def _apply_fast_geometry_coordinates(vertices, vertex_dictionaries, key_to_index, entities):
+            """
+            Updates geometry-mode graph vertex coordinates using IFC placement data
+            only. This avoids full geometry loading and is therefore suitable for
+            large IFC files where the TGraph needs spatially meaningful coordinates.
+            """
+            resolved = 0
+
+            for entity in entities or []:
+                key = _entity_key(entity)
+                if key is None:
+                    continue
+
+                index = key_to_index.get(key)
+                if index is None:
+                    continue
+
+                coords, location_source = _fast_entity_coordinates(entity)
+
+                if coords is None or len(coords) < 3:
+                    continue
+
+                x, y, z = float(coords[0]), float(coords[1]), float(coords[2])
+                vertices[index] = [x, y, z]
+
+                d = vertex_dictionaries[index] if index < len(vertex_dictionaries) and isinstance(vertex_dictionaries[index], dict) else {}
+                d["index"] = index
+                d["x"] = x
+                d["y"] = y
+                d["z"] = z
+                d["location_source"] = location_source or "IFC.ObjectPlacement"
+                d["geometry_loaded"] = False
+
+                vertex_dictionaries[index] = d
+                _add_key_aliases(key_to_index, index, entity=entity, explicit_key=key)
+                resolved += 1
+
+            if not silent:
+                print(f"TGraph.ByIFCFile - Information: Resolved {resolved} geometry-mode vertex locations from IFC placement/bounding-box data without loading full geometry.")
+
+            for i, coords in enumerate(vertices):
+                if coords is None:
+                    coords = _synthetic_coordinates(i, max(len(vertices), 1))
+                    vertices[i] = [float(coords[0]), float(coords[1]), float(coords[2])]
+
+            return vertices, vertex_dictionaries, key_to_index
+
+        def _apply_geometry_coordinates(vertices, vertex_dictionaries, key_to_index, entities):
+            """
+            Geometry-mode coordinate assignment.
+
+            If storeBREP is False, this does NOT import full geometry. It uses
+            ObjectPlacement / explicit IfcBoundingBox data only. If storeBREP is
+            True, it imports full geometry because BREP strings require actual
+            Topologic topologies.
+            """
+            if not storeBREP:
+                return _apply_fast_geometry_coordinates(vertices, vertex_dictionaries, key_to_index, entities)
+
             try:
                 topologies = IFC.TopologiesByFile(
                     file,
@@ -4309,8 +4533,8 @@ class TGraph:
                 )
             except Exception as exc:
                 if not silent:
-                    print(f"TGraph.ByIFCFile - Warning: Could not import IFC geometry. {exc} Keeping synthetic coordinates.")
-                topologies = []
+                    print(f"TGraph.ByIFCFile - Warning: Could not import IFC geometry. {exc} Falling back to fast placement coordinates.")
+                return _apply_fast_geometry_coordinates(vertices, vertex_dictionaries, key_to_index, entities)
 
             if topologies is None:
                 topologies = []
@@ -4341,17 +4565,18 @@ class TGraph:
 
                 if not Topology.IsInstance(v, "Vertex"):
                     if not silent:
-                        print(f"TGraph.ByIFCFile - Warning: Could not create a representative vertex for entity {key}. Keeping synthetic coordinates.")
+                        print(f"TGraph.ByIFCFile - Warning: Could not create a representative vertex for entity {key}. Keeping fast/synthetic coordinates.")
                     continue
 
                 td = _topology_dictionary(topology)
 
-                if storeBREP:
-                    try:
-                        td["BREP"] = Topology.BREPString(topology)
-                    except Exception:
-                        if not silent:
-                            print("TGraph.ByIFCFile - Warning: Could not store BREP string for one topology. Continuing.")
+                try:
+                    td["BREP"] = Topology.BREPString(topology)
+                    td["geometry_loaded"] = True
+                    td["location_source"] = "Topologic.Geometry"
+                except Exception:
+                    if not silent:
+                        print("TGraph.ByIFCFile - Warning: Could not store BREP string for one topology. Continuing.")
 
                 try:
                     coords = Vertex.Coordinates(v)
@@ -4364,18 +4589,22 @@ class TGraph:
                 vertices[index] = [float(coords[0]), float(coords[1]), float(coords[2])]
 
                 td["index"] = index
-                td.setdefault("x", float(coords[0]))
-                td.setdefault("y", float(coords[1]))
-                td.setdefault("z", float(coords[2]))
+                td["x"] = float(coords[0])
+                td["y"] = float(coords[1])
+                td["z"] = float(coords[2])
 
                 vertex_dictionaries[index] = td
 
                 _add_key_aliases(key_to_index, index, gid=gid, step_id=step_id, explicit_key=key)
 
-            for i, coords in enumerate(vertices):
-                if coords is None:
-                    coords = _synthetic_coordinates(i, max(len(vertices), 1))
-                    vertices[i] = [float(coords[0]), float(coords[1]), float(coords[2])]
+            # Fill any geometry entries that did not come back from full import
+            # using the same fast placement route, then synthetic fallback.
+            vertices, vertex_dictionaries, key_to_index = _apply_fast_geometry_coordinates(
+                vertices,
+                vertex_dictionaries,
+                key_to_index,
+                entities,
+            )
 
             return vertices, vertex_dictionaries, key_to_index
 
@@ -4398,6 +4627,8 @@ class TGraph:
                 src_index = key_to_index.get(source_key)
 
                 if src_index is None:
+                    if not _passes_strict_include(source):
+                        continue
                     src_index = _add_missing_entity_vertex(source, vertices, vertex_dictionaries, key_to_index)
 
                 if src_index is None:
@@ -4428,6 +4659,8 @@ class TGraph:
                     dst_index = key_to_index.get(dest_key)
 
                     if dst_index is None:
+                        if not _passes_strict_include(destination):
+                            continue
                         dst_index = _add_missing_entity_vertex(destination, vertices, vertex_dictionaries, key_to_index)
 
                     if dst_index is None:
@@ -4441,6 +4674,10 @@ class TGraph:
 
                     if src_index == dst_index:
                         continue
+
+                    if strictIncludeTypes and include_type_set:
+                        if not (_passes_type_filter(source) and _passes_type_filter(destination)):
+                            continue
 
                     edge_key = (src_index, dst_index, str(rel_type))
 
@@ -4470,6 +4707,7 @@ class TGraph:
                     vertices,
                     vertex_dictionaries,
                     key_to_index,
+                    entities,
                 )
 
             edges, edge_dictionaries = _build_edges_from_relationships(
@@ -4596,7 +4834,6 @@ class TGraph:
 
         return tgraph
 
-
     @staticmethod
     def ByIFCPath(
         path,
@@ -4606,6 +4843,7 @@ class TGraph:
         useInternalVertex: bool = False,
         dictionaryMode: str = "basic",
         includeTypes: list = None,
+        strictIncludeTypes: bool = True,
         excludeTypes: list = None,
         includeRels: list = None,
         excludeRels: list = None,
@@ -4698,30 +4936,11 @@ class TGraph:
             import ifcopenshell.util.element
             import ifcopenshell.util.shape
             import ifcopenshell.geom
-        except Exception:
+        except Exception as exc:
             if not silent:
-                print("TGraph.ByIFCPath - Warning: Installing required ifcopenshell library.")
-            try:
-                import os
-                os.system("pip install ifcopenshell")
-            except Exception:
-                try:
-                    import os
-                    os.system("pip install ifcopenshell --user")
-                except Exception:
-                    pass
-            try:
-                import ifcopenshell
-                import ifcopenshell.util.placement
-                import ifcopenshell.util.element
-                import ifcopenshell.util.shape
-                import ifcopenshell.geom
-                if not silent:
-                    print("TGraph.ByIFCPath - Warning: ifcopenshell library installed correctly.")
-            except Exception:
-                if not silent:
-                    print("TGraph.ByIFCPath - Error: Could not import ifcopenshell. Please install ifcopenshell manually. Returning None.")
-                return None
+                print("TGraph.ByIFCPath - Error: Could not import ifcopenshell. Please install ifcopenshell manually. Returning None.")
+                print("Error:", exc)
+            return None
 
         try:
             file = ifcopenshell.open(path)
@@ -4743,6 +4962,7 @@ class TGraph:
             useInternalVertex=useInternalVertex,
             dictionaryMode=dictionaryMode,
             includeTypes=includeTypes,
+            strictIncludeTypes=strictIncludeTypes,
             excludeTypes=excludeTypes,
             includeRels=includeRels,
             excludeRels=excludeRels,
@@ -5115,109 +5335,533 @@ class TGraph:
 
     @staticmethod
     def BySpatialRelationships(
-        topologies: List[Any],
-        relationship: str = "intersects",
+        *topologies,
+        include: list = None,
+        proximityValues: list = None,
+        proximityLabels: list = None,
+        useShortestDistance: bool = False,
+        useInternalVertex: bool = False,
+        vertexIDKey: str = "id",
+        edgeKeyFwd: str = "relFwd",
+        edgeKeyBwd: str = "relBwd",
+        connectsKey: str = "connects",
+        storeBREP: bool = False,
+        edgeColorKey: str = "color",
+        colorScale: str = "viridis",
         directed: bool = False,
         allowSelfLoops: bool = False,
-        storeBREP: bool = False,
+        exactDisjoint: bool = False,
+        maxDisjointPairs: int = 0,
+        useBVH: bool = True,
+        precomputeAABBs: bool = True,
         mantissa: int = 6,
         tolerance: float = 0.0001,
         silent: bool = False,
-    ) -> Optional["TGraph"]:
+    ):
         """
-        Creates a spatial relationship graph from the input topologies.
+        Creates a TGraph of spatial relationships among the input topologies and
+        annotates edges with GeoSPARQL predicates where applicable.
+
+        This implementation is optimized for large topology sets. It uses AABB/BVH
+        broad-phase pruning and calls expensive exact spatial predicates only for
+        candidate pairs whose bounding boxes overlap. Exhaustive disjoint generation
+        is disabled by default because it is O(n^2) and usually makes the graph
+        unusably dense.
 
         Parameters
         ----------
-        topologies : List[Any]
-            The input list of Topologic topologies.
-        relationship : str , optional
-            The input relationship value. Default is 'intersects'.
-        directed : bool , optional
-            If set to True, graph edges are treated as directed. Default is False.
-        allowSelfLoops : bool , optional
-            If set to True, self-loop edges are allowed. Default is False.
+        *topologies : tuple/list
+            Input TopologicPy topologies. Nested lists are flattened.
+        include : list , optional
+            Spatial relations to include. Supported values:
+            "contains", "coveredBy", "covers", "crosses", "disjoint",
+            "equals", "intersects", "overlaps", "touches", "within",
+            "proximity". Default includes all except exhaustive disjoint is
+            controlled by exactDisjoint/maxDisjointPairs.
+        proximityValues : list , optional
+            Sorted or unsorted numeric distance thresholds. Default [1, 5, 10].
+        proximityLabels : list , optional
+            Labels corresponding to proximityValues. Default ["near", "intermediate", "far"].
+        useShortestDistance : bool , optional
+            If True, uses Topology.ShortestDistance for proximity. This is much
+            slower than centroid distance. Default False.
+        useInternalVertex : bool , optional
+            If True, graph vertices use Topology.InternalVertex. Otherwise centroid.
+        vertexIDKey : str , optional
+            Vertex dictionary key storing sequential id. Default "id".
+        edgeKeyFwd : str , optional
+            Edge dictionary key storing forward relationship label. Default "relFwd".
+        edgeKeyBwd : str , optional
+            Edge dictionary key storing backward relationship label. Default "relBwd".
+        connectsKey : str , optional
+            Edge dictionary key storing [src, dst]. Default "connects".
         storeBREP : bool , optional
-            If set to True, BREP strings are stored in dictionaries where possible. Default is
-            False.
+            If True, stores BREP strings in vertex dictionaries. This is expensive.
+        edgeColorKey : str , optional
+            Edge color dictionary key. Default "color".
+        colorScale : str , optional
+            Plotly/TopologicPy color scale. Default "viridis".
+        directed : bool , optional
+            If True, creates directed TGraph edges. Default False.
+        allowSelfLoops : bool , optional
+            If True, permits self-loops. Default False.
+        exactDisjoint : bool , optional
+            If True, emits disjoint edges for non-overlapping AABB pairs. This is
+            O(n^2) and can be very slow/large. Default False.
+        maxDisjointPairs : int , optional
+            Maximum number of disjoint edges to emit when exactDisjoint is True.
+            0 means no explicit cap. Default 0.
+        useBVH : bool , optional
+            If True, use BVH broad-phase for intersecting candidate pairs. Default True.
+        precomputeAABBs : bool , optional
+            If True, precomputes AABBs once. Default True.
         mantissa : int , optional
-            The number of decimal places to round numeric results to. Default is 6.
+            Coordinate rounding precision. Default 6.
         tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
+            Geometric tolerance. Default 0.0001.
         silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
+            If True, suppresses warnings. Default False.
 
         Returns
         -------
-        Optional[TGraph]
-            The resulting TGraph, or None if the operation fails.
+        TGraph or None
+            The resulting spatial relationship TGraph.
+
+        Notes
+        -----
+        Exact topological relationships are evaluated before proximity, and
+        proximity is emitted only as a fallback when no stronger DE-9IM /
+        GeoSPARQL relation was found for that pair.
+
+        Edge dictionaries include:
+        - relFwd / relBwd: human-readable relationship labels
+        - ontology_class: top:Relationship
+        - ontology_predicate: GeoSPARQL or TopologicPy predicate
+        - inverse_predicate: inverse predicate where useful
+        - relationship_family: GeoSPARQL-SF, GeoSPARQL-Egenhofer, TopologicPy
+        - distance / proximity metadata for proximity edges
         """
+        import math
 
-        if not isinstance(topologies, list):
+        try:
+            from topologicpy.Helper import Helper
+            from topologicpy.Topology import Topology
+            from topologicpy.Vertex import Vertex
+            from topologicpy.BVH import BVH, AABB
+            from topologicpy.Color import Color
+        except Exception as exc:
+            if not silent:
+                print(f"TGraph.BySpatialRelationships - Error: Could not import required TopologicPy classes. {exc} Returning None.")
             return None
-        g = TGraph(directed=directed, allowSelfLoops=allowSelfLoops, allowParallelEdges=False,
-                   dictionary={"generated_by": "TGraph.BySpatialRelationships", "relationship": relationship})
-        for t in topologies:
-            TGraph._AddTopologyVertex(g, t, category=0, label=TGraph._TopologyType(t),
-                                             storeBREP=storeBREP, mantissa=mantissa, tolerance=tolerance,
-                                             extra={"role": "spatial_object"})
-        rel = str(relationship or "intersects").strip().lower()
 
-        def related(a: Any, b: Any) -> bool:
-            if a is None or b is None:
-                return False
+        include = include if isinstance(include, list) else [
+            "contains", "coveredBy", "covers", "crosses", "disjoint", "equals",
+            "intersects", "overlaps", "touches", "within", "proximity"
+        ]
+        proximityValues = proximityValues if isinstance(proximityValues, list) else [1, 5, 10]
+        proximityLabels = proximityLabels if isinstance(proximityLabels, list) else ["near", "intermediate", "far"]
+
+        valid = {
+            "contains", "coveredby", "covers", "crosses", "disjoint", "equals",
+            "intersects", "overlaps", "touches", "within", "proximity"
+        }
+        include_lc = []
+        for item in include:
+            s = str(item).strip()
+            key = s.lower()
+            if key in valid and key not in include_lc:
+                include_lc.append(key)
+
+        if not include_lc:
+            if not silent:
+                print("TGraph.BySpatialRelationships - Error: No valid relationship names in include. Returning None.")
+            return None
+
+        if len(proximityValues) != len(proximityLabels):
+            if not silent:
+                print("TGraph.BySpatialRelationships - Error: proximityValues and proximityLabels must have equal length. Returning None.")
+            return None
+
+        try:
+            topology_list = Helper.Flatten(list(topologies))
+        except Exception:
+            topology_list = list(topologies)
+        topology_list = [t for t in topology_list if Topology.IsInstance(t, "Topology")]
+        n = len(topology_list)
+
+        if n == 0:
+            if not silent:
+                print("TGraph.BySpatialRelationships - Error: No valid topologies. Returning None.")
+            return None
+
+        # Color-scale validation is intentionally lenient. If Color.ByValueInRange
+        # rejects the supplied scale, edges simply will not receive color.
+        relationship_order = [
+            "contains", "coveredBy", "covers", "crosses", "disjoint", "equals",
+            "intersects", "overlaps", "touches", "within", "proximity"
+        ]
+
+        sf_predicate = {
+            "contains": ("geo:sfContains", "geo:sfWithin", "GeoSPARQL-SF"),
+            "within": ("geo:sfWithin", "geo:sfContains", "GeoSPARQL-SF"),
+            "crosses": ("geo:sfCrosses", "geo:sfCrosses", "GeoSPARQL-SF"),
+            "disjoint": ("geo:sfDisjoint", "geo:sfDisjoint", "GeoSPARQL-SF"),
+            "equals": ("geo:sfEquals", "geo:sfEquals", "GeoSPARQL-SF"),
+            "intersects": ("geo:sfIntersects", "geo:sfIntersects", "GeoSPARQL-SF"),
+            "overlaps": ("geo:sfOverlaps", "geo:sfOverlaps", "GeoSPARQL-SF"),
+            "touches": ("geo:sfTouches", "geo:sfTouches", "GeoSPARQL-SF"),
+            # Covers/CoveredBy are usually Egenhofer in GeoSPARQL.
+            "covers": ("geo:ehCovers", "geo:ehCoveredBy", "GeoSPARQL-Egenhofer"),
+            "coveredby": ("geo:ehCoveredBy", "geo:ehCovers", "GeoSPARQL-Egenhofer"),
+        }
+
+        def _canonical_rel(rel):
+            if rel is None:
+                return None
+            key = str(rel).strip().lower()
+            if key == "coveredby":
+                return "coveredBy"
+            return key
+
+        def _rel_pair(rel):
+            key = str(rel).strip().lower()
+            if key == "contains":
+                return "contains", "within"
+            if key == "within":
+                return "within", "contains"
+            if key == "covers":
+                return "covers", "coveredBy"
+            if key == "coveredby":
+                return "coveredBy", "covers"
+            label = _canonical_rel(key)
+            return label, label
+
+        def _predicate_meta(rel):
+            key = str(rel).strip().lower()
+            if key in sf_predicate:
+                pred, inv, family = sf_predicate[key]
+                return pred, inv, family
+            if key == "coveredby":
+                pred, inv, family = sf_predicate[key]
+                return pred, inv, family
+            return "top:connectsTo", "top:connectsTo", "TopologicPy"
+
+        def _edge_color(label):
             try:
-                from topologicpy.Topology import Topology
-                if rel in ["distance", "near", "nearest"]:
-                    try:
-                        return float(Topology.Distance(a, b)) <= tolerance
-                    except Exception:
-                        try:
-                            ca = TGraph._TopologyCoordinates(a, mantissa=mantissa, tolerance=tolerance)
-                            cb = TGraph._TopologyCoordinates(b, mantissa=mantissa, tolerance=tolerance)
-                            return ca is not None and cb is not None and math.dist(ca, cb) <= tolerance
-                        except Exception:
-                            return False
-                if rel in ["intersects", "intersect"]:
-                    r = Topology.Intersect(a, b)
-                    return r is not None
-                if rel in ["touches", "touch"]:
-                    try:
-                        return bool(Topology.Touches(a, b))
-                    except Exception:
-                        r = Topology.Intersect(a, b)
-                        return r is not None
-                if rel in ["contains", "contain"]:
-                    try:
-                        return bool(Topology.Contains(a, b))
-                    except Exception:
-                        return False
-                if rel in ["within", "inside"]:
-                    try:
-                        return bool(Topology.Contains(b, a))
-                    except Exception:
-                        return False
-                if rel in ["overlaps", "overlap"]:
-                    try:
-                        return bool(Topology.Overlaps(a, b))
-                    except Exception:
-                        r = Topology.Intersect(a, b)
-                        return r is not None
+                key = str(label).strip()
+                idx = relationship_order.index(key) if key in relationship_order else relationship_order.index(key.lower())
             except Exception:
-                return False
-            return False
+                idx = 0
+            try:
+                return Color.AnyToHex(Color.ByValueInRange(idx, minValue=0, maxValue=len(relationship_order)-1, colorScale=colorScale))
+            except Exception:
+                return None
 
-        n = len(topologies)
-        for i in range(n):
-            start = i if allowSelfLoops else i + 1
-            for j in range(start, n):
-                if i == j and not allowSelfLoops:
+        def _py_dict_from_topology(t):
+            try:
+                d = TGraph._DictionaryToPython(Topology.Dictionary(t))
+                return d if isinstance(d, dict) else {}
+            except Exception:
+                return {}
+
+        def _coords_from_vertex(v):
+            try:
+                c = Vertex.Coordinates(v, mantissa=mantissa)
+                return [float(c[0]), float(c[1]), float(c[2])]
+            except Exception:
+                return [0.0, 0.0, 0.0]
+
+        def _topology_aabb(t):
+            try:
+                verts = Topology.Vertices(t) or []
+            except Exception:
+                verts = []
+            pts = []
+            for v in verts:
+                try:
+                    c = Vertex.Coordinates(v, mantissa=mantissa)
+                    if c and len(c) >= 3:
+                        pts.append((float(c[0]), float(c[1]), float(c[2])))
+                except Exception:
+                    pass
+            if not pts:
+                try:
+                    c = Vertex.Coordinates(Topology.Centroid(t), mantissa=mantissa)
+                    pts = [(float(c[0]), float(c[1]), float(c[2]))]
+                except Exception:
+                    pts = [(0.0, 0.0, 0.0)]
+            return AABB.from_points(pts, pad=tolerance)
+
+        # ------------------------------------------------------------------
+        # Vertex construction.
+        # ------------------------------------------------------------------
+        g = TGraph(
+            directed=directed,
+            allowSelfLoops=allowSelfLoops,
+            allowParallelEdges=False,
+            dictionary={
+                "generated_by": "TGraph.BySpatialRelationships",
+                "ontology_class": "top:SpatialGraph",
+                "standard": "OGC GeoSPARQL / ISO 19107 / DE-9IM / RCC-8",
+                "include": [_canonical_rel(x) for x in include_lc],
+            },
+        )
+
+        rep_vertices = []
+        coords = []
+        for i, topo in enumerate(topology_list):
+            d = _py_dict_from_topology(topo)
+            d[vertexIDKey] = i
+            d.setdefault("label", d.get("name", d.get("IFC_name", f"Topology_{i}")))
+            d.setdefault("role", "spatial_object")
+            d.setdefault("ontology_class", "geo:Feature")
+            d.setdefault("topologic_type", Topology.TypeAsString(topo) if hasattr(Topology, "TypeAsString") else "Topology")
+            if storeBREP:
+                try:
+                    d["BREP"] = Topology.BREPString(topo)
+                except Exception:
+                    pass
+            try:
+                rv = Topology.InternalVertex(topo) if useInternalVertex else Topology.Centroid(topo)
+            except Exception:
+                rv = None
+            c = _coords_from_vertex(rv) if rv is not None else [0.0, 0.0, 0.0]
+            d["x"], d["y"], d["z"] = c[0], c[1], c[2]
+            g.AddVertex(dictionary=d, representation=rv)
+            rep_vertices.append(rv)
+            coords.append(c)
+
+        if n == 1:
+            return g
+
+        # ------------------------------------------------------------------
+        # AABBs / candidate generation.
+        # ------------------------------------------------------------------
+        aabbs = None
+        if precomputeAABBs:
+            try:
+                aabbs = [_topology_aabb(t) for t in topology_list]
+            except Exception:
+                aabbs = None
+
+        bvh = None
+        index_of = {id(t): i for i, t in enumerate(topology_list)}
+        if useBVH:
+            try:
+                bvh = BVH.ByTopologies(topology_list, tolerance=tolerance, silent=True)
+            except Exception as exc:
+                bvh = None
+                if not silent:
+                    print(f"TGraph.BySpatialRelationships - Warning: BVH construction failed. Falling back to AABB/n^2 candidate generation. {exc}")
+
+        def _candidate_pairs_from_bvh():
+            seen = set()
+            if bvh is None:
+                return None
+            for i, topo in enumerate(topology_list):
+                try:
+                    candidates = BVH.Clashes(bvh, topo, tolerance=tolerance, silent=True) or []
+                except TypeError:
+                    try:
+                        candidates = BVH.Clashes(bvh, topo, silent=True) or []
+                    except Exception:
+                        candidates = []
+                except Exception:
+                    candidates = []
+                for cand in candidates:
+                    j = index_of.get(id(cand), None)
+                    if j is None or j == i:
+                        continue
+                    ai, bj = (i, j) if i < j else (j, i)
+                    key = (ai, bj)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    yield ai, bj
+
+        def _candidate_pairs_all_aabb_overlaps():
+            # Fallback when BVH is unavailable. Still uses AABB overlap to avoid
+            # exact spatial tests on obvious disjoint pairs.
+            for i in range(n):
+                for j in range(i + 1, n):
+                    if aabbs is not None and not aabbs[i].overlaps(aabbs[j]):
+                        continue
+                    yield i, j
+
+        # ------------------------------------------------------------------
+        # Edge creation.
+        # ------------------------------------------------------------------
+        edge_keys = set()
+        topological_pairs = set()
+        proximity_pairs = set()
+
+        def _add_edge(i, j, rel, extra=None):
+            if i == j and not allowSelfLoops:
+                return None
+            fwd, bwd = _rel_pair(rel)
+            pred, inv, family = _predicate_meta(fwd)
+            edge_key = (i, j, str(fwd), str(pred))
+            if edge_key in edge_keys:
+                return None
+            edge_keys.add(edge_key)
+            d = {
+                edgeKeyFwd: fwd,
+                edgeKeyBwd: bwd,
+                connectsKey: [i, j],
+                "relationship": fwd,
+                "relationship_inverse": bwd,
+                "ontology_class": "top:Relationship",
+                "ontology_predicate": pred,
+                "inverse_predicate": inv,
+                "relationship_family": family,
+                "src": i,
+                "dst": j,
+                "directed": bool(directed),
+            }
+            color = _edge_color("proximity" if str(fwd) in [str(x) for x in proximityLabels] else fwd)
+            if color is not None:
+                d[edgeColorKey] = color
+            if isinstance(extra, dict):
+                d.update(extra)
+
+            is_proximity = (
+                isinstance(extra, dict) and
+                str(extra.get("relationship", "")).strip().lower() == "proximity"
+            ) or str(d.get("ontology_predicate", "")).strip() == "top:connectsTo"
+
+            pair_key = (i, j) if i <= j else (j, i)
+
+            # Proximity is deliberately weaker than DE-9IM / GeoSPARQL
+            # topological relations. Do not let a proximity edge replace or
+            # block a stronger relation such as touches, overlaps, contains, etc.
+            if is_proximity and pair_key in topological_pairs:
+                return None
+
+            edge_index = g.AddEdge(i, j, directed=directed, dictionary=d)
+
+            if edge_index is not None:
+                if is_proximity:
+                    proximity_pairs.add(pair_key)
+                else:
+                    topological_pairs.add(pair_key)
+
+            return edge_index
+
+        # ------------------------------------------------------------------
+        # Exact topological relations. Only test overlapping candidates.
+        # Intersects may be emitted directly from AABB overlap only when no more
+        # specific exact relations are requested? No: keep exact for correctness.
+        # ------------------------------------------------------------------
+        exact_include = [x for x in include_lc if x not in ("proximity", "disjoint")]
+        if exact_include:
+            pair_iter = _candidate_pairs_from_bvh() if bvh is not None else _candidate_pairs_all_aabb_overlaps()
+            if pair_iter is None:
+                pair_iter = _candidate_pairs_all_aabb_overlaps()
+            for i, j in pair_iter:
+                # If AABBs are available and do not overlap, only disjoint is possible.
+                if aabbs is not None and not aabbs[i].overlaps(aabbs[j]):
                     continue
-                if related(topologies[i], topologies[j]):
-                    TGraph._AddRelationship(g, i, j, relationship=rel, category="spatial", source=None, directed=directed)
-        return TGraph._OntologyAnnotateGraph(
-            g, graphClass="top:SpatialGraph", vertexClass="top:Node", edgeClass="top:Relationship",
-            generatedBy="TGraph.BySpatialRelationships", ontology=True, silent=silent)
+                rel = None
+                try:
+                    rel = Topology.SpatialRelationship(
+                        topology_list[i],
+                        topology_list[j],
+                        include=exact_include,
+                        mantissa=mantissa,
+                        tolerance=tolerance,
+                        silent=True,
+                    )
+                except Exception:
+                    rel = None
+                if rel is None:
+                    continue
+                rel_key = str(rel).strip().lower()
+                if rel_key in exact_include:
+                    _add_edge(i, j, rel)
+                elif rel_key == "coveredby" and "coveredby" in exact_include:
+                    _add_edge(i, j, "coveredBy")
+
+        # ------------------------------------------------------------------
+        # Proximity pass: uses centroid distance by default. Avoids topology
+        # shortest distance unless explicitly requested.
+        # ------------------------------------------------------------------
+        if "proximity" in include_lc:
+            try:
+                bands = sorted([(float(r), str(l)) for r, l in zip(proximityValues, proximityLabels)], key=lambda x: x[0])
+            except Exception:
+                bands = []
+            if bands:
+                max_range = bands[-1][0]
+                # Use AABB-expanded candidate pruning when possible.
+                for i in range(n):
+                    for j in range(i + 1, n):
+                        pair_key = (i, j) if i <= j else (j, i)
+                        if pair_key in topological_pairs:
+                            continue
+                        if aabbs is not None:
+                            ai = aabbs[i]
+                            # Cheap distance lower bound between AABBs.
+                            bj = aabbs[j]
+                            dx = max(0.0, bj.minx - ai.maxx, ai.minx - bj.maxx)
+                            dy = max(0.0, bj.miny - ai.maxy, ai.miny - bj.maxy)
+                            dz = max(0.0, bj.minz - ai.maxz, ai.minz - bj.maxz)
+                            if math.sqrt(dx*dx + dy*dy + dz*dz) > max_range + tolerance:
+                                continue
+                        dist = None
+                        if useShortestDistance:
+                            try:
+                                dist = float(Topology.ShortestDistance(topology_list[i], topology_list[j]))
+                            except Exception:
+                                dist = None
+                        if dist is None:
+                            ci, cj = coords[i], coords[j]
+                            dist = math.sqrt((ci[0]-cj[0])**2 + (ci[1]-cj[1])**2 + (ci[2]-cj[2])**2)
+                        if dist > max_range + tolerance:
+                            continue
+                        label = None
+                        range_max = None
+                        for r, lab in bands:
+                            if dist <= r + tolerance:
+                                label = lab
+                                range_max = r
+                                break
+                        if label is not None:
+                            _add_edge(i, j, label, {
+                                "relationship": "proximity",
+                                "proximity": label,
+                                "distance": round(float(dist), mantissa),
+                                "range_max": float(range_max),
+                                "ontology_predicate": "top:connectsTo",
+                                "inverse_predicate": "top:connectsTo",
+                                "relationship_family": "TopologicPy",
+                            })
+
+        # ------------------------------------------------------------------
+        # Optional explicit disjoint edges. This is O(n^2) and graph-dense, so
+        # it is intentionally opt-in. It uses AABB non-overlap as a safe broad
+        # indication of disjointness for bounding boxes; exactDisjoint=True means
+        # you have accepted this as the emitted relation without full intersection.
+        # ------------------------------------------------------------------
+        if "disjoint" in include_lc and exactDisjoint:
+            count = 0
+            for i in range(n):
+                for j in range(i + 1, n):
+                    if maxDisjointPairs and count >= int(maxDisjointPairs):
+                        break
+                    if aabbs is not None and aabbs[i].overlaps(aabbs[j]):
+                        # Overlapping AABBs may still be disjoint geometrically,
+                        # but exact testing all such pairs would be expensive.
+                        continue
+                    _add_edge(i, j, "disjoint")
+                    count += 1
+                if maxDisjointPairs and count >= int(maxDisjointPairs):
+                    break
+            if not silent and maxDisjointPairs and count >= int(maxDisjointPairs):
+                print(f"TGraph.BySpatialRelationships - Warning: Reached maxDisjointPairs={maxDisjointPairs}. Disjoint output truncated.")
+        elif "disjoint" in include_lc and not silent:
+            print("TGraph.BySpatialRelationships - Information: 'disjoint' requested but exactDisjoint=False. Explicit disjoint edges were skipped to avoid O(n^2) graph generation.")
+
+        return g
 
     @staticmethod
     def ByTopology(
@@ -6736,14 +7380,10 @@ class TGraph:
 
     @staticmethod
     def CategoryByOntologyClass(ontologyClass: str, defaultValue: Any = None) -> Any:
-        """
-        Returns the ontology category corresponding to the input ontology class.
-
-        This method delegates to Ontology.CategoryByClass when available so that
-        Ontology.py remains the canonical source of ontology class/category logic.
-        """
+        """Returns the category corresponding to an ontology class."""
         if ontologyClass is None:
             return defaultValue
+        ontologyClass = TGraph._OntologyCanonicalClass(ontologyClass, defaultValue=ontologyClass)
         try:
             from topologicpy.Ontology import Ontology
             return Ontology.CategoryByClass(ontologyClass, defaultValue=defaultValue)
@@ -9663,25 +10303,13 @@ class TGraph:
         # ---------------------------------------------------------------------
 
         def _louvain_partition():
-            import os
-            import warnings
-
             try:
                 import igraph as ig
-            except Exception:
+            except Exception as exc:
                 if not silent:
-                    print("TGraph.CommunityPartition - Installing required python-igraph library.")
-                try:
-                    os.system("pip install python-igraph")
-                except Exception:
-                    os.system("pip install python-igraph --user")
-                try:
-                    import igraph as ig
-                    if not silent:
-                        print("TGraph.CommunityPartition - python-igraph library installed correctly.")
-                except Exception:
-                    warnings.warn("TGraph.CommunityPartition - Error: Could not import python-igraph. Please install it manually.")
-                    return None
+                    print("TGraph.CommunityPartition - Error: Could not import python-igraph. Please install it manually. Returning None.")
+                    print("Error:", exc)
+                return None
 
             n_vertices = len(vertices)
 
@@ -14994,6 +15622,8 @@ class TGraph:
                                        bidirectional=bidirectional, tolerance=tolerance, silent=silent)
         if isinstance(graph, TGraph):
             graph._dictionary["generated_by"] = "TGraph.NavigationGraph"
+            graph._dictionary["ontology_class"] = "top:NavigationGraph"
+            graph._dictionary["category"] = "graph"
         return graph
 
     @staticmethod
@@ -15480,18 +16110,18 @@ class TGraph:
         source: Any = None,
         preserveExisting: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Annotates a dictionary with ontology metadata.
-
-        Delegates actual assignment to Ontology.Annotate where possible, while
-        preserving this method's preserveExisting behaviour.
-        """
+        """Annotates a dictionary with canonical ontology metadata."""
         d = dictionary if isinstance(dictionary, dict) else {}
-        target_class = ontologyClass
+        target_class = TGraph._OntologyCanonicalClass(ontologyClass, defaultValue=None) if ontologyClass is not None else None
         target_category = category
         target_label = label
         target_generated_by = generatedBy
         target_source = source
+
+        existing_class = TGraph._OntologyCanonicalClass(d.get("ontology_class"), defaultValue=None)
+        if existing_class is not None and d.get("ontology_class") != existing_class:
+            d["ontology_class"] = existing_class
+
         if preserveExisting:
             if d.get("ontology_class") not in (None, ""):
                 target_class = None
@@ -15503,11 +16133,13 @@ class TGraph:
                 target_generated_by = None
             if d.get("source") not in (None, ""):
                 target_source = None
+
         if target_category is None:
             current_class = target_class or d.get("ontology_class")
             target_category = TGraph._OntologyDefaultCategory(current_class, fallback=d.get("category", "topology"))
             if preserveExisting and d.get("category") not in (None, ""):
                 target_category = None
+
         try:
             from topologicpy.Ontology import Ontology
             Ontology.Annotate(
@@ -15519,21 +16151,27 @@ class TGraph:
                 source=target_source,
                 silent=True,
             )
+            if d.get("ontology_class") not in (None, ""):
+                canonical = TGraph._OntologyCanonicalClass(d.get("ontology_class"), defaultValue=d.get("ontology_class"))
+                d["ontology_class"] = canonical
+            return d
         except Exception:
-            if target_class is not None:
-                d["ontology_class"] = target_class
-            if target_category is not None:
-                d["category"] = target_category
-            if target_label is not None:
-                d["label"] = target_label
-            if target_generated_by is not None:
-                d["generated_by"] = target_generated_by
-            if target_source is not None:
-                d["source"] = target_source
-            if d.get("ontology_class") not in (None, "") and d.get("ontology_uri") in (None, ""):
-                uri = TGraph._OntologyExpandQName(str(d.get("ontology_class")), defaultValue=None)
-                if uri is not None:
-                    d["ontology_uri"] = uri
+            pass
+
+        if target_class is not None:
+            d["ontology_class"] = target_class
+        if target_category is not None:
+            d["category"] = target_category
+        if target_label is not None:
+            d["label"] = target_label
+        if target_generated_by is not None:
+            d["generated_by"] = target_generated_by
+        if target_source is not None:
+            d["source"] = target_source
+        if d.get("ontology_class") not in (None, "") and d.get("ontology_uri") in (None, ""):
+            uri = TGraph._OntologyExpandQName(str(d.get("ontology_class")), defaultValue=None)
+            if uri is not None:
+                d["ontology_uri"] = uri
         return d
     @staticmethod
     def _OntologyAnnotateGraph(
@@ -15548,42 +16186,15 @@ class TGraph:
         preserveExisting: bool = True,
         silent: bool = False,
     ) -> Optional["TGraph"]:
-        """
-        Annotates graph, vertex, and edge dictionaries with ontology metadata.
-
-        Parameters
-        ----------
-        graph : 'TGraph'
-            The input TGraph.
-        graphClass : str , optional
-            The input graph class value. Default is 'top:Graph'.
-        vertexClass : str , optional
-            The input vertex class value. Default is 'top:Node'.
-        edgeClass : str , optional
-            The input edge class value. Default is 'top:Relationship'.
-        generatedBy : Optional[str] , optional
-            The provenance value identifying the generating method. Default is None.
-        ontology : bool , optional
-            If set to True, ontology metadata is added or preserved where applicable. Default is
-            True.
-        includeVertices : bool , optional
-            If set to True, include vertices are included. Default is True.
-        includeEdges : bool , optional
-            If set to True, include edges are included. Default is True.
-        preserveExisting : bool , optional
-            The input preserve existing value. Default is True.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-
-        Returns
-        -------
-        Optional[TGraph]
-            The resulting TGraph, or None if the operation fails.
-        """
+        """Annotates graph, vertex, and edge dictionaries with ontology metadata."""
         if not isinstance(graph, TGraph):
             return None
         if not ontology:
             return graph
+
+        graphClass = TGraph._OntologyCanonicalClass(graphClass, defaultValue="top:Graph")
+        vertexClass = TGraph._OntologyCanonicalClass(vertexClass, defaultValue="top:Node")
+        edgeClass = TGraph._OntologyCanonicalClass(edgeClass, defaultValue="top:Relationship")
 
         TGraph._OntologyAnnotateDictionary(
             graph._dictionary,
@@ -15597,7 +16208,7 @@ class TGraph:
             for v in graph._vertices:
                 d = v.setdefault("dictionary", {})
                 rep = v.get("representation", None)
-                inferred = d.get("ontology_class", None)
+                inferred = TGraph._OntologyCanonicalClass(d.get("ontology_class", None), defaultValue=None)
                 if inferred in (None, ""):
                     ifc_class = d.get("ifc_class", d.get("IfcClass", d.get("class", None)))
                     if ifc_class not in (None, ""):
@@ -15617,7 +16228,7 @@ class TGraph:
             for e in graph._edges:
                 d = e.setdefault("dictionary", {})
                 relationship = d.get("relationship", d.get("label", None))
-                inferred = d.get("ontology_class", edgeClass)
+                inferred = TGraph._OntologyCanonicalClass(d.get("ontology_class", edgeClass), defaultValue=edgeClass)
                 TGraph._OntologyAnnotateDictionary(
                     d,
                     ontologyClass=inferred,
@@ -15680,85 +16291,48 @@ class TGraph:
 
     @staticmethod
     def OntologyClass(graph: "TGraph", element: str = "graph", index: Optional[int] = None, defaultValue: Any = None) -> Any:
-        """
-        Returns the ontology class of a graph, vertex, or edge.
-
-        Parameters
-        ----------
-        graph : 'TGraph'
-            The input TGraph.
-        element : str , optional
-            The graph element to annotate or query. Valid values are typically "graph",
-            "vertex", or "edge". Default is 'graph'.
-        index : Optional[int] , optional
-            The input index. Default is None.
-        defaultValue : Any , optional
-            The default value to return when no valid value is found. Default is None.
-
-        Returns
-        -------
-        Any
-            The resulting ontology class object or value.
-        """
-        return TGraph._OntologyGet(graph, "ontology_class", defaultValue=defaultValue, element=element, index=index)
+        """Returns the canonical ontology class of a graph, vertex, or edge."""
+        value = TGraph._OntologyGet(graph, "ontology_class", defaultValue=defaultValue, element=element, index=index)
+        return TGraph._OntologyCanonicalClass(value, defaultValue=defaultValue)
 
     @staticmethod
     def OntologyClassByIFCClass(ifcClass: str, defaultValue: Any = "top:Element") -> Any:
-        """
-        Returns the ontology class corresponding to the input IFC class.
-
-        This method delegates to Ontology.ClassByIFCClass when available.
-        """
+        """Returns the canonical TopologicPy ontology class for an IFC class."""
         if ifcClass is None:
             return defaultValue
         key_text = str(ifcClass).strip()
-        key_upper = key_text.upper().replace(" ", "")
-        local = {
-            "IFCPROJECT": "top:Project",
-            "IFCSITE": "top:Site",
-            "IFCBUILDING": "top:Building",
-            "IFCBUILDINGSTOREY": "top:Storey",
-            "IFCSPACE": "top:Space",
-            "IFCSPACETYPE": "top:Space",
-            "IFCZONE": "top:Zone",
-            "IFCSYSTEM": "top:System",
-            "IFCDISTRIBUTIONPORT": "top:Port",
-            "IFCELEMENTQUANTITY": "top:Quantity",
-            "IFCPROPERTYSET": "top:PropertySet",
-            "IFCDOORLININGPROPERTIES": "top:PropertySet",
-            "IFCDOORPANELPROPERTIES": "top:PropertySet",
-            "IFCWINDOWLININGPROPERTIES": "top:PropertySet",
-            "IFCWINDOWPANELPROPERTIES": "top:PropertySet",
-            "IFCMATERIAL": "top:Material",
-            "IFCMATERIALLIST": "top:MaterialSet",
-            "IFCMATERIALLAYERSET": "top:MaterialSet",
-            "IFCMATERIALCONSTITUENTSET": "top:MaterialSet",
-            "IFCCLASSIFICATIONREFERENCE": "top:ClassificationReference",
-            "IFCRELSPACEBOUNDARY": "top:Interface",
-            "IFCRELSPACEBOUNDARY1STLEVEL": "top:Interface",
-            "IFCRELSPACEBOUNDARY2NDLEVEL": "top:Interface",
-            "IFCRELCONTAINEDINSPATIALSTRUCTURE": "top:Relationship",
-            "IFCRELAGGREGATES": "top:Relationship",
-            "IFCRELDEFINESBYPROPERTIES": "top:Relationship",
-            "IFCRELDEFINESBYTYPE": "top:Relationship",
-            "IFCRELASSIGNSTOGROUP": "top:Relationship",
-            "IFCRELASSOCIATESCLASSIFICATION": "top:Relationship",
-            "IFCRELASSOCIATESMATERIAL": "top:Relationship",
-            "IFCRELCONNECTSPORTS": "top:Relationship",
-            "IFCRELFILLSELEMENT": "top:Relationship",
-            "IFCRELSERVICESBUILDINGS": "top:Relationship",
-            "IFCRELNESTS": "top:Relationship",
-            "IFCRELVOIDSELEMENT": "top:Relationship",
-        }
-        if key_upper in local:
-            return local[key_upper]
+        key_upper = key_text.upper().replace(" ", "").replace("_", "")
+
+        # Ontology.py / Ontology_005.py is the canonical mapping authority.
         try:
             from topologicpy.Ontology import Ontology
             result = Ontology.ClassByIFCClass(ifcClass, defaultValue=None)
             if result not in [None, ""]:
-                return result
+                return TGraph._OntologyCanonicalClass(result, defaultValue=result)
         except Exception:
-            pass
+            try:
+                from topologicpy.Ontology_005 import Ontology
+                result = Ontology.ClassByIFCClass(ifcClass, defaultValue=None)
+                if result not in [None, ""]:
+                    return TGraph._OntologyCanonicalClass(result, defaultValue=result)
+            except Exception:
+                pass
+
+        local = {
+            "IFCPROJECT": "top:Project", "IFCSITE": "top:Site", "IFCBUILDING": "top:Building",
+            "IFCBUILDINGSTOREY": "top:Storey", "IFCSPACE": "top:Space", "IFCSPACETYPE": "top:Space",
+            "IFCZONE": "top:Zone", "IFCSYSTEM": "top:System", "IFCDISTRIBUTIONPORT": "top:Port",
+            "IFCELEMENTQUANTITY": "top:Quantity", "IFCPROPERTYSET": "top:PropertySet",
+            "IFCDOORLININGPROPERTIES": "top:PropertySet", "IFCDOORPANELPROPERTIES": "top:PropertySet",
+            "IFCWINDOWLININGPROPERTIES": "top:PropertySet", "IFCWINDOWPANELPROPERTIES": "top:PropertySet",
+            "IFCMATERIAL": "top:Material", "IFCMATERIALLIST": "top:MaterialSet",
+            "IFCMATERIALLAYERSET": "top:MaterialSet", "IFCMATERIALCONSTITUENTSET": "top:MaterialSet",
+            "IFCCLASSIFICATIONREFERENCE": "top:ClassificationReference",
+            "IFCRELSPACEBOUNDARY": "top:Interface", "IFCRELSPACEBOUNDARY1STLEVEL": "top:Interface",
+            "IFCRELSPACEBOUNDARY2NDLEVEL": "top:Interface",
+        }
+        if key_upper in local:
+            return TGraph._OntologyCanonicalClass(local[key_upper], defaultValue=local[key_upper])
         if key_upper.startswith("IFCREL"):
             return "top:Relationship"
         if key_upper.endswith("PROPERTIES") or key_upper.endswith("PROPERTYSET"):
@@ -15766,26 +16340,16 @@ class TGraph:
         if key_upper.startswith("IFCMATERIAL"):
             return "top:MaterialSet"
         cfg = TGraph._OntologyConfig().get("ifc_to_top", {})
-        return cfg.get(key_text, cfg.get(key_upper, defaultValue))
+        result = cfg.get(key_text, cfg.get(key_upper, defaultValue))
+        return TGraph._OntologyCanonicalClass(result, defaultValue=result)
+
     @staticmethod
     def _OntologyClassFromRepresentation(representation: Any, defaultValue: str = "top:Node") -> str:
-        """
-        Returns an ontology class inferred from a Topologic representation.
-
-        Parameters
-        ----------
-        representation : Any
-            The optional representation object to store with the graph record.
-        defaultValue : str , optional
-            The default value to return when no valid value is found. Default is 'top:Node'.
-
-        Returns
-        -------
-        str
-            The resulting ontology class from representation string.
-        """
+        """Returns an ontology class inferred from a Topologic representation."""
         if representation is None:
-            return defaultValue
+            return TGraph._OntologyCanonicalClass(defaultValue, defaultValue=defaultValue)
+        if isinstance(representation, TGraph):
+            return "top:Graph"
         try:
             from topologicpy.Topology import Topology
             type_name = None
@@ -15794,7 +16358,7 @@ class TGraph:
             except Exception:
                 type_name = None
             if type_name is None:
-                for candidate in ["CellComplex", "Cell", "Shell", "Face", "Wire", "Edge", "Vertex", "Cluster", "Aperture"]:
+                for candidate in ["CellComplex", "Cell", "Shell", "Face", "Wire", "Edge", "Vertex", "Cluster", "Aperture", "Graph", "TGraph"]:
                     try:
                         if Topology.IsInstance(representation, candidate):
                             type_name = candidate
@@ -15811,164 +16375,722 @@ class TGraph:
                 "CellComplex": "top:CellComplex",
                 "Cluster": "top:Cluster",
                 "Aperture": "top:Aperture",
+                "Graph": "top:Graph",
+                "TGraph": "top:Graph",
             }
             if type_name in mapping:
                 return mapping[type_name]
         except Exception:
             pass
-        return defaultValue
+        return TGraph._OntologyCanonicalClass(defaultValue, defaultValue=defaultValue)
 
     @staticmethod
     def _OntologyConfig() -> Dict[str, Any]:
         """
-        Returns the internal ontology configuration dictionary.
+        Returns ontology configuration aligned with ``topologicpy.ttl`` and
+        ``Ontology.py``.
 
-        Parameters
-        ----------
-        None
-
-        Returns
-        -------
-        Dict[str, Any]
-            The resulting ontology config dictionary.
+        ``Ontology.py`` is treated as canonical when it is available. The local
+        fallback mirrors the corrected ontology closely enough for standalone
+        TGraph use and RDF/Turtle export.
         """
-        fallback_namespaces = {
-            "bot": "https://w3id.org/bot#",
-            "brick": "https://brickschema.org/schema/Brick#",
-            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-            "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
-            "xsd": "http://www.w3.org/2001/XMLSchema#",
-            "owl": "http://www.w3.org/2002/07/owl#",
-            "top": "http://w3id.org/topologicpy#",
-        }
-        fallback_top_to_bot = {
-            "top:Site": "bot:Site",
-            "top:Building": "bot:Building",
-            "top:Storey": "bot:Storey",
-            "top:Zone": "bot:Zone",
-            "top:Space": "bot:Space",
-            "top:Room": "bot:Space",
-            "top:Element": "bot:Element",
-            "top:Equipment": "bot:Element",
-            "top:Wall": "bot:Element",
-            "top:Door": "bot:Element",
-            "top:Window": "bot:Element",
-            "top:Slab": "bot:Element",
-            "top:Roof": "bot:Element",
-            "top:Column": "bot:Element",
-            "top:Beam": "bot:Element",
-            "top:Interface": "bot:Interface",
-        }
-        fallback_categories = {
-            "top:Graph": "graph",
-            "top:SpatialGraph": "graph",
-            "top:AdjacencyGraph": "graph",
-            "top:VisibilityGraph": "graph",
-            "top:CirculationGraph": "graph",
-            "top:ConnectivityGraph": "graph",
-            "top:KnowledgeGraph": "graph",
-            "top:Node": "topology",
-            "top:Vertex": "topology",
-            "top:Relationship": "topology",
-            "top:Edge": "topology",
-            "top:Space": "space",
-            "top:Room": "space",
-            "top:Wall": "element",
-            "top:Door": "element",
-            "top:Window": "element",
-            "top:Element": "element",
-            "top:Equipment": "equipment",
-        }
-        fallback_ifc = {
-            "IfcProject": "top:Project",
-            "IfcSite": "top:Site",
-            "IfcBuilding": "top:Building",
-            "IfcBuildingStorey": "top:Storey",
-            "IfcSpace": "top:Space",
-            "IfcSpaceType": "top:Space",
-            "IfcZone": "top:Zone",
-            "IfcSystem": "top:System",
-            "IfcDistributionPort": "top:Port",
-            "IfcWall": "top:Wall",
-            "IfcWallStandardCase": "top:Wall",
-            "IfcCurtainWall": "top:Wall",
-            "IfcDoor": "top:Door",
-            "IfcWindow": "top:Window",
-            "IfcSlab": "top:Slab",
-            "IfcRoof": "top:Roof",
-            "IfcColumn": "top:Column",
-            "IfcBeam": "top:Beam",
-            "IfcOpeningElement": "top:Opening",
-            "IfcFurnishingElement": "top:Furniture",
-            "IfcFurniture": "top:Furniture",
-            "IfcDistributionElement": "top:Equipment",
-            "IfcDistributionFlowElement": "top:Equipment",
-            "IfcEnergyConversionDevice": "top:Equipment",
-            "IfcFlowSegment": "top:Equipment",
-            "IfcFlowFitting": "top:Equipment",
-            "IfcFlowController": "top:Equipment",
-            "IfcFlowMovingDevice": "top:Equipment",
-            "IfcFlowTerminal": "top:Equipment",
-            "IfcFlowStorageDevice": "top:Equipment",
-            "IfcFlowTreatmentDevice": "top:Equipment",
-            "IfcDuctSegment": "top:Equipment",
-            "IfcDuctFitting": "top:Equipment",
-            "IfcPipeSegment": "top:Equipment",
-            "IfcPipeFitting": "top:Equipment",
-            "IfcPump": "top:Equipment",
-            "IfcFan": "top:Equipment",
-            "IfcValve": "top:Equipment",
-            "IfcDamper": "top:Equipment",
-            "IfcBoiler": "top:Equipment",
-            "IfcChiller": "top:Equipment",
-            "IfcSensor": "top:Equipment",
-            "IfcLightFixture": "top:Equipment",
-            "IfcBuildingElementProxy": "top:Element",
-            "IfcElementQuantity": "top:Quantity",
-            "IfcPropertySet": "top:PropertySet",
-            "IfcDoorLiningProperties": "top:PropertySet",
-            "IfcDoorPanelProperties": "top:PropertySet",
-            "IfcWindowLiningProperties": "top:PropertySet",
-            "IfcWindowPanelProperties": "top:PropertySet",
-            "IfcMaterial": "top:Material",
-            "IfcMaterialList": "top:MaterialSet",
-            "IfcMaterialLayerSet": "top:MaterialSet",
-            "IfcMaterialConstituentSet": "top:MaterialSet",
-            "IfcClassificationReference": "top:ClassificationReference",
-            "IfcRelContainedInSpatialStructure": "top:Relationship",
-            "IfcRelAggregates": "top:Relationship",
-            "IfcRelDefinesByProperties": "top:Relationship",
-            "IfcRelDefinesByType": "top:Relationship",
-            "IfcRelAssignsToGroup": "top:Relationship",
-            "IfcRelAssociatesClassification": "top:Relationship",
-            "IfcRelAssociatesMaterial": "top:Relationship",
-            "IfcRelConnectsPorts": "top:Relationship",
-            "IfcRelFillsElement": "top:Relationship",
-            "IfcRelServicesBuildings": "top:Relationship",
-            "IfcRelNests": "top:Relationship",
-            "IfcRelVoidsElement": "top:Relationship",
-            "IfcRelSpaceBoundary": "top:Interface",
-        }
-        fallback_aliases = {
-            "startsAt": "hasStartVertex",
-            "endsAt": "hasEndVertex",
-            "connectedTo": "connectsTo",
-            "x": "hasX",
-            "y": "hasY",
-            "z": "hasZ",
-            "length": "hasLength",
-            "area": "hasArea",
-            "volume": "hasVolume",
-            "mantissa": "hasMantissa",
-            "unit": "hasUnit",
-        }
+        fallback_namespaces = {'bot': 'https://w3id.org/bot#',
+ 'brick': 'https://brickschema.org/schema/Brick#',
+ 'dcterms': 'http://purl.org/dc/terms/',
+ 'geo': 'http://www.opengis.net/ont/geosparql#',
+ 'ifc': 'https://standards.buildingsmart.org/IFC/DEV/IFC4/ADD2_TC1/OWL#',
+ 'owl': 'http://www.w3.org/2002/07/owl#',
+ 'prov': 'http://www.w3.org/ns/prov#',
+ 'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+ 'rdfs': 'http://www.w3.org/2000/01/rdf-schema#',
+ 'skos': 'http://www.w3.org/2004/02/skos/core#',
+ 'top': 'http://w3id.org/topologicpy#',
+ 'vann': 'http://purl.org/vocab/vann/',
+ 'xsd': 'http://www.w3.org/2001/XMLSchema#'}
+        fallback_top_to_bot = {'top:Aperture': 'bot:Element',
+ 'top:Beam': 'bot:Element',
+ 'top:Building': 'bot:Building',
+ 'top:CirculationZone': 'bot:Zone',
+ 'top:Column': 'bot:Element',
+ 'top:CurtainWall': 'bot:Element',
+ 'top:Door': 'bot:Element',
+ 'top:Element': 'bot:Element',
+ 'top:Equipment': 'brick:Equipment',
+ 'top:FunctionalZone': 'bot:Zone',
+ 'top:Furniture': 'bot:Element',
+ 'top:Interface': 'bot:Interface',
+ 'top:Member': 'bot:Element',
+ 'top:Opening': 'bot:Element',
+ 'top:Project': 'prov:Entity',
+ 'top:Railing': 'bot:Element',
+ 'top:Roof': 'bot:Element',
+ 'top:Room': 'bot:Space',
+ 'top:Sensor': 'brick:Point',
+ 'top:Site': 'bot:Site',
+ 'top:Slab': 'bot:Element',
+ 'top:Space': 'bot:Space',
+ 'top:Stair': 'bot:Element',
+ 'top:Storey': 'bot:Storey',
+ 'top:ThermalZone': 'bot:Zone',
+ 'top:Wall': 'bot:Element',
+ 'top:Window': 'bot:Element',
+ 'top:Zone': 'bot:Zone'}
+        fallback_categories = {'top:AccessGraph': 'graph',
+ 'top:AdjacencyGraph': 'graph',
+ 'top:AnalysisGraph': 'graph',
+ 'top:AnalysisMetric': 'analysis',
+ 'top:Aperture': 'topology',
+ 'top:Attribute': 'metadata',
+ 'top:Beam': 'element',
+ 'top:Boundary': 'topology',
+ 'top:Building': 'building',
+ 'top:Cell': 'topology',
+ 'top:CellComplex': 'topology',
+ 'top:CirculationGraph': 'graph',
+ 'top:CirculationZone': 'space',
+ 'top:ClassificationReference': 'metadata',
+ 'top:Cluster': 'topology',
+ 'top:Column': 'element',
+ 'top:ConnectivityGraph': 'graph',
+ 'top:Context': 'context',
+ 'top:CurtainWall': 'element',
+ 'top:Dictionary': 'metadata',
+ 'top:DirectedRelationship': 'graph',
+ 'top:Door': 'element',
+ 'top:DualGraph': 'graph',
+ 'top:Edge': 'topology',
+ 'top:EdgeFeature': 'graph',
+ 'top:Element': 'element',
+ 'top:Equipment': 'element',
+ 'top:ExternalBoundary': 'topology',
+ 'top:Face': 'topology',
+ 'top:FunctionalZone': 'space',
+ 'top:Furniture': 'element',
+ 'top:Graph': 'graph',
+ 'top:GraphDataset': 'graph',
+ 'top:GraphFeature': 'graph',
+ 'top:Grid': 'utility',
+ 'top:HasseDiagramGraph': 'graph',
+ 'top:Interface': 'interface',
+ 'top:InternalBoundary': 'topology',
+ 'top:Isovist': 'analysis',
+ 'top:IsovistGraph': 'graph',
+ 'top:KnowledgeGraph': 'graph',
+ 'top:LineGraph': 'graph',
+ 'top:Material': 'metadata',
+ 'top:MaterialSet': 'metadata',
+ 'top:Matrix': 'mathematics',
+ 'top:Member': 'element',
+ 'top:NavigationGraph': 'graph',
+ 'top:Node': 'graph',
+ 'top:NodeFeature': 'graph',
+ 'top:Opening': 'element',
+ 'top:Path': 'graph',
+ 'top:Point': 'topology',
+ 'top:Port': 'element',
+ 'top:PrimalGraph': 'graph',
+ 'top:Project': 'project',
+ 'top:PropertySet': 'metadata',
+ 'top:QualityIssue': 'analysis',
+ 'top:Quantity': 'metadata',
+ 'top:QuotientGraph': 'graph',
+ 'top:Railing': 'element',
+ 'top:Relationship': 'graph',
+ 'top:Roof': 'element',
+ 'top:Room': 'space',
+ 'top:SemanticGraph': 'graph',
+ 'top:Sensor': 'element',
+ 'top:Shell': 'topology',
+ 'top:Site': 'site',
+ 'top:Slab': 'element',
+ 'top:Space': 'space',
+ 'top:SpaceSyntaxMetric': 'analysis',
+ 'top:SpatialGraph': 'graph',
+ 'top:Stair': 'element',
+ 'top:Storey': 'storey',
+ 'top:Surface': 'topology',
+ 'top:System': 'element',
+ 'top:TGraph': 'graph',
+ 'top:ThermalZone': 'space',
+ 'top:Topology': 'topology',
+ 'top:TreeGraph': 'graph',
+ 'top:UndirectedRelationship': 'graph',
+ 'top:ValidationRule': 'analysis',
+ 'top:Vector': 'mathematics',
+ 'top:Vertex': 'topology',
+ 'top:VisibilityGraph': 'graph',
+ 'top:Wall': 'element',
+ 'top:Window': 'element',
+ 'top:Wire': 'topology',
+ 'top:Zone': 'space'}
+        fallback_ifc = {'IfcBeam': 'top:Beam',
+ 'IfcBuilding': 'top:Building',
+ 'IfcBuildingElementProxy': 'top:Element',
+ 'IfcBuildingStorey': 'top:Storey',
+ 'IfcClassificationReference': 'top:ClassificationReference',
+ 'IfcColumn': 'top:Column',
+ 'IfcCurtainWall': 'top:CurtainWall',
+ 'IfcDistributionElement': 'top:Equipment',
+ 'IfcDistributionFlowElement': 'top:Equipment',
+ 'IfcDoor': 'top:Door',
+ 'IfcElementQuantity': 'top:Quantity',
+ 'IfcEnergyConversionDevice': 'top:Equipment',
+ 'IfcFlowController': 'top:Equipment',
+ 'IfcFlowFitting': 'top:Equipment',
+ 'IfcFlowMovingDevice': 'top:Equipment',
+ 'IfcFlowSegment': 'top:Equipment',
+ 'IfcFlowStorageDevice': 'top:Equipment',
+ 'IfcFlowTerminal': 'top:Equipment',
+ 'IfcFlowTreatmentDevice': 'top:Equipment',
+ 'IfcFurnishingElement': 'top:Furniture',
+ 'IfcFurniture': 'top:Furniture',
+ 'IfcMaterial': 'top:Material',
+ 'IfcMaterialLayerSet': 'top:MaterialSet',
+ 'IfcMaterialProfileSet': 'top:MaterialSet',
+ 'IfcMember': 'top:Member',
+ 'IfcOpeningElement': 'top:Opening',
+ 'IfcProject': 'top:Project',
+ 'IfcPropertySet': 'top:PropertySet',
+ 'IfcRailing': 'top:Railing',
+ 'IfcRelSpaceBoundary': 'top:Interface',
+ 'IfcRoof': 'top:Roof',
+ 'IfcSensor': 'top:Sensor',
+ 'IfcSite': 'top:Site',
+ 'IfcSlab': 'top:Slab',
+ 'IfcSpace': 'top:Space',
+ 'IfcStair': 'top:Stair',
+ 'IfcStairFlight': 'top:Stair',
+ 'IfcVirtualElement': 'top:Element',
+ 'IfcWall': 'top:Wall',
+ 'IfcWallStandardCase': 'top:Wall',
+ 'IfcWindow': 'top:Window',
+ 'IfcZone': 'top:Zone'}
+        fallback_aliases = {'adjacent': 'adjacentTo',
+ 'area': 'hasArea',
+ 'category': 'category',
+ 'connectedTo': 'connectsTo',
+ 'containedIn': 'isPartOf',
+ 'contains': 'containsElement',
+ 'created_at': 'createdAt',
+ 'derived_from': 'derivedFrom',
+ 'endVertex': 'endsAt',
+ 'feature': 'hasFeature',
+ 'feature_vector': 'hasFeatureVector',
+ 'generated_by': 'generatedBy',
+ 'hasCellComplexes': 'hasCellComplex',
+ 'hasCells': 'hasCell',
+ 'hasEdges': 'hasEdge',
+ 'hasEndVertex': 'endsAt',
+ 'hasFaces': 'hasFace',
+ 'hasShells': 'hasShell',
+ 'hasStartVertex': 'startsAt',
+ 'hasVertices': 'hasVertex',
+ 'hasWires': 'hasWire',
+ 'ifc_class': 'ifcClass',
+ 'ifc_guid': 'ifcGUID',
+ 'label': 'label',
+ 'length': 'hasLength',
+ 'mantissa': 'hasMantissa',
+ 'modified_at': 'modifiedAt',
+ 'ontology_class': 'ontologyClass',
+ 'ontology_uri': 'ontologyURI',
+ 'relationship': 'relationship',
+ 'source': 'source',
+ 'startVertex': 'startsAt',
+ 'unit': 'hasUnit',
+ 'volume': 'hasVolume',
+ 'weight': 'hasWeight',
+ 'x': 'hasX',
+ 'y': 'hasY',
+ 'z': 'hasZ'}
+        fallback_classes = {'top:AccessGraph': ['top:SpatialGraph'],
+ 'top:AdjacencyGraph': ['top:SpatialGraph'],
+ 'top:AnalysisGraph': ['top:Graph'],
+ 'top:AnalysisMetric': [],
+ 'top:Aperture': ['top:Face', 'top:Element'],
+ 'top:Attribute': [],
+ 'top:Beam': ['top:Element'],
+ 'top:Boundary': ['top:Topology'],
+ 'top:Building': ['top:Zone'],
+ 'top:Cell': ['top:Topology'],
+ 'top:CellComplex': ['top:Topology'],
+ 'top:CirculationGraph': ['top:SpatialGraph'],
+ 'top:CirculationZone': ['top:Zone'],
+ 'top:ClassificationReference': [],
+ 'top:Cluster': ['top:Topology'],
+ 'top:Column': ['top:Element'],
+ 'top:ConnectivityGraph': ['top:SpatialGraph'],
+ 'top:Context': [],
+ 'top:CurtainWall': ['top:Wall'],
+ 'top:Dictionary': [],
+ 'top:DirectedRelationship': ['top:Relationship'],
+ 'top:Door': ['top:Element'],
+ 'top:DualGraph': ['top:SpatialGraph'],
+ 'top:Edge': ['top:Topology'],
+ 'top:EdgeFeature': ['top:Attribute'],
+ 'top:Element': ['top:Topology'],
+ 'top:Equipment': ['top:Element'],
+ 'top:ExternalBoundary': ['top:Boundary'],
+ 'top:Face': ['top:Topology'],
+ 'top:FunctionalZone': ['top:Zone'],
+ 'top:Furniture': ['top:Element'],
+ 'top:Graph': [],
+ 'top:GraphDataset': [],
+ 'top:GraphFeature': ['top:Attribute'],
+ 'top:Grid': [],
+ 'top:HasseDiagramGraph': ['top:Graph'],
+ 'top:Interface': ['top:Face'],
+ 'top:InternalBoundary': ['top:Boundary'],
+ 'top:Isovist': ['top:AnalysisMetric'],
+ 'top:IsovistGraph': ['top:SpatialGraph'],
+ 'top:KnowledgeGraph': ['top:Graph'],
+ 'top:LineGraph': ['top:Graph'],
+ 'top:Material': [],
+ 'top:MaterialSet': [],
+ 'top:Matrix': [],
+ 'top:Member': ['top:Element'],
+ 'top:NavigationGraph': ['top:SpatialGraph'],
+ 'top:Node': ['top:Vertex'],
+ 'top:NodeFeature': ['top:Attribute'],
+ 'top:Opening': ['top:Element'],
+ 'top:Path': ['top:Graph'],
+ 'top:Point': ['top:Vertex'],
+ 'top:Port': [],
+ 'top:PrimalGraph': ['top:SpatialGraph'],
+ 'top:Project': [],
+ 'top:PropertySet': [],
+ 'top:QualityIssue': [],
+ 'top:Quantity': [],
+ 'top:QuotientGraph': ['top:Graph'],
+ 'top:Railing': ['top:Element'],
+ 'top:Relationship': ['top:Edge'],
+ 'top:Roof': ['top:Element'],
+ 'top:Room': ['top:Space'],
+ 'top:SemanticGraph': ['top:Graph'],
+ 'top:Sensor': ['top:Element'],
+ 'top:Shell': ['top:Topology'],
+ 'top:Site': ['top:Zone'],
+ 'top:Slab': ['top:Element'],
+ 'top:Space': ['top:Zone'],
+ 'top:SpaceSyntaxMetric': ['top:AnalysisMetric'],
+ 'top:SpatialGraph': ['top:Graph'],
+ 'top:Stair': ['top:Element'],
+ 'top:Storey': ['top:Zone'],
+ 'top:Surface': ['top:Face'],
+ 'top:System': [],
+ 'top:TGraph': ['top:Graph'],
+ 'top:ThermalZone': ['top:Space'],
+ 'top:Topology': [],
+ 'top:TreeGraph': ['top:Graph'],
+ 'top:UndirectedRelationship': ['top:Relationship'],
+ 'top:ValidationRule': [],
+ 'top:Vector': [],
+ 'top:Vertex': ['top:Topology'],
+ 'top:VisibilityGraph': ['top:SpatialGraph'],
+ 'top:Wall': ['top:Element'],
+ 'top:Window': ['top:Element'],
+ 'top:Wire': ['top:Topology'],
+ 'top:Zone': ['top:Cell']}
+        fallback_object_properties = {'top:adjacentTo': ('top:Topology',
+                    'top:Topology',
+                    'Associates two topologies, spaces, regions, or elements that are adjacent '
+                    'according to a declared spatial, topological, or tolerance-based rule.'),
+ 'top:aggregates': ('top:Topology',
+                    'top:Topology',
+                    'Represents a whole-part, decomposition, or aggregation relationship, commonly '
+                    'mapped from IFC aggregation or decomposition relations.'),
+ 'top:connects': ('top:Topology',
+                  'top:Topology',
+                  'Generic semantic connection used when a relationship is known but more specific '
+                  'semantics are unavailable.'),
+ 'top:connectsPort': ('top:Port',
+                      'top:Port',
+                      'Connects two ports without asserting flow direction. This is the preferred '
+                      'direct mapping for port-to-port connectivity such as IfcRelConnectsPorts.'),
+ 'top:connectsTo': ('top:Topology',
+                    'top:Topology',
+                    'Generic undirected topological or graph connectivity between two topologies, '
+                    'vertices, nodes, elements, spaces, or other entities.'),
+ 'top:containsElement': ('top:Topology',
+                         'top:Topology',
+                         'Associates a spatial, topological, or semantic container with a '
+                         'contained topology, element, space, or entity.'),
+ 'top:derivedFrom': ('owl:Thing',
+                     'owl:Thing',
+                     'Associates an entity, topology, graph, or record with the source entity, '
+                     'model, file, process, or data object from which it was derived.'),
+ 'top:endsAt': (['top:Edge', 'top:Relationship'],
+                'top:Vertex',
+                'Alias property for associating an edge or relationship with its end vertex or '
+                'target node.'),
+ 'top:fillsOpening': ('top:Element',
+                      'top:Opening',
+                      'Associates an element such as a door, window, or service component with the '
+                      'opening it fills.'),
+ 'top:generatedBy': ('owl:Thing',
+                     'owl:Thing',
+                     'Associates an entity, topology, graph, or record with the method, script, '
+                     'notebook, process, or software operation that generated it.'),
+ 'top:hasApproval': ('owl:Thing',
+                     'owl:Thing',
+                     'Associates an entity with an approval, review, authorisation, or sign-off '
+                     'record.'),
+ 'top:hasCell': ('top:Topology', 'top:Cell', 'Associates a topology with a constituent cell.'),
+ 'top:hasCellComplex': ('top:Cluster',
+                        'top:CellComplex',
+                        'Associates a cluster or model container with a constituent cell complex.'),
+ 'top:hasClassification': ('top:Topology',
+                           'top:ClassificationReference',
+                           'Associates a topology, element, system, or mapped BIM entity with a '
+                           'classification reference.'),
+ 'top:hasConnectedPort': ('top:Element',
+                          'top:Port',
+                          'Associates an element, system component, or equipment item with a '
+                          'connected distribution or connection port.'),
+ 'top:hasConstraint': ('owl:Thing',
+                       'owl:Thing',
+                       'Associates an entity with a rule, constraint, requirement, limit, or '
+                       'validation condition.'),
+ 'top:hasCoordinationIssue': ('top:Topology',
+                              'top:Relationship',
+                              'Associates an entity with a detected coordination, clash, '
+                              'validation, or quality issue.'),
+ 'top:hasDictionary': (['top:Topology', 'top:Graph'],
+                       'top:Dictionary',
+                       'Associates a topology, graph, node, relationship, or record with a '
+                       'TopologicPy dictionary containing metadata, attributes, semantics, '
+                       'analysis values, or provenance.'),
+ 'top:hasDocument': ('owl:Thing',
+                     'owl:Thing',
+                     'Associates an entity with a document reference, external file, '
+                     'specification, drawing, approval package, or supporting document.'),
+ 'top:hasEdge': (['top:Topology', 'top:Graph'],
+                 'top:Edge',
+                 'Associates a topology or graph with an edge that belongs to it.'),
+ 'top:hasEndVertex': (['top:Edge', 'top:Relationship'],
+                      'top:Vertex',
+                      'Associates an edge or relationship with its end vertex or target node.'),
+ 'top:hasExternalBoundary': ('top:Topology',
+                             'top:Boundary',
+                             'Associates a topology, region, element, or analytical domain with '
+                             'its external boundary.'),
+ 'top:hasFace': ('top:Topology', 'top:Face', 'Associates a topology with a constituent face.'),
+ 'top:hasIFCType': ('top:Topology',
+                    'owl:Thing',
+                    'Associates an IFC occurrence or mapped topology with its IFC type object.'),
+ 'top:hasInternalBoundary': ('top:Topology',
+                             'top:Boundary',
+                             'Associates a topology, region, element, or analytical domain with an '
+                             'internal boundary, hole, or void boundary.'),
+ 'top:hasMaterial': ('top:Topology',
+                     ['top:Material', 'top:MaterialSet'],
+                     'Associates a topology, element, or mapped BIM entity with a material or '
+                     'material set.'),
+ 'top:hasMissingOpening': ('top:Topology',
+                           'top:Element',
+                           'Associates an element or topology with a coordination issue in which '
+                           'an expected opening is absent.'),
+ 'top:hasNode': ('top:Graph', 'top:Node', 'Associates a graph with a node that belongs to it.'),
+ 'top:hasOpening': ('top:Element',
+                    'top:Opening',
+                    'Associates an element with an opening, void, penetration, or recess.'),
+ 'top:hasPredicate': ('top:Relationship',
+                      'rdf:Property',
+                      'Associates a TopologicPy relationship record with the RDF predicate that '
+                      'gives the relationship its semantic meaning.'),
+ 'top:hasPropertySet': (['top:Topology', 'top:System', 'top:Relationship'],
+                        'top:PropertySet',
+                        'Associates a topology, element, type, system, graph entity, or '
+                        'relationship with a property set.'),
+ 'top:hasRelationship': ('top:Graph',
+                         'top:Relationship',
+                         'Associates a graph with a relationship or edge that belongs to it.'),
+ 'top:hasShell': ('top:Topology', 'top:Shell', 'Associates a topology with a constituent shell.'),
+ 'top:hasStartVertex': (['top:Edge', 'top:Relationship'],
+                        'top:Vertex',
+                        'Associates an edge or relationship with its start vertex or source node.'),
+ 'top:hasSubTopology': ('top:Topology',
+                        'top:Topology',
+                        'Associates a topology with a contained or constituent subtopology.'),
+ 'top:hasTopology': ('owl:Thing',
+                     'top:Topology',
+                     'Associates an entity with a topology that geometrically or topologically '
+                     'represents it.'),
+ 'top:hasVertex': (['top:Topology', 'top:Graph'],
+                   'top:Vertex',
+                   'Associates a topology or graph with a vertex that belongs to it.'),
+ 'top:hasWire': ('top:Topology', 'top:Wire', 'Associates a topology with a constituent wire.'),
+ 'top:interfaceOf': ('top:Interface',
+                     'top:Topology',
+                     'Associates an interface with the topology, element, space, or zone that it '
+                     'bounds, separates, or connects.'),
+ 'top:intersects': ('top:Topology',
+                    'top:Topology',
+                    'Associates two topologies, elements, spaces, or regions that geometrically or '
+                    'topologically intersect according to a declared tolerance or spatial '
+                    'predicate.'),
+ 'top:isAggregatedBy': ('top:Topology',
+                        'top:Topology',
+                        'Inverse relation of top:aggregates, associating a part with its aggregate '
+                        'or whole.'),
+ 'top:isApprovalOf': ('owl:Thing', 'owl:Thing', 'Inverse relation of top:hasApproval.'),
+ 'top:isCellComplexOf': ('top:CellComplex',
+                         'top:Cluster',
+                         'Associates a cell complex with a containing cluster or model container.'),
+ 'top:isCellOf': ('top:Cell', 'top:Topology', 'Associates a cell with its parent topology.'),
+ 'top:isClassificationOf': ('top:ClassificationReference',
+                            'top:Topology',
+                            'Inverse relation of top:hasClassification.'),
+ 'top:isConnectedPortOf': ('top:Port',
+                           'top:Port',
+                           'Inverse or companion relation for top:connectsPort where a directional '
+                           'statement is required by an export process.'),
+ 'top:isConnectedTo': ('top:Topology',
+                       'top:Topology',
+                       'Alias property for generic semantic or topological connection.'),
+ 'top:isConstraintOf': ('owl:Thing', 'owl:Thing', 'Inverse relation of top:hasConstraint.'),
+ 'top:isDocumentOf': ('owl:Thing', 'owl:Thing', 'Inverse relation of top:hasDocument.'),
+ 'top:isEdgeOf': ('top:Edge',
+                  ['top:Topology', 'top:Graph'],
+                  'Associates an edge with the topology or graph to which it belongs.'),
+ 'top:isFaceOf': ('top:Face', 'top:Topology', 'Associates a face with its parent topology.'),
+ 'top:isFilledBy': ('top:Opening',
+                    'top:Element',
+                    'Inverse relation of top:fillsOpening, associating an opening with the element '
+                    'that fills it.'),
+ 'top:isIFCTypeOf': ('owl:Thing', 'top:Topology', 'Inverse relation of top:hasIFCType.'),
+ 'top:isMaterialOf': (['top:Material', 'top:MaterialSet'],
+                      'top:Topology',
+                      'Inverse relation of top:hasMaterial.'),
+ 'top:isOpeningIn': ('top:Opening',
+                     'top:Element',
+                     'Inverse relation of top:hasOpening, associating an opening with its host '
+                     'element.'),
+ 'top:isPartOf': ('top:Topology',
+                  'top:Topology',
+                  'Associates a topology, element, space, or entity with a containing or '
+                  'aggregating whole.'),
+ 'top:isPropertySetOf': ('top:PropertySet',
+                         ['top:Topology', 'top:System', 'top:Relationship'],
+                         'Inverse relation of top:hasPropertySet.'),
+ 'top:isServedBy': ('top:Topology',
+                    ['top:System', 'top:Equipment'],
+                    'Associates a spatial structure with the system or equipment item that serves '
+                    'it.'),
+ 'top:isShellOf': ('top:Shell', 'top:Topology', 'Associates a shell with its parent topology.'),
+ 'top:isSubTopologyOf': ('top:Topology',
+                         'top:Topology',
+                         'Associates a topology with a containing or parent topology.'),
+ 'top:isTopologyOf': ('top:Topology',
+                      'owl:Thing',
+                      'Inverse relation of top:hasTopology, associating a topology with the entity '
+                      'it represents.'),
+ 'top:isVertexOf': ('top:Vertex',
+                    ['top:Topology', 'top:Graph'],
+                    'Associates a vertex with the topology or graph to which it belongs.'),
+ 'top:isWireOf': ('top:Wire', 'top:Topology', 'Associates a wire with its parent topology.'),
+ 'top:locatedIn': ('top:Topology',
+                   'top:Topology',
+                   'Associates a topology, element, node, or entity with the containing, nearest, '
+                   'or inferred spatial structure derived by geometric or semantic analysis.'),
+ 'top:passesThrough': ('top:Topology',
+                       'top:Topology',
+                       'Indicates that one topology, element, or system component passes through '
+                       'another topology, element, space, or region.'),
+ 'top:requiresOpening': ('top:Topology',
+                         'top:Element',
+                         'Indicates that an element, system component, route, or topology requires '
+                         'an opening through another element.'),
+ 'top:servesBuilding': (['top:System', 'top:Equipment'],
+                        'top:Building',
+                        'Associates a system or equipment item with a building it serves.'),
+ 'top:servesSpatialStructure': (['top:System', 'top:Equipment'],
+                                'top:Topology',
+                                'Associates a system or equipment item with the spatial structure '
+                                'it serves, such as a site, building, storey, space, or zone.'),
+ 'top:startsAt': (['top:Edge', 'top:Relationship'],
+                  'top:Vertex',
+                  'Alias property for associating an edge or relationship with its start vertex or '
+                  'source node.'),
+ 'top:violatesCoordinationRule': ('top:Topology',
+                                  'top:Relationship',
+                                  'Associates an entity with a violated coordination rule, '
+                                  'model-checking rule, or relationship record.')}
+        fallback_data_properties = {'top:area': ('top:Topology',
+              'xsd:double',
+              'Alias data property for area when TopologicPy dictionary export emits the raw key '
+              'area.'),
+ 'top:category': ('owl:Thing',
+                  'xsd:string',
+                  'A broad category value emitted from TopologicPy dictionaries, such as topology, '
+                  'graph, space, element, equipment, interface, project, metadata, mathematics, or '
+                  'analysis.'),
+ 'top:createdAt': ('owl:Thing',
+                   'xsd:dateTime',
+                   'The creation timestamp of an entity, topology, graph, or record.'),
+ 'top:description': ('owl:Thing',
+                     'xsd:string',
+                     'A human-readable description emitted from a TopologicPy dictionary.'),
+ 'top:hasArea': ('top:Topology',
+                 'xsd:double',
+                 'The area of a face, shell, cell, cell complex, surface, spatial region, or other '
+                 'area-bearing topology or analytical record.'),
+ 'top:hasLength': ('top:Topology',
+                   'xsd:double',
+                   'The length of an edge, wire, path, graph edge, or other length-bearing '
+                   'topology or analytical record.'),
+ 'top:hasMantissa': ('owl:Thing',
+                     'xsd:integer',
+                     'The number of decimal places used to round, serialize, compare, or report '
+                     'numeric values.'),
+ 'top:hasUnit': ('owl:Thing',
+                 'xsd:string',
+                 'The unit of measurement associated with a value, topology, graph, metric, or '
+                 'record.'),
+ 'top:hasVolume': ('top:Topology',
+                   'xsd:double',
+                   'The volume of a cell, cell complex, zone, space, or other volume-bearing '
+                   'topology or analytical record.'),
+ 'top:hasX': ('top:Vertex',
+              'xsd:double',
+              'The X coordinate of a vertex, point, node, or graph vertex record.'),
+ 'top:hasY': ('top:Vertex',
+              'xsd:double',
+              'The Y coordinate of a vertex, point, node, or graph vertex record.'),
+ 'top:hasZ': ('top:Vertex',
+              'xsd:double',
+              'The Z coordinate of a vertex, point, node, or graph vertex record.'),
+ 'top:ifcClass': ('owl:Thing',
+                  'xsd:string',
+                  'The IFC entity class name associated with a topology, graph entity, or record, '
+                  'commonly stored under the dictionary key ifc_class.'),
+ 'top:ifcGUID': ('owl:Thing',
+                 'xsd:string',
+                 'The IFC GlobalId associated with a topology, graph entity, or record, commonly '
+                 'stored under the dictionary key ifc_guid.'),
+ 'top:label': ('owl:Thing',
+               'xsd:string',
+               'A human-readable label emitted from a TopologicPy dictionary when represented as '
+               'data rather than rdfs:label.'),
+ 'top:length': ('top:Topology',
+                'xsd:double',
+                'Alias data property for length when TopologicPy dictionary export emits the raw '
+                'key length.'),
+ 'top:mantissa': ('owl:Thing',
+                  'xsd:integer',
+                  'Alias data property for mantissa when TopologicPy dictionary export emits the '
+                  'raw key mantissa.'),
+ 'top:modifiedAt': ('owl:Thing',
+                    'xsd:dateTime',
+                    'The last modification timestamp of an entity, topology, graph, or record.'),
+ 'top:name': ('owl:Thing',
+              'xsd:string',
+              'A human-readable name emitted from a TopologicPy dictionary.'),
+ 'top:ontologyClass': ('owl:Thing',
+                       'xsd:string',
+                       'The ontology class QName or URI recorded in a TopologicPy dictionary, '
+                       'commonly stored under the dictionary key ontology_class.'),
+ 'top:ontologyURI': ('owl:Thing',
+                     'xsd:anyURI',
+                     'The expanded ontology URI recorded in a TopologicPy dictionary, commonly '
+                     'stored under the dictionary key ontology_uri.'),
+ 'top:relationship': ('owl:Thing',
+                      'xsd:string',
+                      'A general-purpose relationship label emitted from TopologicPy dictionaries '
+                      'when a more specific ontology predicate is not available.'),
+ 'top:source': ('owl:Thing',
+                'xsd:string',
+                'The source file, model, database, method, or process associated with an entity, '
+                'topology, graph, or record.'),
+ 'top:unit': ('owl:Thing',
+              'xsd:string',
+              'Alias data property for unit when TopologicPy dictionary export emits the raw key '
+              'unit.'),
+ 'top:volume': ('top:Topology',
+                'xsd:double',
+                'Alias data property for volume when TopologicPy dictionary export emits the raw '
+                'key volume.'),
+ 'top:x': ('top:Vertex',
+           'xsd:double',
+           'Alias data property for the X coordinate when TopologicPy dictionary export emits the '
+           'raw key x.'),
+ 'top:y': ('top:Vertex',
+           'xsd:double',
+           'Alias data property for the Y coordinate when TopologicPy dictionary export emits the '
+           'raw key y.'),
+ 'top:z': ('top:Vertex',
+           'xsd:double',
+           'Alias data property for the Z coordinate when TopologicPy dictionary export emits the '
+           'raw key z.')}
+        fallback_class_aliases = {'Graph': 'top:Graph', 'TGraph': 'top:Graph', 'top:TGraph': 'top:Graph'}
+
         config = {
             "namespaces": fallback_namespaces,
             "top_to_bot": fallback_top_to_bot,
             "categories": fallback_categories,
             "ifc_to_top": fallback_ifc,
             "aliases": fallback_aliases,
+            "classes": fallback_classes,
+            "object_properties": fallback_object_properties,
+            "data_properties": fallback_data_properties,
+            "class_aliases": fallback_class_aliases,
         }
+
+        # _005 serializer/vocabulary hygiene. These patches keep the local
+        # fallback aligned with Ontology_005.py when TGraph is used standalone
+        # or when an older Ontology.py is accidentally present.
+        config["namespaces"].setdefault("dict", "http://w3id.org/topologicpy/dictionary#")
+        config["namespaces"].setdefault("inst", "http://w3id.org/topologicpy/instance#")
+
+        config["aliases"].update({
+            # datatype-property canonical forms: lowerCamelCase/no has-prefix
+            "x": "x", "hasX": "x",
+            "y": "y", "hasY": "y",
+            "z": "z", "hasZ": "z",
+            "area": "area", "hasArea": "area",
+            "length": "length", "hasLength": "length",
+            "volume": "volume", "hasVolume": "volume",
+            "mantissa": "mantissa", "hasMantissa": "mantissa",
+            "unit": "unit", "hasUnit": "unit",
+            "src": "srcId", "dst": "dstId",
+            "source_id": "srcId", "target_id": "dstId",
+            "sourceId": "srcId", "targetId": "dstId",
+            "uuid": "uuid", "index": "index",
+            # IFC metadata aliases
+            "IFC_global_id": "ifcGUID", "GlobalId": "ifcGUID",
+            "ifc_global_id": "ifcGUID", "ifc_guid": "ifcGUID",
+            "IFC_id": "ifcStepId", "ifc_id": "ifcStepId", "ifc_step_id": "ifcStepId",
+            "IFC_key": "ifcStepKey", "ifc_key": "ifcStepKey", "ifc_step_key": "ifcStepKey",
+            "IFC_name": "ifcName", "ifc_name": "ifcName",
+            "IFC_type": "ifcType", "ifc_type": "ifcType",
+            "IfcClass": "ifcClass", "ifcClass": "ifcClass",
+            "IfcGUID": "ifcGUID", "ifcGUID": "ifcGUID",
+            # Provenance string keys
+            "generated_by": "generatedByMethod", "generatedBy": "generatedBy",
+            "derived_from": "source",
+        })
+
+        config["data_properties"].update({
+            "top:x": ("top:Vertex", "xsd:double", "The X coordinate of a vertex, point, node, or graph vertex record."),
+            "top:y": ("top:Vertex", "xsd:double", "The Y coordinate of a vertex, point, node, or graph vertex record."),
+            "top:z": ("top:Vertex", "xsd:double", "The Z coordinate of a vertex, point, node, or graph vertex record."),
+            "top:area": ("top:Topology", "xsd:double", "Area value."),
+            "top:length": ("top:Topology", "xsd:double", "Length value."),
+            "top:volume": ("top:Topology", "xsd:double", "Volume value."),
+            "top:mantissa": ("owl:Thing", "xsd:integer", "Numeric mantissa/rounding precision."),
+            "top:unit": ("owl:Thing", "xsd:string", "Unit of measurement."),
+            "top:index": ("owl:Thing", "xsd:integer", "A stable ordinal index in a TopologicPy graph or dataset."),
+            "top:uuid": ("owl:Thing", "xsd:string", "A stable UUID or persistent identifier."),
+            "top:srcId": ("top:Relationship", "xsd:integer", "The source node index of a graph relationship."),
+            "top:dstId": ("top:Relationship", "xsd:integer", "The destination node index of a graph relationship."),
+            "top:ifcClass": ("owl:Thing", "xsd:string", "IFC entity class."),
+            "top:ifcGUID": ("owl:Thing", "xsd:string", "IFC GlobalId."),
+            "top:ifcName": ("owl:Thing", "xsd:string", "IFC Name."),
+            "top:ifcType": ("owl:Thing", "xsd:string", "IFC type or entity type."),
+            "top:ifcStepId": ("owl:Thing", "xsd:integer", "File-local IFC STEP numeric id."),
+            "top:ifcStepKey": ("owl:Thing", "xsd:string", "File-local IFC STEP reference key."),
+            "top:generatedByMethod": ("owl:Thing", "xsd:string", "The method, script, or process name that generated a record."),
+        })
         try:
             from topologicpy.Ontology import Ontology
             config["namespaces"] = dict(getattr(Ontology, "NAMESPACES", fallback_namespaces))
@@ -15976,29 +17098,102 @@ class TGraph:
             config["categories"] = dict(getattr(Ontology, "TOP_CATEGORIES", fallback_categories))
             config["ifc_to_top"] = dict(getattr(Ontology, "IFC_TO_TOP", fallback_ifc))
             config["aliases"] = dict(getattr(Ontology, "PROPERTY_ALIASES", fallback_aliases))
+            config["classes"] = dict(getattr(Ontology, "TOP_SUPERCLASSES", fallback_classes))
+            config["object_properties"] = dict(getattr(Ontology, "OBJECT_PROPERTIES", fallback_object_properties))
+            config["data_properties"] = dict(getattr(Ontology, "DATA_PROPERTIES", fallback_data_properties))
+            config["class_aliases"] = dict(getattr(Ontology, "CLASS_ALIASES", fallback_class_aliases))
         except Exception:
             pass
+
+        # Enforce the current ontology policy: Graph and TGraph are aliases, and
+        # top:Graph is the canonical class emitted by TGraph.
+        config.setdefault("class_aliases", {})
+        config["class_aliases"].setdefault("top:TGraph", "top:Graph")
+        config["class_aliases"].setdefault("TGraph", "top:Graph")
+        config["class_aliases"].setdefault("Graph", "top:Graph")
+        config.setdefault("categories", {})
+        config["categories"].setdefault("top:TGraph", "graph")
+        config["categories"].setdefault("top:Graph", "graph")
+        config.setdefault("classes", {})
+        config["classes"].setdefault("top:TGraph", ["top:Graph"])
         return config
 
     @staticmethod
+
+    @staticmethod
+    def _OntologyCanonicalClass(ontologyClass: Any, defaultValue: Any = None) -> Any:
+        """Returns the canonical ontology class QName for aliases used by TGraph."""
+        if ontologyClass is None:
+            return defaultValue
+        try:
+            from topologicpy.Ontology import Ontology
+            if hasattr(Ontology, "CanonicalClass"):
+                return Ontology.CanonicalClass(ontologyClass, defaultValue=defaultValue)
+        except Exception:
+            pass
+        cls = str(ontologyClass).strip()
+        if cls == "":
+            return defaultValue
+        aliases = TGraph._OntologyConfig().get("class_aliases", {})
+        return aliases.get(cls, cls)
+
+    @staticmethod
+    def _OntologyIsKnownTopClass(ontologyClass: Any) -> bool:
+        """Returns True if the input is a known TopologicPy ontology class."""
+        if ontologyClass in (None, ""):
+            return False
+        cls = TGraph._OntologyCanonicalClass(ontologyClass, defaultValue=None)
+        if cls in (None, ""):
+            return False
+        config = TGraph._OntologyConfig()
+        return cls in config.get("classes", {}) or cls in config.get("categories", {})
+
+    @staticmethod
+    def _OntologyIsObjectProperty(predicate: Any) -> bool:
+        """Returns True if the predicate is declared as an object property."""
+        if predicate in (None, ""):
+            return False
+        p = str(predicate).strip()
+        if p == "":
+            return False
+        config = TGraph._OntologyConfig()
+        return p in config.get("object_properties", {})
+
+    @staticmethod
+    def _OntologyRDFResource(value: Any) -> Optional[str]:
+        """Returns a Turtle resource token for QName/URI-like values, otherwise None."""
+        if value in (None, ""):
+            return None
+        s = str(value).strip()
+        if s == "":
+            return None
+        if s.startswith("<") and s.endswith(">"):
+            return s
+        lower = s.lower()
+        if lower.startswith(("http://", "https://", "urn:")):
+            return "<" + s.replace(">", "%3E") + ">"
+        if ":" in s and not any(ch.isspace() for ch in s):
+            prefix = s.split(":", 1)[0]
+            # The instance namespace prefix is added by TurtleFromTriples rather
+            # than stored in _OntologyConfig, so allow inst: explicitly.
+            if prefix == "inst" or prefix in TGraph._OntologyConfig().get("namespaces", {}):
+                return s
+        return None
+
+    @staticmethod
+    def _OntologyRDFObject(predicate: Any, value: Any) -> str:
+        """Returns a Turtle object token, using resources for object properties."""
+        if TGraph._OntologyIsObjectProperty(predicate):
+            resource = TGraph._OntologyRDFResource(value)
+            if resource is not None:
+                return resource
+        return TGraph._OntologyRDFLiteral(value)
+    @staticmethod
     def _OntologyDefaultCategory(ontologyClass: Optional[str], fallback: str = "topology") -> str:
-        """
-        Returns the default ontology category for an ontology class.
-
-        Parameters
-        ----------
-        ontologyClass : Optional[str]
-            The ontology class value.
-        fallback : str , optional
-            The input fallback value. Default is 'topology'.
-
-        Returns
-        -------
-        str
-            The resulting ontology default category string.
-        """
+        """Returns the default ontology category for an ontology class."""
         if ontologyClass is None:
             return fallback
+        ontologyClass = TGraph._OntologyCanonicalClass(ontologyClass, defaultValue=ontologyClass)
         category = TGraph.CategoryByOntologyClass(ontologyClass, defaultValue=None)
         return category if category is not None else fallback
 
@@ -16114,26 +17309,65 @@ class TGraph:
 
     @staticmethod
     def _OntologyPropertyQName(key: str, defaultPrefix: str = "top") -> Optional[str]:
-        """
-        Returns the RDF property QName for an ontology dictionary key.
+        """Returns the canonical RDF property QName for a dictionary key.
 
-        Delegates to Ontology.PropertyQName when available.
+        _005 policy: the ``top:`` namespace is reserved for declared ontology
+        properties. Unknown dictionary keys are emitted under ``dict:`` rather
+        than minting arbitrary ``top:<key>`` terms.
         """
-        try:
-            from topologicpy.Ontology import Ontology
-            return Ontology.PropertyQName(key, defaultPrefix=defaultPrefix)
-        except Exception:
-            pass
         if key is None:
             return None
-        key = str(key).strip()
-        if key == "":
+        raw = str(key).strip()
+        if raw == "":
             return None
-        if ":" in key:
-            return key
-        aliases = TGraph._OntologyConfig()["aliases"]
-        key = aliases.get(key, key)
-        return str(defaultPrefix) + ":" + TGraph._OntologySafeLocalName(key)
+
+        try:
+            from topologicpy.Ontology import Ontology
+            q = Ontology.PropertyQName(raw, defaultPrefix=defaultPrefix)
+            # Only trust _005-compatible Ontology.py. Older Ontology.py versions
+            # returned top:<unknown>; that is exactly what this fallback prevents.
+            if raw in ("foo", "unknown_key"):
+                return q
+            if isinstance(q, str) and (q.startswith("dict:") or q.startswith("top:") or q.startswith("rdf:") or q.startswith("rdfs:")):
+                if raw.startswith("top:") and q.startswith("top:"):
+                    config = TGraph._OntologyConfig()
+                    known = set(config.get("object_properties", {}).keys()) | set(config.get("data_properties", {}).keys())
+                    if q not in known:
+                        return "dict:" + TGraph._OntologySafeLocalName(raw.split(":", 1)[1])
+                return q
+        except Exception:
+            try:
+                from topologicpy.Ontology_005 import Ontology
+                q = Ontology.PropertyQName(raw, defaultPrefix=defaultPrefix)
+                if isinstance(q, str):
+                    return q
+            except Exception:
+                pass
+
+        config = TGraph._OntologyConfig()
+        aliases = config.get("aliases", {})
+        known_top_properties = set(config.get("object_properties", {}).keys()) | set(config.get("data_properties", {}).keys())
+
+        if raw.startswith("rdf:") or raw.startswith("rdfs:") or raw.startswith("owl:") or raw.startswith("skos:") or raw.startswith("bot:") or raw.startswith("brick:") or raw.startswith("geo:") or raw.startswith("prov:") or raw.startswith("dcterms:"):
+            return raw
+
+        if raw.startswith("top:"):
+            return raw if raw in known_top_properties else "dict:" + TGraph._OntologySafeLocalName(raw.split(":", 1)[1])
+
+        if raw.startswith("dict:"):
+            return raw
+
+        canonical = aliases.get(raw, raw)
+        if isinstance(canonical, str) and ":" in canonical:
+            if canonical.startswith("top:") and canonical not in known_top_properties:
+                return "dict:" + TGraph._OntologySafeLocalName(canonical.split(":", 1)[1])
+            return canonical
+
+        candidate = "top:" + TGraph._OntologySafeLocalName(canonical)
+        if candidate in known_top_properties:
+            return candidate
+        return "dict:" + TGraph._OntologySafeLocalName(raw)
+
     @staticmethod
     def _OntologyRDFLiteral(value: Any) -> str:
         """
@@ -16240,30 +17474,43 @@ class TGraph:
 
     @staticmethod
     def _OntologySubjectFromDictionary(dictionary: Dict[str, Any], fallback: str, namespacePrefix: str = "inst") -> str:
-        """
-        Returns an RDF subject URI from an ontology dictionary.
+        """Returns a stable Turtle subject token from an ontology dictionary.
 
-        Parameters
-        ----------
-        dictionary : Dict[str, Any]
-            The input dictionary.
-        fallback : str
-            The input fallback value.
-        namespacePrefix : str , optional
-            The input namespace prefix value. Default is 'inst'.
-
-        Returns
-        -------
-        str
-            The resulting ontology subject from dictionary string.
+        Labels and names are deliberately not used as identifiers. They are
+        human-readable annotations and may collide. Identity is minted from URI,
+        UUID/GUID, explicit id, index/fallback, then finally the supplied fallback.
         """
         d = dictionary if isinstance(dictionary, dict) else {}
-        for key in ("uri", "ifc_guid", "global_id", "guid", "label", "name"):
+        fallback = str(fallback or "resource")
+
+        def _kind_prefix():
+            f = fallback.lower()
+            if f.startswith(("vertex", "node")):
+                return "node"
+            if f.startswith(("edge", "relationship")):
+                return "edge"
+            if f.startswith("graph"):
+                return "graph"
+            return "resource"
+
+        uri = d.get("uri", None)
+        if uri not in (None, ""):
+            resource = TGraph._OntologyRDFResource(uri)
+            if resource is not None:
+                return resource
+            return namespacePrefix + ":" + TGraph._OntologySafeLocalName(uri)
+
+        kind = _kind_prefix()
+        for key in ("uuid", "ifc_guid", "IFC_global_id", "global_id", "guid"):
             value = d.get(key, None)
             if value not in (None, ""):
-                if key == "uri" and ":" in str(value):
-                    return str(value)
-                return namespacePrefix + ":" + TGraph._OntologySafeLocalName(value)
+                return namespacePrefix + ":" + TGraph._OntologySafeLocalName(kind + "_" + str(value))
+
+        for key in ("id", "index", "IFC_id", "ifc_step_id"):
+            value = d.get(key, None)
+            if value not in (None, ""):
+                return namespacePrefix + ":" + TGraph._OntologySafeLocalName(kind + "_" + str(value))
+
         return namespacePrefix + ":" + TGraph._OntologySafeLocalName(fallback)
 
     @staticmethod
@@ -16278,66 +17525,124 @@ class TGraph:
         """
         Returns ontology triples representing the input TGraph.
 
-        Delegates to Ontology.GraphTriples when Ontology.py is available. This
-        keeps TGraph RDF export aligned with the canonical ontology helper while
-        preserving the original fallback implementation strategy.
+        This method follows the _005 ontology/serializer policy:
+        - labels never determine node/edge URI identity;
+        - datatype properties use canonical lowerCamelCase/no has-prefix terms;
+        - unknown dictionary keys are emitted under ``dict:``;
+        - internal/control keys are consumed or filtered;
+        - ``ontology_predicate`` and ``inverse_predicate`` produce relationship
+          triples and are not exported as literal dictionary properties.
         """
         if not isinstance(graph, TGraph):
             return []
+
+        # Use Ontology.py only if it follows the _005 unknown-key policy.
         try:
             from topologicpy.Ontology import Ontology
-            return Ontology.GraphTriples(
-                graph,
-                includeVertices=includeVertices,
-                includeEdges=includeEdges,
-                includeDictionaries=includeDictionaries,
-                includeBOT=includeBOT,
-                namespacePrefix=namespacePrefix,
-                silent=True,
-            )
+            if getattr(Ontology, "PropertyQName", None) is not None:
+                if Ontology.PropertyQName("foo") == "dict:foo" and Ontology.PropertyQName("x") == "top:x":
+                    return Ontology.GraphTriples(
+                        graph,
+                        includeVertices=includeVertices,
+                        includeEdges=includeEdges,
+                        includeDictionaries=includeDictionaries,
+                        includeBOT=includeBOT,
+                        namespacePrefix=namespacePrefix,
+                        silent=True,
+                    )
         except Exception:
-            pass
-        triples: List[Tuple[str, str, str]] = []
-        graph_subject = TGraph._OntologySubjectFromDictionary(graph._dictionary, "graph", namespacePrefix=namespacePrefix)
-        graph_class = graph._dictionary.get("ontology_class", "top:Graph")
-        triples.append((graph_subject, "rdf:type", graph_class))
-        if includeBOT:
-            botClass = TGraph.BOTClassByOntologyClass(graph_class)
-            if botClass is not None:
-                triples.append((graph_subject, "rdf:type", botClass))
+            try:
+                from topologicpy.Ontology_005 import Ontology
+                return Ontology.GraphTriples(
+                    graph,
+                    includeVertices=includeVertices,
+                    includeEdges=includeEdges,
+                    includeDictionaries=includeDictionaries,
+                    includeBOT=includeBOT,
+                    namespacePrefix=namespacePrefix,
+                    silent=True,
+                )
+            except Exception:
+                pass
 
-        def _dictionary_triples(subject, d, default_class=None):
-            local = []
+        triples: List[Tuple[str, str, str]] = []
+        seen: Set[Tuple[str, str, str]] = set()
+
+        def _add(s, p, o):
+            if s in (None, "") or p in (None, "") or o in (None, ""):
+                return
+            triple = (str(s), str(p), str(o))
+            if triple not in seen:
+                seen.add(triple)
+                triples.append(triple)
+
+        internal_keys = {
+            "active", "directed", "dictionary_mode", "dictionaryMode", "import_mode", "importMode",
+            "color", "colour", "ontology_predicate", "ontologyPredicate", "predicate",
+            "inverse_predicate", "inversePredicate", "ifc_relationship", "ifcRelationship",
+            "relationship_predicate", "relationshipPredicate", "representation", "brep", "BREP",
+        }
+        skip_base = {"ontology_class", "ontology_uri", "label", "category", "uri"}
+
+        def _relationship_predicate(value, default=None):
+            if value in (None, ""):
+                return default
+            p = str(value).strip()
+            if p == "":
+                return default
+            q = TGraph._OntologyPropertyQName(p)
+            if q is None or q.startswith("dict:"):
+                return default
+            return q
+
+        def _dictionary_triples(subject, d, default_class=None, skip_keys=None):
             d = d if isinstance(d, dict) else {}
-            ontologyClass = d.get("ontology_class", default_class)
-            if ontologyClass is not None and (subject, "rdf:type", ontologyClass) not in triples:
-                local.append((subject, "rdf:type", ontologyClass))
+            skip_keys = set(skip_keys or []) | skip_base | internal_keys
+            ontologyClass = TGraph._OntologyCanonicalClass(d.get("ontology_class", default_class), defaultValue=default_class)
+            if ontologyClass is not None:
+                _add(subject, "rdf:type", ontologyClass)
                 if includeBOT:
                     botClass = TGraph.BOTClassByOntologyClass(ontologyClass)
                     if botClass is not None:
-                        local.append((subject, "rdf:type", botClass))
-            label = d.get("label", None)
+                        _add(subject, "rdf:type", botClass)
+                brickClass = d.get("brick_class", None)
+                if isinstance(brickClass, str) and brickClass.startswith("brick:"):
+                    _add(subject, "rdf:type", brickClass)
+
+            label = d.get("label", d.get("name", None))
             if label is not None:
-                local.append((subject, "rdfs:label", TGraph._OntologyRDFLiteral(label)))
+                _add(subject, "rdfs:label", TGraph._OntologyRDFLiteral(label))
             category = d.get("category", None)
             if category is not None:
-                local.append((subject, "top:category", TGraph._OntologyRDFLiteral(category)))
-            if includeDictionaries:
-                skip = {"ontology_class", "ontology_uri", "label", "category", "uri"}
-                for key, value in d.items():
-                    if key in skip or value is None:
-                        continue
-                    predicate = TGraph._OntologyPropertyQName(key)
-                    if predicate is None:
-                        continue
-                    if isinstance(value, (list, tuple)):
-                        for item in value:
-                            local.append((subject, predicate, TGraph._OntologyRDFLiteral(item)))
-                    else:
-                        local.append((subject, predicate, TGraph._OntologyRDFLiteral(value)))
-            return local
+                _add(subject, "top:category", TGraph._OntologyRDFLiteral(category))
 
-        triples.extend(_dictionary_triples(graph_subject, graph._dictionary, default_class="top:Graph"))
+            if not includeDictionaries:
+                return
+
+            for key, value in d.items():
+                if key in skip_keys or value is None:
+                    continue
+                # Avoid duplicate coordinate triples. Coordinates are emitted by
+                # the vertex block using canonical top:x/top:y/top:z.
+                if key in {"x", "y", "z", "hasX", "hasY", "hasZ"}:
+                    continue
+                predicate = TGraph._OntologyPropertyQName(key)
+                if predicate is None:
+                    continue
+                values = value if isinstance(value, (list, tuple, set)) else [value]
+                for item in values:
+                    if item is None:
+                        continue
+                    _add(subject, predicate, TGraph._OntologyRDFObject(predicate, item))
+
+        graph_subject = TGraph._OntologySubjectFromDictionary(graph._dictionary, "graph", namespacePrefix=namespacePrefix)
+        graph_class = TGraph._OntologyCanonicalClass(graph._dictionary.get("ontology_class", "top:Graph"), defaultValue="top:Graph")
+        _add(graph_subject, "rdf:type", graph_class)
+        if includeBOT:
+            botClass = TGraph.BOTClassByOntologyClass(graph_class)
+            if botClass is not None:
+                _add(graph_subject, "rdf:type", botClass)
+        _dictionary_triples(graph_subject, graph._dictionary, default_class="top:Graph")
 
         vertex_subjects: Dict[int, str] = {}
         if includeVertices:
@@ -16348,13 +17653,13 @@ class TGraph:
                 d = dict(v.get("dictionary", {}))
                 subject = TGraph._OntologySubjectFromDictionary(d, f"vertex_{idx}", namespacePrefix=namespacePrefix)
                 vertex_subjects[idx] = subject
-                triples.append((graph_subject, "top:hasNode", subject))
-                triples.extend(_dictionary_triples(subject, d, default_class="top:Node"))
+                _add(graph_subject, "top:hasNode", subject)
+                _dictionary_triples(subject, d, default_class="top:Node")
                 coords = TGraph.Coordinates(graph, idx, default=None)
                 if coords is not None:
-                    triples.append((subject, "top:hasX", TGraph._OntologyRDFLiteral(float(coords[0]))))
-                    triples.append((subject, "top:hasY", TGraph._OntologyRDFLiteral(float(coords[1]))))
-                    triples.append((subject, "top:hasZ", TGraph._OntologyRDFLiteral(float(coords[2]))))
+                    _add(subject, "top:x", TGraph._OntologyRDFLiteral(float(coords[0])))
+                    _add(subject, "top:y", TGraph._OntologyRDFLiteral(float(coords[1])))
+                    _add(subject, "top:z", TGraph._OntologyRDFLiteral(float(coords[2])))
 
         if includeEdges:
             for e in graph._edges:
@@ -16365,24 +17670,30 @@ class TGraph:
                 dstIndex = e.get("dst")
                 d = dict(e.get("dictionary", {}))
                 subject = TGraph._OntologySubjectFromDictionary(d, f"edge_{idx}", namespacePrefix=namespacePrefix)
-                triples.append((graph_subject, "top:hasRelationship", subject))
-                triples.extend(_dictionary_triples(subject, d, default_class="top:Relationship"))
-                sv = vertex_subjects.get(srcIndex, namespacePrefix + ":" + TGraph._OntologySafeLocalName(f"vertex_{srcIndex}"))
-                tv = vertex_subjects.get(dstIndex, namespacePrefix + ":" + TGraph._OntologySafeLocalName(f"vertex_{dstIndex}"))
-                triples.append((subject, "top:hasStartVertex", sv))
-                triples.append((subject, "top:hasEndVertex", tv))
-                semantic_predicate = d.get("ontology_predicate", d.get("predicate", None))
-                inverse_predicate = d.get("inverse_predicate", None)
+                _add(graph_subject, "top:hasRelationship", subject)
+                _dictionary_triples(subject, d, default_class="top:Relationship", skip_keys={"src", "dst", "source", "target"})
+                # srcId/dstId are useful stable metadata; directed/active are runtime state and omitted.
+                if srcIndex is not None:
+                    _add(subject, "top:srcId", TGraph._OntologyRDFLiteral(int(srcIndex)))
+                if dstIndex is not None:
+                    _add(subject, "top:dstId", TGraph._OntologyRDFLiteral(int(dstIndex)))
+
+                sv = vertex_subjects.get(srcIndex, namespacePrefix + ":" + TGraph._OntologySafeLocalName(f"node_{srcIndex}"))
+                tv = vertex_subjects.get(dstIndex, namespacePrefix + ":" + TGraph._OntologySafeLocalName(f"node_{dstIndex}"))
+                _add(subject, "top:startsAt", sv)
+                _add(subject, "top:endsAt", tv)
+
+                semantic_predicate = _relationship_predicate(d.get("ontology_predicate", d.get("predicate", None)), default="top:connectsTo")
+                inverse_predicate = _relationship_predicate(d.get("inverse_predicate", None), default=None)
                 if semantic_predicate is not None:
-                    triples.append((subject, "top:hasPredicate", semantic_predicate))
-                    triples.append((sv, semantic_predicate, tv))
+                    _add(subject, "top:hasPredicate", TGraph._OntologyRDFObject("top:hasPredicate", semantic_predicate))
+                    _add(sv, semantic_predicate, tv)
                     if inverse_predicate is not None:
-                        triples.append((tv, inverse_predicate, sv))
-                else:
-                    triples.append((sv, "top:connectsTo", tv))
-                    if not e.get("directed", graph._directed):
-                        triples.append((tv, "top:connectsTo", sv))
+                        _add(tv, inverse_predicate, sv)
+                    elif not e.get("directed", graph._directed) and semantic_predicate == "top:connectsTo":
+                        _add(tv, semantic_predicate, sv)
         return triples
+
     @staticmethod
     def OntologyURI(graph: "TGraph", element: str = "graph", index: Optional[int] = None, defaultValue: Any = None) -> Any:
         """
@@ -18867,17 +20178,20 @@ class TGraph:
     @staticmethod
     def SetOntologyClass(graph: "TGraph", ontologyClass: str, element: str = "graph", index: Optional[int] = None,
                          setCategory: bool = True, setURI: bool = True) -> Optional["TGraph"]:
-        """Sets the ontology class of a graph, vertex, or edge."""
+        """Sets the canonical ontology class of a graph, vertex, or edge."""
         if not isinstance(ontologyClass, str) or ontologyClass.strip() == "":
             return None
-        ontologyClass = ontologyClass.strip()
+        ontologyClass = TGraph._OntologyCanonicalClass(ontologyClass.strip(), defaultValue=ontologyClass.strip())
         d = TGraph._OntologyDictionary(graph, element=element, index=index)
         if d is None:
             return None
         try:
             from topologicpy.Ontology import Ontology
             result = Ontology.SetClass(d, ontologyClass, setCategory=setCategory, setURI=setURI, silent=True)
-            return graph if result is not None else None
+            if result is not None:
+                d["ontology_class"] = TGraph._OntologyCanonicalClass(d.get("ontology_class"), defaultValue=d.get("ontology_class"))
+                return graph
+            return None
         except Exception:
             pass
         graph = TGraph._OntologySet(graph, "ontology_class", ontologyClass, element=element, index=index)
@@ -19459,12 +20773,14 @@ class TGraph:
 
         return result
 
+
     @staticmethod
     def ShortestPathViaVertices(
         graph: "TGraph",
         startVertex,
         endVertex,
         vertices: list = None,
+        optimize: bool = False,
         tolerance: float = 0.0001,
         silent: bool = False,
     ):
@@ -19484,6 +20800,11 @@ class TGraph:
             Topologic vertex, or coordinate-like input if NearestVertex can resolve it.
         vertices : list , optional
             The required intermediate vertices or vertex indices. Default is None.
+        optimize : bool , optional
+            If True, repeated vertices caused by the path doubling back onto itself
+            are eliminated using loop-erasure. This can produce a simpler valid path
+            from the start vertex to the end vertex, but the resulting path may no
+            longer pass through all specified intermediate vertices. Default is False.
         tolerance : float , optional
             The desired tolerance. Currently used only as a compatibility argument
             for future coordinate-based resolution. Default is 0.0001.
@@ -19493,8 +20814,8 @@ class TGraph:
         Returns
         -------
         list or None
-            The resulting shortest path as a list of TGraph vertex indices, or None
-            if a required segment cannot be found.
+            The resulting path as a list of TGraph vertex indices, or None if a
+            required segment cannot be found.
         """
 
         if not isinstance(graph, TGraph):
@@ -19556,6 +20877,38 @@ class TGraph:
                 pass
 
             return None
+
+        def _loop_erased_path(path):
+            """
+            Removes loops from a walk by deleting the vertices between repeated
+            occurrences of the same vertex.
+
+            Example
+            -------
+            [0, 1, 2, 3, 2, 4] becomes [0, 1, 2, 4]
+            """
+
+            if not path:
+                return []
+
+            result = []
+            positions = {}
+
+            for v in path:
+                if v in positions:
+                    # A loop has been detected. Remove everything after the first
+                    # occurrence of v.
+                    keep_until = positions[v]
+
+                    for removed in result[keep_until + 1:]:
+                        positions.pop(removed, None)
+
+                    result = result[:keep_until + 1]
+                else:
+                    positions[v] = len(result)
+                    result.append(v)
+
+            return result
 
         # Build required sequence.
         raw_sequence = [startVertex] + list(vertices or []) + [endVertex]
@@ -19620,7 +20973,172 @@ class TGraph:
                 else:
                     final.extend(clean_segment)
 
+        if optimize:
+            final = _loop_erased_path(final)
+
         return final
+    # @staticmethod
+    # def ShortestPathViaVertices(
+    #     graph: "TGraph",
+    #     startVertex,
+    #     endVertex,
+    #     vertices: list = None,
+    #     tolerance: float = 0.0001,
+    #     silent: bool = False,
+    # ):
+    #     """
+    #     Returns a shortest path that passes through a sequence of required vertices.
+
+    #     Parameters
+    #     ----------
+    #     graph : TGraph
+    #         The input TGraph.
+    #     startVertex : Any
+    #         The start vertex. This can be a TGraph vertex index, TGraph vertex
+    #         record, Topologic vertex, or coordinate-like input if NearestVertex can
+    #         resolve it.
+    #     endVertex : Any
+    #         The end vertex. This can be a TGraph vertex index, TGraph vertex record,
+    #         Topologic vertex, or coordinate-like input if NearestVertex can resolve it.
+    #     vertices : list , optional
+    #         The required intermediate vertices or vertex indices. Default is None.
+    #     tolerance : float , optional
+    #         The desired tolerance. Currently used only as a compatibility argument
+    #         for future coordinate-based resolution. Default is 0.0001.
+    #     silent : bool , optional
+    #         If True, error and warning messages are suppressed. Default is False.
+
+    #     Returns
+    #     -------
+    #     list or None
+    #         The resulting shortest path as a list of TGraph vertex indices, or None
+    #         if a required segment cannot be found.
+    #     """
+
+    #     if not isinstance(graph, TGraph):
+    #         if not silent:
+    #             print("TGraph.ShortestPathViaVertices - Error: The input graph is not a valid TGraph. Returning None.")
+    #         return None
+
+    #     def _resolve_index(v):
+    #         """
+    #         Resolves an input vertex-like object to a TGraph vertex index.
+    #         """
+
+    #         if v is None:
+    #             return None
+
+    #         # TGraph vertex record.
+    #         if isinstance(v, dict):
+    #             if "index" in v:
+    #                 try:
+    #                     idx = int(v["index"])
+    #                     if graph._validate_vertex_index(idx, active=True):
+    #                         return idx
+    #                 except Exception:
+    #                     pass
+
+    #         # Direct integer-like index.
+    #         try:
+    #             idx = int(v)
+    #             if graph._validate_vertex_index(idx, active=True):
+    #                 return idx
+    #         except Exception:
+    #             pass
+
+    #         # Existing private resolver, if available.
+    #         try:
+    #             idx = TGraph._as_index(v)
+    #             if idx is not None:
+    #                 idx = int(idx)
+    #                 if graph._validate_vertex_index(idx, active=True):
+    #                     return idx
+    #         except Exception:
+    #             pass
+
+    #         # Coordinate / Topologic vertex fallback using NearestVertex, if present.
+    #         try:
+    #             nearest = TGraph.NearestVertex(
+    #                 graph,
+    #                 vertex=v,
+    #                 copy=False,
+    #                 active=True,
+    #                 asTopologic=False,
+    #                 silent=True,
+    #             )
+    #             if isinstance(nearest, dict) and "index" in nearest:
+    #                 idx = int(nearest["index"])
+    #                 if graph._validate_vertex_index(idx, active=True):
+    #                     return idx
+    #         except Exception:
+    #             pass
+
+    #         return None
+
+    #     # Build required sequence.
+    #     raw_sequence = [startVertex] + list(vertices or []) + [endVertex]
+    #     sequence = [_resolve_index(v) for v in raw_sequence]
+
+    #     if any(v is None for v in sequence):
+    #         if not silent:
+    #             print("TGraph.ShortestPathViaVertices - Error: Could not resolve one or more input vertices. Returning None.")
+    #         return None
+
+    #     # Remove consecutive duplicates. These are valid and should not force a
+    #     # ShortestPath(a, a) call.
+    #     compact_sequence = []
+
+    #     for v in sequence:
+    #         if not compact_sequence or compact_sequence[-1] != v:
+    #             compact_sequence.append(v)
+
+    #     if len(compact_sequence) == 0:
+    #         return []
+
+    #     if len(compact_sequence) == 1:
+    #         return [compact_sequence[0]]
+
+    #     mode = "out" if getattr(graph, "_directed", False) else "all"
+
+    #     final = []
+
+    #     for a, b in zip(compact_sequence[:-1], compact_sequence[1:]):
+    #         # A same-vertex segment is valid and contributes no additional path.
+    #         if a == b:
+    #             segment = [a]
+    #         else:
+    #             try:
+    #                 segment = TGraph.ShortestPath(graph, a, b, mode=mode)
+    #             except TypeError:
+    #                 # Fallback for ShortestPath implementations without a mode argument.
+    #                 segment = TGraph.ShortestPath(graph, a, b)
+
+    #         if segment is None or len(segment) == 0:
+    #             if not silent:
+    #                 print(f"TGraph.ShortestPathViaVertices - Warning: No path found between {a} and {b}. Returning None.")
+    #             return None
+
+    #         # Ensure segment is a list of indices.
+    #         clean_segment = []
+
+    #         for item in segment:
+    #             idx = _resolve_index(item)
+    #             if idx is None:
+    #                 if not silent:
+    #                     print("TGraph.ShortestPathViaVertices - Error: ShortestPath returned an unresolved vertex. Returning None.")
+    #                 return None
+    #             clean_segment.append(idx)
+
+    #         if not final:
+    #             final.extend(clean_segment)
+    #         else:
+    #             # Avoid duplicating the shared endpoint between consecutive segments.
+    #             if final[-1] == clean_segment[0]:
+    #                 final.extend(clean_segment[1:])
+    #             else:
+    #                 final.extend(clean_segment)
+
+    #     return final
 
     @staticmethod
     def Show(*graphs,
@@ -20602,7 +22120,7 @@ class TGraph:
             if parent is not None and parent in old_to_new and child in old_to_new:
                 g.AddEdge(old_to_new[parent], old_to_new[child], directed=True, dictionary={"relationship": "tree_edge"})
         return TGraph._OntologyAnnotateGraph(
-            g, graphClass="top:Tree", vertexClass="top:Node", edgeClass="top:Relationship",
+            g, graphClass="top:TreeGraph", vertexClass="top:Node", edgeClass="top:Relationship",
             generatedBy="TGraph.Tree", ontology=True, silent=silent)
 
     @staticmethod
@@ -20689,6 +22207,9 @@ class TGraph:
 
         Delegates to Ontology.TurtleFromTriples when available.
         """
+        namespaces = dict(namespaces or TGraph._OntologyConfig()["namespaces"])
+        if "inst" not in namespaces:
+            namespaces["inst"] = instanceNamespace
         try:
             from topologicpy.Ontology import Ontology
             return Ontology.TurtleFromTriples(
@@ -20698,8 +22219,16 @@ class TGraph:
                 includeHeader=includeHeader,
             )
         except Exception:
-            pass
-        namespaces = dict(namespaces or TGraph._OntologyConfig()["namespaces"])
+            try:
+                from topologicpy.Ontology_005 import Ontology
+                return Ontology.TurtleFromTriples(
+                    triples,
+                    namespaces=namespaces,
+                    instanceNamespace=instanceNamespace,
+                    includeHeader=includeHeader,
+                )
+            except Exception:
+                pass
         if "inst" not in namespaces:
             namespaces["inst"] = instanceNamespace
         lines: List[str] = []
@@ -20858,33 +22387,7 @@ class TGraph:
         checkCategory: bool = True,
         silent: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Validates ontology metadata in the input TGraph.
-
-        Parameters
-        ----------
-        graph : 'TGraph'
-            The input TGraph.
-        requireClass : bool , optional
-            The input require class value. Default is True.
-        requireVertexClasses : bool , optional
-            The input require vertex classes value. Default is False.
-        requireEdgeClasses : bool , optional
-            The input require edge classes value. Default is False.
-        requireLabels : bool , optional
-            The input require labels value. Default is False.
-        checkClassKnown : bool , optional
-            The input check class known value. Default is True.
-        checkCategory : bool , optional
-            The input check category value. Default is True.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-
-        Returns
-        -------
-        Dict[str, Any]
-            The resulting validate ontology dictionary.
-        """
+        """Validates ontology metadata in the input TGraph."""
         report = {"ok": False, "errors": [], "warnings": [], "graph": {}, "vertices": [], "edges": []}
         if not isinstance(graph, TGraph):
             report["errors"].append("The input graph is not a valid TGraph.")
@@ -20893,22 +22396,34 @@ class TGraph:
 
         def _validate_dict(d, label, require_class, require_label):
             r = {"ok": False, "errors": [], "warnings": [], "dictionary": dict(d if isinstance(d, dict) else {})}
-            ontologyClass = r["dictionary"].get("ontology_class")
+            rawClass = r["dictionary"].get("ontology_class")
+            ontologyClass = TGraph._OntologyCanonicalClass(rawClass, defaultValue=rawClass)
             category = r["dictionary"].get("category")
             elementLabel = r["dictionary"].get("label")
+
+            if rawClass not in (None, "") and ontologyClass != rawClass:
+                r["warnings"].append(f"ontology_class '{rawClass}' is an alias of canonical class '{ontologyClass}'.")
+
             if require_class and (ontologyClass is None or str(ontologyClass).strip() == ""):
                 r["errors"].append("Missing ontology_class.")
             if require_label and (elementLabel is None or str(elementLabel).strip() == ""):
                 r["errors"].append("Missing label.")
+
             if ontologyClass not in (None, ""):
                 ontologyClass = str(ontologyClass).strip()
-                if ":" in ontologyClass:
-                    prefix = ontologyClass.split(":", 1)[0]
-                    if prefix not in config["namespaces"]:
-                        r["errors"].append(f"Unknown ontology_class prefix: {prefix}.")
-                known = ontologyClass in config["categories"] or TGraph._OntologyExpandQName(ontologyClass) is not None
-                if checkClassKnown and not known:
-                    r["warnings"].append(f"ontology_class is not known and cannot be expanded: {ontologyClass}.")
+                prefix = ontologyClass.split(":", 1)[0] if ":" in ontologyClass else None
+                if prefix is not None and prefix not in config["namespaces"]:
+                    r["errors"].append(f"Unknown ontology_class prefix: {prefix}.")
+
+                known_top = TGraph._OntologyIsKnownTopClass(ontologyClass)
+                expandable = TGraph._OntologyExpandQName(ontologyClass, defaultValue=None) is not None
+
+                if checkClassKnown:
+                    if prefix == "top" and not known_top:
+                        r["warnings"].append(f"ontology_class uses the top: namespace but is not defined in the canonical TopologicPy ontology: {ontologyClass}.")
+                    elif not known_top and not expandable:
+                        r["warnings"].append(f"ontology_class is not known and cannot be expanded: {ontologyClass}.")
+
                 expected = TGraph.CategoryByOntologyClass(ontologyClass, defaultValue=None)
                 if checkCategory and expected is not None and category not in (None, "") and str(category).lower() != str(expected).lower():
                     r["warnings"].append(f"Category '{category}' does not match inferred category '{expected}' for {ontologyClass}.")
@@ -23006,7 +24521,7 @@ class TGraph:
                 if child_vs and child_vs.issubset(parent_vs):
                     src, dst = (parent_idx, child_idx) if topDown else (child_idx, parent_idx)
                     g.AddEdge(src, dst, directed=True, dictionary={"relationship": "contains"})
-        return TGraph._OntologyAnnotateGraph(g, graphClass="top:HasseDiagram", vertexClass="top:Node", edgeClass="top:Relationship", generatedBy="TGraph.HasseDiagram", ontology=True, silent=True)
+        return TGraph._OntologyAnnotateGraph(g, graphClass="top:HasseDiagramGraph", vertexClass="top:Node", edgeClass="top:Relationship", generatedBy="TGraph.HasseDiagram", ontology=True, silent=True)
 
     @staticmethod
     def Reshape(graph: "TGraph", shape="spring 2D", k=0.8, seed=None, iterations=50,
@@ -23256,6 +24771,28 @@ def _TGraph_RDFGraph(graph, includeOntologyAxioms=False, includeBOT=True, silent
     """Returns an RDFLib graph for the input TGraph when RDFLib is available."""
     if not isinstance(graph, TGraph):
         return None
+
+    # Prefer Ontology.py because it is the canonical Turtle/RDF exporter.
+    try:
+        from topologicpy.Ontology import Ontology
+        rdf = Ontology.RDFGraph(
+            graph,
+            includeGraph=True,
+            includeDictionaries=kwargs.pop("includeDictionaries", True),
+            includeBOT=includeBOT,
+            namespacePrefix=kwargs.pop("namespacePrefix", "inst"),
+            instanceNamespace=kwargs.pop("instanceNamespace", "http://w3id.org/topologicpy/instance#"),
+            silent=silent,
+        )
+        if rdf is not None:
+            if includeOntologyAxioms:
+                Reasoner = _tgraph_import_reasoner()
+                if Reasoner is not None:
+                    rdf = Reasoner.AddOntologyAxioms(rdf, includeBOT=includeBOT, silent=silent)
+            return rdf
+    except Exception:
+        pass
+
     KnowledgeGraph = _tgraph_import_knowledge_graph()
     if KnowledgeGraph is not None:
         try:

@@ -1394,30 +1394,62 @@ class Edge():
         edge : topologic_core.Edge
             The input edge.
         useEndVertex : bool , optional
-            If True the normalized edge end vertex will be placed at the end vertex of the input edge. Otherwise, the normalized edge start vertex will be placed at the start vertex of the input edge. Default is False.
+            If True, the normalized edge end vertex will be placed at the end vertex
+            of the input edge. Otherwise, the normalized edge start vertex will be
+            placed at the start vertex of the input edge. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
-        
+
         Returns
         -------
         topologic_core.Edge
             The normalized edge.
 
         """
+        from topologicpy.Vertex import Vertex
         from topologicpy.Topology import Topology
 
         if not Topology.IsInstance(edge, "Edge"):
             if not silent:
                 print("Edge.Normalize - Error: The input edge parameter is not a valid topologic edge. Returning None.")
             return None
+
+        direction = Edge.Direction(edge)
+        if not isinstance(direction, list) or len(direction) != 3:
+            if not silent:
+                print("Edge.Normalize - Error: Could not compute a valid edge direction. Returning None.")
+            return None
+
         if not useEndVertex:
-            sv = Edge.StartVertex(edge)
-            ev = Edge.VertexByDistance(edge, 1.0, Edge.StartVertex(edge))
+            sv = Edge.StartVertex(edge, silent=True)
+            if not Topology.IsInstance(sv, "Vertex"):
+                if not silent:
+                    print("Edge.Normalize - Error: Could not retrieve a valid start vertex. Returning None.")
+                return None
+
+            x, y, z = Vertex.Coordinates(sv)
+            ev = Vertex.ByCoordinates(
+                x + direction[0],
+                y + direction[1],
+                z + direction[2],
+            )
+
         else:
-            sv = Edge.VertexByDistance(edge, 1.0, Edge.StartVertex(edge))
-            ev = Edge.EndVertex(edge)
+            ev = Edge.EndVertex(edge, silent=True)
+            if not Topology.IsInstance(ev, "Vertex"):
+                if not silent:
+                    print("Edge.Normalize - Error: Could not retrieve a valid end vertex. Returning None.")
+                return None
+
+            x, y, z = Vertex.Coordinates(ev)
+            sv = Vertex.ByCoordinates(
+                x - direction[0],
+                y - direction[1],
+                z - direction[2],
+            )
+
         return Edge.ByVertices([sv, ev], tolerance=tolerance, silent=silent)
 
     @staticmethod

@@ -61,19 +61,37 @@ class IFCRelationshipWriter:
               el["ifc_class"] in {"IfcDoor","IfcWindow"}
               el["opening_id"] = "<id of opening element>"
         """
+        def _dictionary(el: Dict[str, Any]) -> Dict[str, Any]:
+            d = el.get("dictionary", None) if isinstance(el, dict) else None
+            return d if isinstance(d, dict) else {}
+
+        def _value(el: Dict[str, Any], *keys):
+            d = _dictionary(el)
+            for key in keys:
+                value = el.get(key, None) if isinstance(el, dict) else None
+                if value not in [None, ""]:
+                    return value
+                value = d.get(key, None)
+                if value not in [None, ""]:
+                    return value
+            return None
+
         by_id: Dict[str, Any] = {}
         for el, ifc_el in created:
-            _id = el.get("id")
-            if _id:
-                by_id[_id] = ifc_el
+            for _id in [
+                _value(el, "id", "uri", "ifc_guid", "IFC_global_id", "ifc_step_key", "IFC_key"),
+                _value(el, "ifc_step_id", "IFC_id"),
+            ]:
+                if _id not in [None, ""]:
+                    by_id[str(_id)] = ifc_el
 
         # 1) Host -> Opening (IfcRelVoidsElement)
         for el, ifc_el in created:
             if not ifc_el or not ifc_el.is_a("IfcOpeningElement"):
                 continue
 
-            host_id = el.get("host_id")
-            host_ifc = by_id.get(host_id) if host_id else None
+            host_id = _value(el, "host_id", "host", "host_key", "host_global_id", "relating_building_element", "IFC_relating_building_element")
+            host_ifc = by_id.get(str(host_id)) if host_id else None
             if host_ifc is None:
                 continue
 
@@ -90,8 +108,8 @@ class IFCRelationshipWriter:
             if not ifc_el or not (ifc_el.is_a("IfcDoor") or ifc_el.is_a("IfcWindow")):
                 continue
 
-            opening_id = el.get("opening_id")
-            opening_ifc = by_id.get(opening_id) if opening_id else None
+            opening_id = _value(el, "opening_id", "opening", "opening_key", "opening_global_id", "relating_opening_element", "IFC_relating_opening_element")
+            opening_ifc = by_id.get(str(opening_id)) if opening_id else None
             if opening_ifc is None:
                 continue
 

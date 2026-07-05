@@ -30,6 +30,9 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
+_PYGAD_IMPORT_ERROR = None
+_PLOTLY_IMPORT_ERROR = None
+
 try:
     import pygad
 except Exception as e:
@@ -67,7 +70,9 @@ def _ensure_plotly():
 
 def _as_2d_array(x: Any) -> np.ndarray:
     a = np.asarray(x)
-    if a.ndim == 1:
+    if a.ndim == 0:
+        a = a.reshape(1, 1)
+    elif a.ndim == 1:
         a = a.reshape(-1, 1)
     return a
 
@@ -123,6 +128,72 @@ def _json_default(obj):
         return getattr(obj, "__name__", repr(obj))
     # Fallback: string representation
     return repr(obj)
+
+
+def _to_json_value(obj):
+    """Return a small JSON-friendly representation without converting native scalars to strings."""
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_value(x) for x in obj]
+    if isinstance(obj, dict):
+        return {str(k): _to_json_value(v) for k, v in obj.items()}
+    try:
+        if isinstance(obj, np.generic):
+            return obj.item()
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except Exception:
+        pass
+    if callable(obj):
+        return getattr(obj, "__name__", repr(obj))
+    return repr(obj)
+
+
+def _pygad_base_filename(filepath: str) -> str:
+    """
+    Returns a PyGAD save/load filename without the trailing .pkl extension.
+    PyGAD appends .pkl internally.
+    """
+    filepath = str(filepath)
+    if filepath.lower().endswith(".pkl"):
+        return filepath[:-4]
+    return filepath
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
+class _GenerationCallback:
+    """Pickle-friendly on_generation callback wrapper."""
+
+    _tpga_wrapped = True
+
+    def __init__(self, wrapper, user_on_generation=None):
+        self.wrapper = wrapper
+        self._tpga_original = user_on_generation
+
+    def __call__(self, ga_instance):
+        user_result = None
+        user_on_generation = self._tpga_original
+
+        if callable(user_on_generation):
+            user_result = user_on_generation(ga_instance)
+
+        gen = _safe_int(getattr(ga_instance, "generations_completed", 0), 0)
+
+        ck = getattr(self.wrapper, "_ckpt", None)
+        if ck and ck.get("enabled", False):
+            interval = max(1, _safe_int(ck.get("interval", 1), 1))
+            if gen > 0 and (gen % interval == 0):
+                self.wrapper._save_checkpoint(ga_instance, gen)
+
+        return user_result
+
 
 @dataclass
 class GARunSummary:
@@ -295,7 +366,7 @@ class GA:
         self._ckpt_files = []  # rolling list of checkpoint .pkl paths (most recent last)
         return self
 
-    def _checkpoint_paths(self) -> list[str]:
+    def _checkpoint_paths(self) -> List[str]:
         if not getattr(self, "_ckpt", {}).get("enabled", False):
             return []
         pattern = os.path.join(self._ckpt["dir"], f"{self._ckpt['prefix']}*_gen_*.pkl")
@@ -303,16 +374,17 @@ class GA:
 
         def _gen_key(fp: str):
             base = os.path.basename(fp)
+            mtime = os.path.getmtime(fp) if os.path.exists(fp) else 0.0
             try:
                 # handles both: prefix_gen_000123.pkl and prefix_tag_gen_000123.pkl
                 g = int(base.split("_gen_")[1].split(".pkl")[0])
-                return (0, g)
+                return (0, g, mtime)
             except Exception:
-                return (1, os.path.getmtime(fp))
+                return (1, 0, mtime)
 
         return sorted(files, key=_gen_key)
 
-    def LatestCheckpoint(self) -> str | None:
+    def LatestCheckpoint(self) -> Optional[str]:
         files = self._checkpoint_paths()
         return files[-1] if files else None
 
@@ -325,31 +397,15 @@ class GA:
         bool
             True if a checkpoint was found and loaded, False otherwise.
         """
-        import pygad
+        _ensure_pygad()
 
         latest = self.LatestCheckpoint()
         if latest is None:
             return False
 
-        self._ga = pygad.load(latest)
+        self._ga = pygad.load(_pygad_base_filename(latest))
         self._ran = True
-
-        # Refresh caches if possible
-        try:
-            sol, fit, idx = self._ga.best_solution()
-            self._best_solution = None if sol is None else np.asarray(sol)
-            self._best_fitness = fit
-            self._best_index = None if idx is None else int(idx)
-        except Exception:
-            pass
-
-        try:
-            self._last_population = np.asarray(getattr(self._ga, "population", None)) if hasattr(self._ga, "population") else None
-            lgf = getattr(self._ga, "last_generation_fitness", None)
-            self._last_population_fitness = np.asarray(lgf) if lgf is not None else None
-        except Exception:
-            pass
-
+        self._refresh_caches()
         return True
 
     def _save_checkpoint(self, ga_instance, generation: int, tag: str = "") -> None:
@@ -399,8 +455,10 @@ class GA:
                 tmp_base = final_path[:-4] + ".tmp"
                 tmp_meta = meta_path + ".tmp"
 
-                ga_instance.save(tmp_base)
+                ga_instance.save(_pygad_base_filename(tmp_base))
                 tmp_actual = tmp_base + ".pkl"
+                if not os.path.exists(tmp_actual) and os.path.exists(tmp_base):
+                    tmp_actual = tmp_base
 
                 with open(tmp_meta, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2, default=_json_default)
@@ -408,11 +466,17 @@ class GA:
                 os.replace(tmp_actual, final_path)
                 os.replace(tmp_meta, meta_path)
             else:
-                ga_instance.save(final_path[:-4])
+                ga_instance.save(_pygad_base_filename(final_path))
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2, default=_json_default)
 
         except Exception as e:
+            for fp in [locals().get("tmp_actual", None), locals().get("tmp_base", None), locals().get("tmp_meta", None)]:
+                try:
+                    if fp and os.path.exists(fp):
+                        os.remove(fp)
+                except Exception:
+                    pass
             if not silent and not self._silent:
                 print(f"[GA] Checkpoint failed at gen {generation}: {e}")
             return
@@ -438,21 +502,7 @@ class GA:
         """
         Wraps user's on_generation to add checkpointing without breaking their callback.
         """
-        def _cb(ga_instance):
-            # User callback first (or after) — choose one. I prefer first so it can adjust state.
-            if callable(user_on_generation):
-                user_on_generation(ga_instance)
-
-            # PyGAD exposes generations_completed
-            gen = int(getattr(ga_instance, "generations_completed", 0))
-
-            ck = getattr(self, "_ckpt", None)
-            if ck and ck.get("enabled", False):
-                interval = ck["interval"]
-                if gen > 0 and (gen % interval == 0):
-                    self._save_checkpoint(ga_instance, gen)
-
-        return _cb
+        return _GenerationCallback(self, user_on_generation)
     # -------------------------
     # Hyperparameter management
     # -------------------------
@@ -462,11 +512,30 @@ class GA:
         Set/override hyperparameters before calling Run().
         Example: ga.SetParams(num_generations=200, mutation_percent_genes=10)
         """
+        changed = False
+
         for k, v in kwargs.items():
             if k == "pygad_kwargs":
-                self._pygad_kwargs.update(v or {})
+                if v is not None and not isinstance(v, dict):
+                    raise ValueError("pygad_kwargs must be a dictionary or None.")
+                if v:
+                    self._pygad_kwargs.update(v)
+                    changed = True
             else:
                 self._params[k] = v
+                changed = True
+
+        # If hyperparameters are changed after Build(), the existing PyGAD
+        # object cannot be trusted to reflect them. Rebuild on the next Run().
+        if changed and self._ga is not None:
+            self._ga = None
+            self._ran = False
+            self._best_solution = None
+            self._best_fitness = None
+            self._best_index = None
+            self._last_population = None
+            self._last_population_fitness = None
+
         return self
 
     def Params(self) -> Dict[str, Any]:
@@ -495,10 +564,11 @@ class GA:
 
         p = dict(self._params)
 
-        # Merge advanced kwargs FIRST (so we can sanitize everything consistently)
-        for k, v in self._pygad_kwargs.items():
-            if k not in p:
-                p[k] = v
+        # Merge advanced kwargs before sanitization. Explicit wrapper-level
+        # parameters are still normalized below. Never allow a duplicate
+        # fitness_func because the wrapper must pass self._fitness_proxy.
+        p.update(self._pygad_kwargs)
+        p.pop("fitness_func", None)
 
         # Defensive: strip deprecated parameter (PyGAD >= 3.3.0)
         p.pop("delay_after_gen", None)
@@ -520,10 +590,24 @@ class GA:
         # Basic validation for user friendliness
         if p.get("num_genes") is None:
             raise ValueError("num_genes must be set.")
+        try:
+            p["num_genes"] = int(p["num_genes"])
+        except Exception:
+            raise ValueError("num_genes must be an integer.")
+        if p["num_genes"] <= 0:
+            raise ValueError("num_genes must be positive.")
+
         if p.get("gene_space") is None:
             raise ValueError("gene_space must be set (list/dict/range as supported by PyGAD).")
         if self._fitness_user is None:
             raise ValueError("fitness_function must be set.")
+
+        for _int_key in ["sol_per_pop", "num_generations", "num_parents_mating", "keep_parents"]:
+            if _int_key in p and p[_int_key] is not None:
+                try:
+                    p[_int_key] = int(p[_int_key])
+                except Exception:
+                    raise ValueError(f"{_int_key} must be an integer.")
 
         # Install checkpointing wrapper around any user on_generation.
         # Make it idempotent so Build() can be safely called multiple times.
@@ -564,6 +648,38 @@ class GA:
         self._ran = False
         return self
 
+    def _refresh_caches(self) -> None:
+        """Refresh cached best-solution, population, and fitness data when available."""
+        if self._ga is None:
+            self._best_solution = None
+            self._best_fitness = None
+            self._best_index = None
+            self._last_population = None
+            self._last_population_fitness = None
+            return
+
+        try:
+            sol, fit, idx = self._ga.best_solution()
+            self._best_solution = np.asarray(sol) if sol is not None else None
+            self._best_fitness = fit
+            self._best_index = int(idx) if idx is not None else None
+        except Exception:
+            self._best_solution = None
+            self._best_fitness = None
+            self._best_index = None
+
+        try:
+            pop = getattr(self._ga, "population", None)
+            self._last_population = np.asarray(pop) if pop is not None else None
+        except Exception:
+            self._last_population = None
+
+        try:
+            lgf = getattr(self._ga, "last_generation_fitness", None)
+            self._last_population_fitness = np.asarray(lgf) if lgf is not None else None
+        except Exception:
+            self._last_population_fitness = None
+
 
     def Run(self, target_generations: int = None) -> GARunSummary:
         """
@@ -584,18 +700,24 @@ class GA:
         assert self._ga is not None
 
         if target_generations is not None:
-            done = int(getattr(self._ga, "generations_completed", 0))
+            try:
+                target_generations = int(target_generations)
+            except Exception:
+                raise ValueError("target_generations must be an integer or None.")
+            if target_generations < 0:
+                raise ValueError("target_generations must be non-negative.")
+
+            done = _safe_int(getattr(self._ga, "generations_completed", 0), 0)
             remaining = int(target_generations) - done
             if remaining <= 0:
-                # nothing to do, just refresh caches + return summary
+                # Nothing to do; refresh caches + return summary.
                 self._ran = True
             else:
-                # update GA to run only remaining gens
-                # PyGAD stores config on the instance; num_generations is a public attribute in many versions.
+                # PyGAD stores config on the instance; num_generations is a
+                # public attribute in many versions.
                 try:
                     self._ga.num_generations = remaining
                 except Exception:
-                    # If not supported, fall back to running as configured.
                     pass
                 self._ga.run()
                 self._ran = True
@@ -603,16 +725,7 @@ class GA:
             self._ga.run()
             self._ran = True
 
-        # Best solution
-        sol, fit, idx = self._ga.best_solution()
-        self._best_solution = np.asarray(sol) if sol is not None else None
-        self._best_fitness = fit
-        self._best_index = int(idx) if idx is not None else None
-
-        # Cache last population and fitness
-        self._last_population = np.asarray(getattr(self._ga, "population", None)) if hasattr(self._ga, "population") else None
-        lgf = getattr(self._ga, "last_generation_fitness", None)
-        self._last_population_fitness = np.asarray(lgf) if lgf is not None else None
+        self._refresh_caches()
 
         # Save final checkpoint if enabled
         ck = getattr(self, "_ckpt", None)
@@ -671,11 +784,11 @@ class GA:
             "ran": self._ran,
             "generations_completed": gens,
             "best_solution": None if self._best_solution is None else self._best_solution.tolist(),
-            "best_fitness": self._best_fitness if self._best_fitness is None else (list(self._best_fitness) if isinstance(self._best_fitness, (list, tuple, np.ndarray)) else self._best_fitness),
+            "best_fitness": _to_json_value(self._best_fitness),
             "best_index": self._best_index,
             "population_shape": None if self._last_population is None else list(self._last_population.shape),
             "fitness_shape": None if self._last_population_fitness is None else list(np.asarray(self._last_population_fitness).shape),
-            "params": self.Params(),
+            "params": _to_json_value(self.Params()),
         }
 
     # -------------------------
@@ -704,14 +817,17 @@ class GA:
         if self._last_population is None or self._last_population_fitness is None:
             raise ValueError("Population/fitness not cached. Run() first.")
         fit = _as_2d_array(self._last_population_fitness)
+        pop = np.asarray(self._last_population)
+        if pop.shape[0] != fit.shape[0]:
+            raise ValueError("Population and fitness arrays have incompatible lengths.")
         idx = self.ParetoFrontIndices(fit)
-        return self._last_population[idx], fit[idx]
+        return pop[idx], fit[idx]
 
     def PlotParetoFront(
         self,
         *,
         title: str = "Pareto Front",
-        objective_names: list[str] = None,
+        objective_names: Optional[List[str]] = None,
         show_all_points: bool = True,
         show_pareto_points: bool = True,
         connect_pareto: bool = False,
@@ -746,8 +862,17 @@ class GA:
             raise ValueError("objective_names length must match number of objectives.")
 
         indices = np.arange(n)
+        if max_points is not None:
+            try:
+                max_points = int(max_points)
+            except Exception:
+                raise ValueError("max_points must be an integer or None.")
+            if max_points <= 0:
+                raise ValueError("max_points must be positive when specified.")
+
         if max_points is not None and n > max_points:
-            indices = np.random.choice(indices, size=max_points, replace=False)
+            rng = np.random.default_rng(0)
+            indices = rng.choice(indices, size=max_points, replace=False)
             fit_viz = fit[indices]
         else:
             fit_viz = fit
@@ -931,28 +1056,12 @@ class GA:
         """Save the PyGAD instance (requires Build() or Run() beforehand)."""
         if self._ga is None:
             raise ValueError("Nothing to save. Build() or Run() first.")
-        self._ga.save(filepath)
+        self._ga.save(_pygad_base_filename(filepath))
 
     def Load(self, filepath: str) -> "GA":
         """Load a saved PyGAD instance and attach it to this wrapper."""
         _ensure_pygad()
-        self._ga = pygad.load(filepath)
+        self._ga = pygad.load(_pygad_base_filename(filepath))
         self._ran = True  # loaded instances usually contain run state
-
-        # Try to refresh caches
-        try:
-            sol, fit, idx = self._ga.best_solution()
-            self._best_solution = np.asarray(sol) if sol is not None else None
-            self._best_fitness = fit
-            self._best_index = int(idx) if idx is not None else None
-        except Exception:
-            pass
-
-        try:
-            self._last_population = np.asarray(getattr(self._ga, "population", None)) if hasattr(self._ga, "population") else None
-            lgf = getattr(self._ga, "last_generation_fitness", None)
-            self._last_population_fitness = np.asarray(lgf) if lgf is not None else None
-        except Exception:
-            pass
-
+        self._refresh_caches()
         return self

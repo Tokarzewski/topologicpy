@@ -60,7 +60,6 @@ class Executor:
         return isinstance(graph, dict) and graph.get("type") == "GQLWorkingGraph"
 
     @staticmethod
-    @staticmethod
     def _graph_cache_key(graph):
         return id(graph)
 
@@ -93,7 +92,6 @@ class Executor:
             return "graph"
         return "unknown"
 
-    @staticmethod
     @staticmethod
     def _ensure_working_graph(graph, silent: bool = False):
         """Returns a dictionary-backed GQL working graph.
@@ -166,7 +164,6 @@ class Executor:
         return working
 
     @staticmethod
-    @staticmethod
     def _rebuild_working_indexes(working_graph):
         """Rebuilds the index/id -> vertex lookup for a GQL working graph."""
 
@@ -191,7 +188,6 @@ class Executor:
         working_graph["vertex_by_index"] = vertex_by_index
         return working_graph
 
-    @staticmethod
     @staticmethod
     def TopologicGraph(graph, ontology: bool = True, asTGraph: bool = False, silent: bool = False):
         """
@@ -428,7 +424,6 @@ class Executor:
             return working.get("vertex_by_index", {})
         return {}
 
-    @staticmethod
     @staticmethod
     def _edge_endpoint_vertices(edge, vertex_by_index=None, vertices=None):
         vertex_by_index = vertex_by_index or {}
@@ -884,7 +879,6 @@ class Executor:
         return True
 
     @staticmethod
-    @staticmethod
     def _create_pattern(graph, pattern, silent: bool = False):
         """Creates a node or node-edge-node pattern in the GQL working graph only."""
 
@@ -1185,7 +1179,6 @@ class Executor:
         return sorted_rows
 
     @staticmethod
-    @staticmethod
     def _dictionary_value(topology, key: str, default=None):
         """Safely returns a dictionary value from a topology, TGraph record, or dictionary."""
 
@@ -1230,7 +1223,6 @@ class Executor:
         except Exception:
             return default
 
-    @staticmethod
     @staticmethod
     def _dictionary_to_python(topology) -> Dict[str, Any]:
         """Safely converts a topology, TGraph record, or dictionary to a Python dictionary."""
@@ -1285,7 +1277,6 @@ class Executor:
         return {}
 
     @staticmethod
-    @staticmethod
     def _set_dictionary_values(topology, values: Dict[str, Any]):
         if topology is None:
             return None
@@ -1305,7 +1296,6 @@ class Executor:
         d = Dictionary.ByKeysValues(list(data.keys()), list(data.values()))
         return Topology.SetDictionary(topology, d)
 
-    @staticmethod
     @staticmethod
     def _graph_by_vertices_edges(vertices, edges, ontology: bool = True, asTGraph: bool = False, silent: bool = False):
         if asTGraph:
@@ -1481,7 +1471,6 @@ class Executor:
         return result
 
     @staticmethod
-    @staticmethod
     def _same_topology(a, b) -> bool:
         if a is b:
             return True
@@ -1505,7 +1494,6 @@ class Executor:
             return False
 
     @staticmethod
-    @staticmethod
     def _is_vertex(obj) -> bool:
         if isinstance(obj, dict):
             return "src" not in obj and "dst" not in obj and isinstance(obj.get("dictionary", obj), dict)
@@ -1515,7 +1503,6 @@ class Executor:
         except Exception:
             return obj.__class__.__name__.lower().endswith("vertex")
 
-    @staticmethod
     @staticmethod
     def _is_edge(obj) -> bool:
         if isinstance(obj, dict):
