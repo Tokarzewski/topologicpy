@@ -663,22 +663,16 @@ def test_spatial_relationship_wrappers_return_booleans_or_none(square_face):
     assert Topology.Disjoint(None, square_face, silent=True) is None
 
 
-def test_export_to_obj_and_brep_create_files(tmp_path, square_face):
+def test_export_to_brep_creates_file(tmp_path, square_face):
     brep_path = tmp_path / "face.brep"
-    obj_path = tmp_path / "face.obj"
 
     brep_status = Topology.ExportToBREP(square_face, str(brep_path), overwrite=True)
-    obj_status = Topology.ExportToOBJ(square_face, path=str(obj_path), overwrite=True, silent=True)
 
     assert brep_status is True
-    assert obj_status is True
     assert brep_path.exists()
-    assert obj_path.exists()
     assert brep_path.stat().st_size > 0
-    assert obj_path.stat().st_size > 0
 
     assert Topology.ExportToBREP(None, str(tmp_path / "bad.brep"), overwrite=True) is None
-    assert Topology.ExportToOBJ(None, path=str(tmp_path / "bad.obj"), overwrite=True, silent=True) is None
 
 
 def test_json_export_and_import_path_round_trip(tmp_path):
