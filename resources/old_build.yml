@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Obtain tag name (if set), version, and human readable name
@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         env:
           # Reference: https://github.com/actions/setup-python/issues/862
           # To solve: "A new release of pip is available: ... -> ..."
@@ -74,7 +74,7 @@ jobs:
       - name: Build docs
         run: cd docs && make html
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: docs
           path: docs/build/html/
@@ -85,9 +85,9 @@ jobs:
     name: Build Universal Wheel
     needs: [prepare-build-info]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
@@ -104,7 +104,7 @@ jobs:
         run: |
           ls -R dist/
       - name: Upload universal wheel artifact (py3, any platform)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl
           path: dist/topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl
@@ -124,9 +124,9 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         env:
           # Reference: https://github.com/actions/setup-python/issues/862
           # To solve: "A new release of pip is available: ... -> ..."
@@ -161,7 +161,7 @@ jobs:
       url: https://pypi.org/p/topologicpy
     steps:
       - name: Download all artifact files (.whl)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
           path: all-artifacts
       - name: Display new structure of downloaded files
@@ -187,7 +187,7 @@ jobs:
     if: ${{ startsWith(needs.prepare-build-info.outputs.tagname, 'v') && github.event_name != 'pull_request' && needs.prepare-build-info.outputs.branchname == 'main' }}
     steps:
       - name: Download docs artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
           path: docs/build/html/
       - name: Display new structure of downloaded files
@@ -212,19 +212,29 @@ jobs:
       contents: write
     steps:
       - name: Download all artifact files (.whl)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
           path: all-artifacts
       - name: Display structure of downloaded files
         run: ls -R all-artifacts
       - name: Draft GitHub Release Page ${{ needs.prepare-build-info.outputs.tagname }}
-        uses: softprops/action-gh-release@v3
+        uses: actions/create-release@v1
+        id: create_release
         with:
           draft: true
           prerelease: false
-          name: ${{ needs.prepare-build-info.outputs.tagname }}
+          release_name: ${{ needs.prepare-build-info.outputs.tagname }}
           tag_name: ${{ needs.prepare-build-info.outputs.tagname }}
           body: Changes in this Release
-          files: all-artifacts/topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl/topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Release artifact topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: all-artifacts/topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl/topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl
+          asset_name: topologicpy-${{ needs.prepare-build-info.outputs.anyversion }}-py3-none-any.whl
+          asset_content_type: application/zip
