@@ -26,6 +26,15 @@ def _triple_strings(graph):
     return {(str(s), str(p), str(o)) for s, p, o in graph}
 
 
+def _rdflib_available(rs):
+    return rs._rdflib(silent=True) is not None
+
+
+def _assert_optional_rdflib_absent_path(rs):
+    assert rs._rdflib(silent=True) is None
+    assert rs.RDFGraphByTriples([], silent=True) is None
+
+
 def test_namespaces_qnames_uri_refs_and_dependency_report(rs):
     ns = rs.Namespaces()
     assert ns["rdf"].endswith("rdf-syntax-ns#")
@@ -43,7 +52,10 @@ def test_namespaces_qnames_uri_refs_and_dependency_report(rs):
     assert isinstance(report["rdflib"], dict)
 
     rd = rs._rdflib(silent=True)
-    assert rd is not None
+    if rd is None:
+        assert report["rdflib"]["available"] is False
+        assert rs._uri_ref("top:Graph") is None
+        return
     assert "BNode" in rd
     uri = rs._uri_ref("top:Graph", URIRef=rd["URIRef"])
     assert str(uri).endswith("topologicpy#Graph")
@@ -62,6 +74,9 @@ def test_rdflib_guard_returns_none_without_printing(monkeypatch, rs):
 
 
 def test_rdf_graph_by_triples_canonicalises_tokens_and_literals(rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
     graph = rs.RDFGraphByTriples([
         ("inst:room_1", "rdf:type", "top:TGraph"),
         ("inst:room_1", "top:hasStartVertex", "inst:vertex_a"),
@@ -79,6 +94,9 @@ def test_rdf_graph_by_triples_canonicalises_tokens_and_literals(rs):
 
 
 def test_infer_rdfs_subclass_subproperty_domain_range_inverse_and_queries(rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
     before = rs.RDFGraphByTriples([
         ("inst:room", "rdf:type", "top:Room"),
         ("top:Room", "rdfs:subClassOf", "top:Space"),
@@ -114,6 +132,9 @@ def test_infer_rdfs_subclass_subproperty_domain_range_inverse_and_queries(rs):
 
 
 def test_result_proof_tree_explain_proof_graph_data_rule_statistics_and_diff(rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
     before = rs.RDFGraphByTriples([
         ("inst:room", "rdf:type", "top:Room"),
         ("top:Room", "rdfs:subClassOf", "top:Space"),
@@ -156,6 +177,9 @@ def test_result_proof_tree_explain_proof_graph_data_rule_statistics_and_diff(rs)
 
 
 def test_domain_range_and_subproperty_proof_tree_paths(rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
     before = rs.RDFGraphByTriples([
         ("top:hasPart", "rdfs:domain", "top:Assembly"),
         ("top:hasPart", "rdfs:range", "top:Element"),
@@ -176,26 +200,32 @@ def test_domain_range_and_subproperty_proof_tree_paths(rs):
     assert subprop_tree["rule"] == "RDFS7: property inheritance through rdfs:subPropertyOf"
 
 
-# def test_turtle_export_validate_and_no_axiom_inference_paths(tmp_path, rs):
-#     graph = rs.RDFGraphByTriples([("inst:a", "rdf:type", "top:Vertex")], silent=True)
-#     ttl = rs.TurtleString(graph)
-#     assert isinstance(ttl, str)
-#     assert "@prefix" in ttl or "inst:a" in ttl
+def test_turtle_export_validate_and_no_axiom_inference_paths(tmp_path, rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
+    graph = rs.RDFGraphByTriples([("inst:a", "rdf:type", "top:Vertex")], silent=True)
+    ttl = rs.TurtleString(graph)
+    assert isinstance(ttl, str)
+    assert "@prefix" in ttl or "inst:a" in ttl
 
-#     out = tmp_path / "graph.ttl"
-#     assert rs.ExportRDF(graph, str(out), overwrite=True, silent=True) == str(out)
-#     assert out.exists() and out.read_text(encoding="utf-8").strip()
-#     assert rs.ExportRDF(graph, str(out), overwrite=False, silent=True) is None
-#     assert rs.ExportRDF(None, str(tmp_path / "bad.ttl"), silent=True) is None
+    out = tmp_path / "graph.ttl"
+    assert rs.ExportRDF(graph, str(out), overwrite=True, silent=True) == str(out)
+    assert out.exists() and out.read_text(encoding="utf-8").strip()
+    assert rs.ExportRDF(graph, str(out), overwrite=False, silent=True) is None
+    assert rs.ExportRDF(None, str(tmp_path / "bad.ttl"), silent=True) is None
 
-#     none_profile = rs.Infer(graph, profile="none", includeOntologyAxioms=False, inplace=False, silent=True)
-#     assert len(none_profile) == len(graph)
+    none_profile = rs.Infer(graph, profile="none", includeOntologyAxioms=False, inplace=False, silent=True)
+    assert len(none_profile) == len(graph)
 
-#     validation = rs.Validate(graph, silent=True)
-#     assert set(["available", "conforms", "results_graph", "results_text"]).issubset(validation.keys())
+    validation = rs.Validate(graph, silent=True)
+    assert set(["available", "conforms", "results_graph", "results_text"]).issubset(validation.keys())
 
 
 def test_add_ontology_axioms_fallback_without_ontology_module(rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
     graph = rs.RDFGraphByTriples([], silent=True)
     out = rs.AddOntologyAxioms(graph, includeBOT=True, silent=True)
     assert out is graph
@@ -205,6 +235,9 @@ def test_add_ontology_axioms_fallback_without_ontology_module(rs):
 
 
 def test_bnode_compaction_and_literal_tokens(rs):
+    if not _rdflib_available(rs):
+        _assert_optional_rdflib_absent_path(rs)
+        return
     rd = rs._rdflib(silent=True)
     bnode = rd["BNode"]("abc")
     lit = rd["Literal"]("hello")
@@ -248,6 +281,12 @@ def test_apply_inferences_to_fake_tgraph(monkeypatch, rs):
         ("inst:v1", "rdf:type", "bot:Element"),
         ("inst:e1", "rdf:type", "top:Relationship"),
     ], silent=True)
+
+    if inferred is None:
+        returned = rs.ApplyInferences(graph, inferred, silent=True)
+        assert returned is graph
+        assert graph.invalidated is False
+        return
 
     returned = rs.ApplyInferences(graph, inferred, silent=True)
     assert returned is graph
@@ -351,6 +390,9 @@ def test_rdf_graph_by_topology_uses_fake_ontology(monkeypatch, rs):
 
     fake_mod.Ontology = FakeOntology
     monkeypatch.setitem(sys.modules, "topologicpy.Ontology", fake_mod)
+    if not _rdflib_available(rs):
+        assert rs.RDFGraphByTopology(object(), includeOntologyAxioms=True, silent=True) is None
+        return
     graph = rs.RDFGraphByTopology(object(), includeOntologyAxioms=True, silent=True)
     assert graph is not None
     triples = _triple_strings(graph)

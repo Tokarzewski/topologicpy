@@ -80,12 +80,16 @@ class Plotly:
 
         Returns
         -------
-        plotly.graph_objs._figure.Figure or None
+        plotly.graph_objects.Figure or None
             The updated figure, or None if the input is not a Plotly figure.
         """
         if not Plotly._plotly_available(silent=True):
             return None
-        if not isinstance(figure, plotly.graph_objs._figure.Figure):
+        try:
+            figure_class = go.Figure
+        except Exception:
+            return None
+        if not isinstance(figure, figure_class):
             return None
 
         if values is None:
@@ -407,6 +411,8 @@ class Plotly:
             The vertex and edge data list.
 
         """
+        if graph is None:
+            return None
         from topologicpy.Vertex import Vertex
         from topologicpy.Edge import Edge
         from topologicpy.Wire import Wire
@@ -1669,7 +1675,7 @@ class Plotly:
 
         Returns
         -------
-        plotly.graph_objs._figure.Figure or None
+        plotly.graph_objects.Figure or None
             The resulting figure.
         """
         try:

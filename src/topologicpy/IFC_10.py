@@ -38,7 +38,7 @@ Call = Tuple[str, str, list]
 
 
 
-@dataclass
+@dataclass(slots=True)
 class IFCFastEntity:
     id: int
     type: str

@@ -17119,8 +17119,6 @@ class TGraph:
         return config
 
     @staticmethod
-
-    @staticmethod
     def _OntologyCanonicalClass(ontologyClass: Any, defaultValue: Any = None) -> Any:
         """Returns the canonical ontology class QName for aliases used by TGraph."""
         if ontologyClass is None:
