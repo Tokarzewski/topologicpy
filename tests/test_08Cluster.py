@@ -259,11 +259,11 @@ def test_main():
     # test 1
 
     Simplify1 = Cluster.Simplify(cT1)
-    assert isinstance(Simplify1, topologic.Topology or list), "Cluster.Simplify. Should be topologic.Topology or list"
+    assert Topology.IsInstance(Simplify1, "Topology") or isinstance(Simplify1, list), "Cluster.Simplify. Should be topologic.Topology or list"
     # test 2
 
     Simplify2 = Cluster.Simplify(cT3)
-    assert isinstance(Simplify1, topologic.Topology or list), "Cluster.Simplify. Should be topologic.Topology or list"
+    assert Topology.IsInstance(Simplify1, "Topology") or isinstance(Simplify1, list), "Cluster.Simplify. Should be topologic.Topology or list"
 
     # Case 16 - Vertices
     print("Case 16")

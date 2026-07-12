@@ -209,10 +209,10 @@ def test_main():
     w2 = Wire.ByVertices([v1, v2, v3, v4])                             # create Wire
     # test 1
     fW1 = Face.ByWire(w1)
-    assert isinstance (fW1, topologic.Face), "Face.ByWire. Should be topologic.Face"
+    assert Topology.IsInstance(fW1, "Face"), "Face.ByWire. Should be topologic.Face"
     # test 2
     fW2 = Face.ByWire(w2)
-    assert isinstance (fW2, topologic.Face), "Face.ByWire. Should be topologic.Face"
+    assert Topology.IsInstance(fW2, "Face"), "Face.ByWire. Should be topologic.Face"
  
     # Case 13 - ByWires
     print("Case 13")

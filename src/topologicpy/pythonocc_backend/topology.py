@@ -55,16 +55,23 @@ try:
         TopAbs_COMPOUND,
     )
     from OCC.Core.TopExp import TopExp_Explorer
-    from OCC.Core.TopoDS import (
-        TopoDS_Shape,
-        topods_Vertex,
-        topods_Edge,
-        topods_Wire,
-        topods_Face,
-        topods_Shell,
-        topods_Solid,
-        topods_Compound,
-    )
+    from OCC.Core.TopoDS import TopoDS_Shape, topods
+    # pythonocc-core 7.9.0 removed the deprecated topods_Vertex/topods_Edge/...
+    # free functions entirely (they raise ImportError, not just a
+    # DeprecationWarning as in 7.7.1) -- use the topods module-proxy form and
+    # keep these names as aliases so every existing call site below is
+    # unaffected. Do not revert to the free-function imports: a single
+    # missing name here previously poisoned this entire try/except block,
+    # silently nulling out ~40 unrelated OCC symbols (BRepBuilderAPI_Transform,
+    # BOPAlgo_CellsBuilder, GProp_GProps, etc.) and breaking Translate/Rotate/
+    # Scale/boolean ops/etc. across the whole backend.
+    topods_Vertex = topods.Vertex
+    topods_Edge = topods.Edge
+    topods_Wire = topods.Wire
+    topods_Face = topods.Face
+    topods_Shell = topods.Shell
+    topods_Solid = topods.Solid
+    topods_Compound = topods.Compound
     from OCC.Core.TopTools import TopTools_ListOfShape, TopTools_ListIteratorOfListOfShape
     from OCC.Core.BOPAlgo import BOPAlgo_CellsBuilder
     from OCC.Core.BRepCheck import BRepCheck_Analyzer
@@ -448,6 +455,48 @@ def _postprocess_boolean_result(shape: Any) -> Any:
     return shape
 
 
+def _unify_same_domain(shape: Any) -> Any:
+    """
+    Dissolves coplanar/co-surface internal faces (and colinear edges) that
+    are no longer geometrically necessary, via ShapeUpgrade_UnifySameDomain.
+
+    BOPAlgo_CellsBuilder's MakeContainers() partitions space using every
+    operand's own boundary, including internal subdivisions the operands
+    already had (e.g. two CellComplex.Box grids, each with uSides=vSides=
+    wSides=2 by default, produce 8 sub-cells each before they are even
+    merged). Verified against the real topologic_core backend: Merge/Union
+    of two heavily-overlapping subdivided CellComplexes collapses all the
+    way down to a single Cell, not a many-celled CellComplex preserving
+    every input sub-cell boundary -- i.e. Merge is expected to always
+    produce the minimal topological representation of the combined
+    material, not inherit the operands' arbitrary internal grid lines. Only
+    call this on Merge's result, not _partition_by's (Divide/Slice/Impose/
+    Imprint) -- those operations deliberately want the split their cutting
+    tool produced, and re-unifying a flush cut would silently undo it.
+
+    Only applied when the shape actually contains a Solid: verified this is
+    too aggressive for pure-2D (Face-only) merges -- e.g. merging a
+    rectangle-with-a-hole with a second rectangle that only partially
+    covers the hole legitimately needs multiple distinct coplanar Faces in
+    a Shell (native topologic_core gives a 2-Face Shell for that exact
+    case), but UnifySameDomain collapses them all into one Face, losing
+    that structure.
+    """
+    if _is_null_shape(shape) or ShapeUpgrade_UnifySameDomain is None:
+        return shape
+    if not _iter_occ_subshapes(shape, TopAbs_SOLID):
+        return shape
+    try:
+        unifier = ShapeUpgrade_UnifySameDomain(shape, True, True, True)
+        unifier.Build()
+        unified = unifier.Shape()
+        if not _is_null_shape(unified):
+            return unified
+    except Exception:
+        pass
+    return shape
+
+
 def _promote_to_compsolid_if_multi_solid(shape: Any) -> Any:
     """
     BOPAlgo_CellsBuilder/BOPAlgo_MakerVolume's MakeContainers() step, in this
@@ -644,6 +693,23 @@ def _wrap_shape_as_topology(shape: Any, dictionary=None, contents=None, contexts
             from .cell_complex import CellComplex
             cells = [Topology.ByOcctShape(s) for s in _iter_occ_subshapes(shape, TopAbs_SOLID)]
             cells = [c for c in cells if c is not None]
+            if len(cells) == 1:
+                # A COMPSOLID wrapping exactly one Solid isn't a genuine
+                # non-manifold complex -- e.g. BRepAlgoAPI_Fuse of two
+                # COMPSOLID operands that fully merge into one Solid still
+                # preserves a COMPSOLID container around that single Solid.
+                # Unwrap to the plain Cell directly, matching
+                # topologic_core's own behavior (verified: Union of two
+                # touching/overlapping boxes is a plain Cell).
+                only = cells[0]
+                only.dictionary = dictionary or {}
+                if contents:
+                    only.contents = list(contents)
+                if contexts:
+                    only.contexts = list(contexts)
+                if apertures:
+                    only.apertures = list(apertures)
+                return only
             cc = CellComplex(shape=shape, cells=cells, dictionary=dictionary or {},
                               contents=contents or [], contexts=contexts or [], apertures=apertures or [])
             return cc
@@ -655,10 +721,55 @@ def _wrap_shape_as_topology(shape: Any, dictionary=None, contents=None, contexts
         # compound of mixed sub-shape types.
         try:
             from .cluster import Cluster
+            from OCC.Core.TopoDS import TopoDS_Iterator
+            # Walk DIRECT children only (TopoDS_Iterator), not every
+            # sub-shape of every type anywhere in the tree
+            # (_iter_occ_subshapes/TopExp_Explorer): a COMPOUND wrapping one
+            # COMPSOLID wrapping one SOLID would otherwise be matched once
+            # as a COMPSOLID and again as that same nested SOLID, double
+            # counting it and defeating the single-child unwrap below.
             children = []
-            for st in (TopAbs_COMPSOLID, TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX):
-                children.extend([Topology.ByOcctShape(s) for s in _iter_occ_subshapes(shape, st)])
-            children = [c for c in children if c is not None]
+            it = TopoDS_Iterator(shape)
+            while it.More():
+                child = Topology.ByOcctShape(it.Value())
+                if child is not None:
+                    children.append(child)
+                it.Next()
+            if len(children) == 1:
+                # OCCT boolean ops (BRepAlgoAPI_Fuse/Cut/Common/...) always
+                # wrap their result in a COMPOUND container even when it is
+                # a single piece -- e.g. two fully-overlapping/flush-touching
+                # solids fuse into one Solid, but Shape() still hands back a
+                # 1-child COMPOUND around it. Unwrap to that single child's
+                # own type directly (matching topologic_core's own behavior:
+                # a Union of two touching boxes is a plain Cell, not a
+                # 1-member Cluster) instead of always forcing a Cluster.
+                only = children[0]
+                only.dictionary = dictionary or {}
+                if contents:
+                    only.contents = list(contents)
+                if contexts:
+                    only.contexts = list(contexts)
+                if apertures:
+                    only.apertures = list(apertures)
+                return only
+            if children and all(Topology.IsInstance(c, "Face") for c in children):
+                # Multiple coplanar/adjacent Faces (e.g. Merge of two Faces
+                # that only partially overlap) form a Shell, not a Cluster
+                # -- verified against topologic_core: merging a
+                # rectangle-with-a-hole with a second rectangle that only
+                # partially covers the hole gives a Shell of Faces.
+                from .shell import Shell
+                sh = Shell.ByFaces(children)
+                if sh is not None:
+                    sh.dictionary = dictionary or {}
+                    if contents:
+                        sh.contents = list(contents)
+                    if contexts:
+                        sh.contexts = list(contexts)
+                    if apertures:
+                        sh.apertures = list(apertures)
+                    return sh
             if hasattr(Cluster, "ByTopologies"):
                 cl = Cluster.ByTopologies(children)
                 if cl is not None:
@@ -672,16 +783,32 @@ def _wrap_shape_as_topology(shape: Any, dictionary=None, contents=None, contexts
     return None
 
 
+def _compound_of_shapes(shapes: Iterable[Any]) -> Any:
+    from OCC.Core.TopoDS import TopoDS_Compound
+    builder = BRep_Builder()
+    compound = TopoDS_Compound()
+    builder.MakeCompound(compound)
+    for shape in shapes:
+        if not _is_null_shape(shape):
+            builder.Add(compound, shape)
+    return compound
+
+
 def _make_occ_merge(topology: Any, other_topology: Any = None, transfer_dictionary: bool = False) -> Any:
     """
     PythonOCC implementation of Topology.Merge.
 
-    This mirrors the Topologic C++ logic:
-        1. Build non-regular boolean cells from both operands.
-        2. Add all cells belonging to operand A.
-        3. Add all cells belonging to operand B.
-        4. Make containers.
-        5. Convert result back into a backend topology object.
+    Verified against the real topologic_core backend: Merge/Union always
+    reduces two operands to their minimal combined topological
+    representation -- fully overlapping or exactly-flush-touching solids
+    collapse into a single Cell (even when the operands were themselves
+    subdivided CellComplexes), and only genuinely disjoint solids remain
+    separate (as a Cluster). This is what a true boolean fuse
+    (BRepAlgoAPI_Fuse) does directly; BOPAlgo_CellsBuilder is the wrong
+    tool here since it deliberately preserves every operand's own
+    sub-cell boundaries (that's the right tool for CellComplex.ByCells,
+    which wants exactly that -- see cell_complex.py's _build_from_shapes
+    -- but not for a general two-operand Merge/Union).
     """
     if topology is None:
         return None
@@ -699,10 +826,6 @@ def _make_occ_merge(topology: Any, other_topology: Any = None, transfer_dictiona
             apertures=getattr(topology, "apertures", []),
         )
 
-    if BOPAlgo_CellsBuilder is None:
-        print("Topology.Merge - Error: PythonOCC BOPAlgo_CellsBuilder is not available. Returning None.")
-        return None
-
     shapes_a = _collect_boolean_operand_shapes(topology)
     shapes_b = _collect_boolean_operand_shapes(other_topology)
 
@@ -710,43 +833,40 @@ def _make_occ_merge(topology: Any, other_topology: Any = None, transfer_dictiona
         print("Topology.Merge - Error: Could not collect valid OCCT operands. Returning None.")
         return None
 
+    if BRepAlgoAPI_Fuse is None:
+        print("Topology.Merge - Error: PythonOCC BRepAlgoAPI_Fuse is not available. Returning None.")
+        return None
+
     try:
-        args_a = _make_toptools_list(shapes_a)
-        args_b = _make_toptools_list(shapes_b)
+        shape_a = shapes_a[0] if len(shapes_a) == 1 else _compound_of_shapes(shapes_a)
+        shape_b = shapes_b[0] if len(shapes_b) == 1 else _compound_of_shapes(shapes_b)
 
-        builder = BOPAlgo_CellsBuilder()
-
-        for shape in shapes_a:
-            builder.AddArgument(shape)
-        for shape in shapes_b:
-            builder.AddArgument(shape)
-
-        builder.Perform()
-
-        if hasattr(builder, "HasErrors") and builder.HasErrors():
-            print("Topology.Merge - Error: BOPAlgo_CellsBuilder failed. Returning None.")
+        fuse = BRepAlgoAPI_Fuse(shape_a, shape_b)
+        fuse.Build()
+        if not fuse.IsDone():
+            print("Topology.Merge - Error: BRepAlgoAPI_Fuse failed. Returning None.")
             return None
-
-        empty_avoid = TopTools_ListOfShape()
-
-        for shape in shapes_a:
-            to_take = TopTools_ListOfShape()
-            to_take.Append(shape)
-            builder.AddToResult(to_take, empty_avoid)
-
-        for shape in shapes_b:
-            to_take = TopTools_ListOfShape()
-            to_take.Append(shape)
-            builder.AddToResult(to_take, empty_avoid)
-
-        builder.MakeContainers()
-        result_shape = builder.Shape()
+        result_shape = fuse.Shape()
 
         if _is_null_shape(result_shape):
             print("Topology.Merge - Error: Boolean result is null. Returning None.")
             return None
 
         result_shape = _postprocess_boolean_result(result_shape)
+        result_shape = _unify_same_domain(result_shape)
+        # Deliberately no _promote_to_compsolid_if_multi_solid here: unlike
+        # BOPAlgo_CellsBuilder/MakerVolume (which can produce a flat COMPOUND
+        # of solids that genuinely share faces and should be one CompSolid),
+        # a true BRepAlgoAPI_Fuse either fully dissolves connected/
+        # overlapping material into one Solid already, or leaves genuinely
+        # disjoint groups as separate sub-shapes -- each of which may itself
+        # still be a multi-cell COMPSOLID from its own operand (e.g. two
+        # disjoint CellComplex.Box grids). Force-merging by total solid
+        # count here would wrongly weld those two unrelated groups into a
+        # single fake CompSolid instead of leaving them as distinct
+        # CellComplexes in a Cluster (see ByOcctShape's COMPOUND dispatch,
+        # which already collapses a single leftover solid/compsolid
+        # correctly without this).
 
         result_dictionary = {}
         if transfer_dictionary:
@@ -1315,13 +1435,20 @@ class Topology:
     def _piece_belongs_to_any(piece_shape, reference_shapes) -> bool:
         """
         True if piece_shape's centre of mass classifies as inside/on the
-        boundary of any of reference_shapes (a Solid-vs-Solid volumetric
-        classification via BRepClass3d_SolidClassifier). Used to tell which
-        fragments produced by a general-fuse split came from operand A
-        (self) rather than purely from operand B (otherTopology)'s
-        exclusive volume.
+        boundary of any of reference_shapes. Used to tell which fragments
+        produced by a general-fuse split came from operand A (self) rather
+        than purely from operand B (otherTopology)'s exclusive volume/area.
+
+        BRepClass3d_SolidClassifier only gives meaningful results for a
+        closed Solid/Shell reference; it is undefined for a bare Face (as
+        happens when self is a Face, e.g. Face.Divide/Slice/Impose/Imprint,
+        since only Shell overrides these with its own BOPAlgo path). A Face
+        reference is instead classified with the 2D surface/UV test
+        (project the point onto the face's surface, then
+        BRepTopAdaptor_FClass2d), the same technique FaceUtility.IsInside
+        uses for point-in-face containment.
         """
-        if BRepClass3d_SolidClassifier is None or GProp_GProps is None or brepgprop is None:
+        if GProp_GProps is None or brepgprop is None:
             return False
         try:
             props = GProp_GProps()
@@ -1335,6 +1462,12 @@ class Topology:
 
         for reference in reference_shapes:
             try:
+                if reference.ShapeType() == TopAbs_FACE:
+                    if Topology._point_in_face_shape(reference, center, 1e-6):
+                        return True
+                    continue
+                if BRepClass3d_SolidClassifier is None:
+                    continue
                 classifier = BRepClass3d_SolidClassifier(reference)
                 classifier.Perform(center, 1e-6)
                 state = classifier.State()
@@ -1343,6 +1476,35 @@ class Topology:
             except Exception:
                 continue
         return False
+
+    @staticmethod
+    def _point_in_face_shape(occ_face, pnt, tolerance: float = 0.0001) -> bool:
+        """Raw-shape point-in-face test (see _piece_belongs_to_any)."""
+        try:
+            from OCC.Core.BRep import BRep_Tool
+            from OCC.Core.TopoDS import topods
+            from OCC.Core.gp import gp_Pnt2d
+            from OCC.Core.GeomAPI import GeomAPI_ProjectPointOnSurf
+            from OCC.Core.BRepTopAdaptor import BRepTopAdaptor_FClass2d
+            from OCC.Core.TopAbs import TopAbs_IN, TopAbs_ON
+
+            face = topods.Face(occ_face)
+            surface = BRep_Tool.Surface(face)
+            if surface is None:
+                return False
+
+            projector = GeomAPI_ProjectPointOnSurf(pnt, surface)
+            if projector.NbPoints() < 1:
+                return False
+            if projector.LowerDistance() > tolerance:
+                return False
+            u_raw, v_raw = projector.LowerDistanceParameters()
+
+            classifier = BRepTopAdaptor_FClass2d(face, tolerance)
+            state = classifier.Perform(gp_Pnt2d(u_raw, v_raw))
+            return state in (TopAbs_IN, TopAbs_ON)
+        except Exception:
+            return False
 
     def _partition_by(self, otherTopology: Any, transferDictionary: bool = False):
         """
@@ -1414,6 +1576,7 @@ class Topology:
         if _is_null_shape(result_shape):
             return None
         result_shape = _postprocess_boolean_result(result_shape)
+        result_shape = _promote_to_compsolid_if_multi_solid(result_shape)
 
         result_dictionary = {}
         if transferDictionary:

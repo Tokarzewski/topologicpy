@@ -157,7 +157,16 @@ class CellComplex(Topology):
         if len(shapes) < 1:
             return None
         result = CellComplex._build_from_shapes(shapes, tolerance)
-        return result
+        if result is not None:
+            return result
+        # BOPAlgo_MakerVolume found no fallback volume (e.g. it errored on a
+        # face soup that a simpler single-cell sewing pass would tolerate).
+        # Fall back to the single-cell path, same as ByCells does when its
+        # own _build_from_shapes call fails.
+        cell = Cell.ByFaces(faces, tolerance=tolerance)
+        if cell is None:
+            return None
+        return CellComplex.ByCells([cell], tolerance)
 
     def Cells(self, hostTopology=None, cells=None):
         result = list(getattr(self, "cells", []) or [])

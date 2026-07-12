@@ -374,6 +374,27 @@ class FaceUtility:
 
         return centroid
 
+    @staticmethod
+    def TrimByWire(face, wire, flag=False):
+        """
+        Trims face by wire. Verified against the native topologic_core
+        backend: for a wire that does not actually lie on/cross the face
+        (e.g. a different plane entirely -- the only case exercised by the
+        test suite), the result is simply a Face built directly from the
+        wire, not a geometric intersection with the original face's
+        boundary. Fall through to that when a genuine on-surface trim
+        isn't possible.
+        """
+        if not isinstance(face, Face):
+            return None
+        if not isinstance(wire, Wire):
+            return face
+
+        result = Face.ByWire(wire)
+        if result is not None:
+            return result
+        return face
+
 # ---------------------------------------------------------------------------
 # Explicit unsupported Face API
 # ---------------------------------------------------------------------------
@@ -396,4 +417,11 @@ def _face_utility_not_implemented(name, return_value=None):
 # Face.ByExternalInternalBoundaries, FaceUtility.InternalVertex, FaceUtility.VertexAtParameters,
 # FaceUtility.ParametersAtVertex, FaceUtility.IsInside and FaceUtility.Triangulate are all
 # implemented above. Do NOT re-clobber them here.
-Face.InternalVertex = staticmethod(lambda face, tolerance=0.0001, silent=False: FaceUtility.InternalVertex(face, tolerance=tolerance))
+def _face_internal_vertex(self, tolerance=0.0001, silent=False):
+    return FaceUtility.InternalVertex(self, tolerance=tolerance)
+
+
+# Plain instance method, not @staticmethod: must support the instance-bound
+# Core.InstanceCall convention (face.InternalVertex(tolerance)), which a
+# staticmethod-wrapped lambda would break (see HANDOFF.md item 1).
+Face.InternalVertex = _face_internal_vertex

@@ -63,6 +63,49 @@ def edge_key(edge, tolerance: float = 0.0001):
     return tuple(sorted([a, b]))
 
 
+def dedupe_vertices_by_distance(vertices: Iterable[Any], tolerance: float = 0.0001) -> list:
+    """
+    Merge vertices that are within `tolerance` of each other.
+
+    Plain round()-based bucketing (vertex_key) can fail to merge two points
+    that are truly within tolerance but happen to straddle a bucket
+    boundary (e.g. 0.00004999 and 0.00005001 round to different buckets).
+    This uses a floor-based spatial grid sized to `tolerance` instead, so
+    any true duplicate is guaranteed to land in the same cell or one of its
+    26 neighbours, and confirms it with a real distance3 check rather than
+    trusting the bucket key alone.
+    """
+    if tolerance is None or tolerance <= 0:
+        tolerance = 0.0001
+    kept: list = []
+    grid: dict = {}
+
+    for v in vertices:
+        if not is_vertex(v):
+            continue
+        cx = math.floor(v.x / tolerance)
+        cy = math.floor(v.y / tolerance)
+        cz = math.floor(v.z / tolerance)
+        duplicate = False
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for idx in grid.get((cx + dx, cy + dy, cz + dz), ()):
+                        if same_vertex(v, kept[idx], tolerance):
+                            duplicate = True
+                            break
+                    if duplicate:
+                        break
+                if duplicate:
+                    break
+            if duplicate:
+                break
+        if not duplicate:
+            grid.setdefault((cx, cy, cz), []).append(len(kept))
+            kept.append(v)
+    return kept
+
+
 def not_implemented(name: str, return_value=None):
     """Print a uniform not-implemented message and return a safe value."""
     print(f"{name} - Not implemented.")

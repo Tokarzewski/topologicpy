@@ -233,7 +233,7 @@ class Graph:
         if start_key is None:
             return 0
 
-        end_time = _time.time() + (timeLimit if searchLimitFlag else 10)
+        end_time = _time.time() + timeLimit if searchLimitFlag else float("inf")
         max_paths = 1000
 
         results = []

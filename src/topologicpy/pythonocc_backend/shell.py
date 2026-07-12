@@ -88,11 +88,17 @@ class Shell(Topology):
         silently overwritten by whichever Shell was built most recently
         sharing that edge, corrupting *other*, still-alive Shells built
         earlier from the same face. So each edge instead accumulates a
-        {id(shell): owning_faces} map across every Shell.ByFaces call that
-        touches it, and the patched Faces() looks up by the hostTopology
-        actually passed in (falling back to the map's only entry, or to the
-        most recently added one, if hostTopology is None/unrecognised --
-        matching the "None is no filter" convention used elsewhere).
+        {shell._uuid: owning_faces} map across every Shell.ByFaces call
+        that touches it (keyed by the shell's stable _uuid, not id(shell)
+        -- CPython can reuse a garbage-collected object's id(), which would
+        silently attribute a resurrected id to the wrong, unrelated Shell),
+        and the patched Faces() looks up by the hostTopology actually
+        passed in. A recognised hostTopology always returns its own
+        recorded entry; a *given* but unrecognised hostTopology returns an
+        empty list rather than guessing (returning another Shell's data
+        would be worse than returning nothing); only when no hostTopology
+        is given at all does it fall back to the most recently added entry,
+        matching the "None is no filter" convention used elsewhere.
         """
         incidence = Shell._edge_face_incidence(faces, tolerance=tolerance)
         seen = set()
@@ -110,17 +116,22 @@ class Shell(Topology):
                 if by_host is None:
                     by_host = {}
                     edge._shell_faces_by_host = by_host
-                by_host[id(shell)] = owning_faces
+                by_host[shell._uuid] = owning_faces
 
                 if not getattr(edge, "_shell_faces_patched", False):
                     edge._shell_faces_patched = True
 
                     def _edge_faces(self, hostTopology=None, output=None):
                         host_map = getattr(self, "_shell_faces_by_host", None) or {}
-                        if hostTopology is not None and id(hostTopology) in host_map:
-                            result = list(host_map[id(hostTopology)])
+                        if hostTopology is not None:
+                            host_key = getattr(hostTopology, "_uuid", None)
+                            # A specific host was asked for: only answer for a
+                            # recognised one. Returning another Shell's data
+                            # here would be silently wrong, so an unrecognised
+                            # host gets an empty result instead of a guess.
+                            result = list(host_map.get(host_key, [])) if host_key is not None else []
                         elif host_map:
-                            # No (recognised) host given: fall back to the most
+                            # No host given at all: fall back to the most
                             # recently recorded context for this edge.
                             result = list(next(reversed(list(host_map.values()))))
                         else:

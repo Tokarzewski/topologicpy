@@ -8,7 +8,7 @@ from .wire import Wire
 from .edge import Edge
 from .vertex import Vertex
 from .occ_utils import make_occ_cell
-from .helpers import edge_key, vertex_key
+from .helpers import edge_key, vertex_key, dedupe_vertices_by_distance
 
 
 def _dedupe_vertices(vertices, tolerance: float = 0.0001):
@@ -24,17 +24,12 @@ def _dedupe_vertices(vertices, tolerance: float = 0.0001):
     sub-shapes between faces even where they are geometrically coincident
     (each Face.ByVertices call makes its own fresh vertices/edges) -- so
     shape-hash dedup leaves 3 duplicate Vertex wrappers per shared corner.
+
+    Uses dedupe_vertices_by_distance (helpers.py) rather than a plain
+    vertex_key bucket-equality check, since two truly-coincident vertices
+    can straddle a rounding bucket boundary and fail to merge otherwise.
     """
-    result = []
-    seen = set()
-    for v in vertices:
-        if not isinstance(v, Vertex):
-            continue
-        key = vertex_key(v, tolerance)
-        if key not in seen:
-            seen.add(key)
-            result.append(v)
-    return result
+    return dedupe_vertices_by_distance((v for v in vertices if isinstance(v, Vertex)), tolerance)
 
 
 @dataclass(eq=False)
@@ -251,10 +246,10 @@ def _cell_by_wires(wires, close: bool = False, tolerance: float = 0.0001, silent
         return None
 
     faces = list(getattr(side_shell, "faces", []) or [])
-    bottom_cap = Face.ByWire(wire_list[0])
-    if bottom_cap is not None:
-        faces.append(bottom_cap)
     if not close:
+        bottom_cap = Face.ByWire(wire_list[0])
+        if bottom_cap is not None:
+            faces.append(bottom_cap)
         top_cap = Face.ByWire(wire_list[-1])
         if top_cap is not None:
             faces.append(top_cap)
