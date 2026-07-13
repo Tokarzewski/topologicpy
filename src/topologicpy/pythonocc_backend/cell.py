@@ -293,14 +293,17 @@ class CellUtility:
     @staticmethod
     def Contains(cell, vertex, tolerance: float = 0.0001):
         """
-        Classifies vertex against cell's solid shape using
+        Classifies vertex against cell's shape using
         BRepClass3d_SolidClassifier. Returns the topologic_core convention:
         0 = inside (TopAbs_IN), 1 = on the boundary (TopAbs_ON),
-        2 = outside (TopAbs_OUT or anything else) -- matching the int
-        contract expected by the algorithm-layer Cell.ContainmentStatus
-        (src/topologicpy/Cell.py), which does:
-            result = Core.CellUtility.Contains(cell, v, tolerance)
-            status = 0 if result == 0 else (1 if result == 1 else 2)
+        2 = outside (TopAbs_OUT or anything else).
+
+        Note: Cells in this backend are boundary-representation shells
+        (faces only), not volume-solid OCCT shapes. So the classifier
+        returns TopAbs_ON for any point on/within the shell — it
+        cannot distinguish INSIDE from ON. The algorithm layer's
+        Cell.ContainmentStatus compensates by testing 8 offset vertices
+        and majority-voting.
         """
         if not isinstance(cell, Cell) or not isinstance(vertex, Vertex):
             return 2

@@ -203,6 +203,98 @@ class VertexUtility:
         edges.extend(unique_by_uuid(result))
         return 0
 
+    @staticmethod
+    def AdjacentWires(vertex, topology, wires):
+        from .wire import Wire
+        if not isinstance(vertex, Vertex):
+            return 1
+        result = []
+        if isinstance(topology, Topology):
+            temp = []
+            Topology.Wires(topology, None, temp)
+            for w in temp:
+                if not isinstance(w, Wire):
+                    continue
+                sv, ev = Wire.StartVertex(w), Wire.EndVertex(w)
+                if sv is not None and same_vertex(sv, vertex):
+                    result.append(w)
+                elif ev is not None and same_vertex(ev, vertex):
+                    result.append(w)
+        wires.extend(unique_by_uuid(result))
+        return 0
+
+    @staticmethod
+    def AdjacentFaces(vertex, topology, faces):
+        if not isinstance(vertex, Vertex):
+            return 1
+        result = []
+        if isinstance(topology, Topology):
+            temp = []
+            Topology.Faces(topology, None, temp)
+            for f in temp:
+                if not Topology.IsInstance(f, "Face"):
+                    continue
+                fverts = []
+                Topology.Vertices(f, None, fverts)
+                if any(same_vertex(v, vertex) for v in fverts):
+                    result.append(f)
+        faces.extend(unique_by_uuid(result))
+        return 0
+
+    @staticmethod
+    def AdjacentShells(vertex, topology, shells):
+        if not isinstance(vertex, Vertex):
+            return 1
+        result = []
+        if isinstance(topology, Topology):
+            temp = []
+            Topology.Shells(topology, None, temp)
+            for s in temp:
+                if not Topology.IsInstance(s, "Shell"):
+                    continue
+                sverts = []
+                Topology.Vertices(s, None, sverts)
+                if any(same_vertex(sv, vertex) for sv in sverts):
+                    result.append(s)
+        shells.extend(unique_by_uuid(result))
+        return 0
+
+    @staticmethod
+    def AdjacentCells(vertex, topology, cells):
+        if not isinstance(vertex, Vertex):
+            return 1
+        result = []
+        if isinstance(topology, Topology):
+            temp = []
+            Topology.Cells(topology, None, temp)
+            for c in temp:
+                if not Topology.IsInstance(c, "Cell"):
+                    continue
+                cverts = []
+                Topology.Vertices(c, None, cverts)
+                if any(same_vertex(cv, vertex) for cv in cverts):
+                    result.append(c)
+        cells.extend(unique_by_uuid(result))
+        return 0
+
+    @staticmethod
+    def AdjacentCellComplexes(vertex, topology, cellComplexes):
+        if not isinstance(vertex, Vertex):
+            return 1
+        result = []
+        if isinstance(topology, Topology):
+            temp = []
+            Topology.CellComplexes(topology, None, temp)
+            for cc in temp:
+                if not Topology.IsInstance(cc, "CellComplex"):
+                    continue
+                ccverts = []
+                Topology.Vertices(cc, None, ccverts)
+                if any(same_vertex(cvv, vertex) for cvv in ccverts):
+                    result.append(cc)
+        cellComplexes.extend(unique_by_uuid(result))
+        return 0
+
 # ---------------------------------------------------------------------------
 # Explicit unsupported Vertex API
 # ---------------------------------------------------------------------------

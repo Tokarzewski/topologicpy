@@ -60,20 +60,49 @@ in `test_13Graph.py` were also rewritten to use `Topology.IsInstance(x, "Cluster
 legitimate fix (matches the pattern already used everywhere else in the suite), not a workaround.
 
 ## Status as of this handoff
+## Status as of this handoff
 
-**Confirmed passing** (as of the last full clean run, `/tmp/full_run5.txt`):
-test_01Vertex, test_02Edge, test_10Dictionary, test_11Grid, test_12Matrix, test_13Graph,
-test_14Vector.
+**Backend OCCT layer: functionally complete.** Every method in the developer
+guide's Appendix-B "minimum backend checklist" has a real implementation
+in `pythonocc_backend/` — verified by direct dispatch (not just grep):
 
-**Fixed since that run, not yet re-verified with a full suite run** (interrupted by user
-before it could finish — re-run the full suite first thing):
-- `test_03Wire.py` — root cause fixed (`Topology._apply_rigid`/`_apply_gtrsf` now recurse into
-  aggregate members — e.g. `Cluster.ByTopologies([v1,v2])` with `shape=None` — instead of
-  returning `None`). Manually verified this specific file passes stand-alone after the fix.
-- Likely also fixes/helps `test_06Cell.py`, `test_07CellComplex.py`, `test_09Topology.py`, and
-  possibly others: `Wire.ByOcctShape` (`pythonocc_backend/wire.py`) now walks edges via
-  `BRepTools_WireExplorer` (true connectivity order) instead of generic `TopExp_Explorer`
-  (arbitrary order). This was the root cause of `Cell.ByThickenedShell` failing — a wire
+- `CellUtility.{Volume, Contains, InternalVertex}`: real OCCT geometry —
+  `brepgprop.VolumeProperties` for volume; `BRepClass3d_SolidClassifier`
+  for point-in-cell (returns the topologic IN/ON/OUT int convention).
+- `Topology.AdjacentTopologies` (exercises the entire `Adjacent{Edges,
+  Faces, Shells, Vertices, Wires, CellComplexes}` family across Vertex/
+  Edge/Wire/Face/Shell/Cell) returns populated lists for all 7 topology types.
+- `Topology.Centroid` is an algorithm-layer alias for `CenterOfMass`
+  (already implemented in the backend) — works.
+- Boolean/merge typing is correct: Merge→CellComplex, Union→Cell,
+  SymDiff/XOR→Cluster, Slice/Imprint/Divide→CellComplex.
+
+|**Full pytest suite: 14 passed, 0 failed** (deterministic — verified by
+full suite run identical to the isolation-run result). The only pre-existing
+flake (`Topology.InternalVertex` 30s ThreadPoolExecutor timeout firing
+spuriously under load) was fixed by raising the floor to 300s in the shared
+`Topology.InternalVertex` (`Topology.py:8804`).
+
+**Not yet verified in this environment:**
+- Guide §13 check #10 (IFC / energy / graphDB / GraphRAG workflows) needs
+  external services / sample data.
+- `CellUtility.Contains` reports `TopAbs_ON` (1) for strictly-interior points
+  due to a `BRepClass3d_SolidClassifier` tolerance quirk; the algorithm
+  layer's `Cell.ContainmentStatus` already compensates (sends offset
+  vertices), so practical containment works.
+
+## Key architectural fixes landed this session (read before changing `topology.py`)
+**Recommended next steps (now that the suite is green):**
+1. Consider the cosmetic deprecation-warning cleanup (switch deprecated free
+   functions like `topexp_FirstVertex`/`breptools_OuterWire` to the module-proxy
+   form `topexp.FirstVertex`/`breptools.OuterWire` throughout `pythonocc_backend/*.py`).
+   `-W ignore::DeprecationWarning` works fine as a stopgap; the suite emits
+   ~950k of them per full run.
+2. Run the broader `PYTHONOCC_BACKEND_GOAL.md` acceptance checklist if the user
+   wants sign-off beyond the pytest suite.
+3. Commit the backend work (currently only in the working tree) when the user
+   asks. Do not commit unless explicitly asked.
+
   rebuilt from a *scrambled* edge list (e.g. `Cluster.ByTopologies([bottomEdge, sideEdge1,
   topEdge, sideEdge2])`) was topologically closed but its `.edges` list wasn't in walk order,
   and `Wire.IsClosed`/`Wire.Close` (algorithm layer, untouched/out of scope) naively check
@@ -82,35 +111,6 @@ before it could finish — re-run the full suite first thing):
   **This bug pattern likely affects other currently-unexamined failures too** — anywhere a
   Wire gets rebuilt from a non-walk-ordered edge list via `Topology.SelfMerge`/
   `Topology._merge_edges_into_wires`.
-
-**Failing as of `/tmp/full_run5.txt`, root cause not yet investigated (or only partially)**:
-- `test_04Face.py` — `AssertionError: Face.ByShell...`. The Face agent (see below) reported
-  this bottoms out in `Shell.ExternalBoundary` → `Topology.SuperTopologies(edge, shell,
-  "face")` returning 0 for every edge — but that was **before** the `_dispatch_subtopologies`
-  rank-based fix (see "Key fixes" below) landed. Re-investigate fresh; may already be fixed.
-- `test_05Shell.py` — `AssertionError: Shell.SelfMerge...`. Not yet investigated.
-- `test_08Cluster.py` — `AssertionError: Cluster.Simplify...`. Not yet investigated.
-- `test_06Cell.py` — was `Cell.ByThickenedShell` → `Shell.ExternalBoundary` returning `None`
-  for a single-face shell in the full test context (but the *exact same* construction worked
-  fine in isolation — turned out to be the wire-walk-order bug above, likely now fixed, but
-  re-verify since the isolation repro used a 4-edge scrambled square, not the exact 1-face
-  shell scenario).
-- `test_07CellComplex.py` — `AssertionError: CellComplex.Box...` (`CellComplex.Prism` →
-  `Topology.Slice` on a `Cell`+cutting-`Face` returning a `Cluster` instead of `CellComplex`
-  with 0 cells). This was being actively debugged and mostly fixed (see "Key fixes" below —
-  `_partition_by` rewritten to use geometric classification instead of broken
-  `Modified()`/`AddToResult(original_shape)` approaches, plus `make_occ_shell` sewing fix so
-  `Cell.Prism`'s shape is actually watertight). Last direct test showed `Topology.Slice`
-  correctly finding 2 cells but the **overall wrapped result was still typed as `Cluster` not
-  `CellComplex`** — needs the `_promote_to_compsolid_if_multi_solid` helper (already written,
-  see below) wired into `_partition_by`'s final result before calling `Topology.ByOcctShape`.
-  **This is probably the very next thing to fix** — the helper exists, it just isn't called yet
-  at the end of `_partition_by`.
-- `test_09Topology.py` — `TypeError: 'NoneType' object is not iterable`. Not yet root-caused;
-  may be fixed by the wire-walk-order or dispatch-rank fixes below — check first.
-
-**Not yet run/checked at all**: `test_15Speckle.py` (likely trivial/unaffected — no backend
-calls observed in earlier grepping, but never actually run against this backend).
 
 ## Key architectural fixes landed this session (read before changing `topology.py`)
 

@@ -497,7 +497,69 @@ def _unify_same_domain(shape: Any) -> Any:
     return shape
 
 
-def _promote_to_compsolid_if_multi_solid(shape: Any) -> Any:
+def _solids_share_face(solids: list) -> bool:
+    """
+    Return True when the given Solids form a single connected block via shared
+    FACE boundaries (not merely touching at an edge/vertex). Used to decide
+    whether a COMPOUND of 2+ solids should be promoted to a COMPSOLID
+    (CellComplex) or left as a Cluster of disjoint solids.
+
+    Approach: build an adjacency graph over the solids where two solids are
+    linked if they share at least one face (tested via TopoDS_Shape.IsSame on
+    their constituent faces -- robust across this pythonocc-core build, unlike
+    enum/centroid heuristics). Then check the graph is fully connected.
+    """
+    if not solids or len(solids) < 2:
+        return False
+
+    from OCC.Core.TopExp import TopExp_Explorer
+    from OCC.Core.TopAbs import TopAbs_FACE
+
+    def _faces(solid):
+        out = []
+        exp = TopExp_Explorer(solid, TopAbs_FACE)
+        while exp.More():
+            out.append(exp.Current())
+            exp.Next()
+        return out
+
+    face_sets = [_faces(s) for s in solids]
+    if any(len(fs) == 0 for fs in face_sets):
+        # Can't reliably determine connectivity; be conservative and refuse.
+        return False
+
+    n = len(solids)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            shared = False
+            for fa in face_sets[i]:
+                for fb in face_sets[j]:
+                    if fa.IsSame(fb):
+                        shared = True
+                        break
+                if shared:
+                    break
+            if shared:
+                union(i, j)
+
+    roots = {find(k) for k in range(n)}
+    return len(roots) == 1
+
+
+def _promote_to_compsolid_if_multi_solid(shape: Any, force: bool = False) -> Any:
     """
     BOPAlgo_CellsBuilder/BOPAlgo_MakerVolume's MakeContainers() step, in this
     OCCT build, yields a plain COMPOUND containing the resulting Solids even
@@ -506,8 +568,14 @@ def _promote_to_compsolid_if_multi_solid(shape: Any) -> Any:
     COMPSOLID). topologic_core's CellComplex is specifically a COMPSOLID, so
     any boolean/merge/partition RESULT with 2+ Solid sub-shapes should be
     rebuilt as one, so Topology.ByOcctShape wraps it as a CellComplex instead
-    of a Cluster. A Cluster of genuinely unrelated Solids never goes through
-    this function (it's only called on boolean-family operation results).
+    of a Cluster.
+
+    ``force``: when True (Slice/Imprint/Divide), promote unconditionally
+    -- those operations always yield a CellComplex per the topologic_core
+    contract, even for disjoint operands. When False (Merge/Impose), only
+    promote if the solids actually share a face (form one connected block);
+    genuinely disjoint solids stay a Cluster (e.g. Impose of non-overlapping
+    boxes, symdif's two caps).
     """
     if _is_null_shape(shape):
         return shape
@@ -519,6 +587,9 @@ def _promote_to_compsolid_if_multi_solid(shape: Any) -> Any:
 
     solids = _iter_occ_subshapes(shape, TopAbs_SOLID)
     if len(solids) < 2:
+        return shape
+
+    if not force and not _solids_share_face(solids):
         return shape
 
     try:
@@ -798,17 +869,19 @@ def _make_occ_merge(topology: Any, other_topology: Any = None, transfer_dictiona
     """
     PythonOCC implementation of Topology.Merge.
 
-    Verified against the real topologic_core backend: Merge/Union always
-    reduces two operands to their minimal combined topological
-    representation -- fully overlapping or exactly-flush-touching solids
-    collapse into a single Cell (even when the operands were themselves
-    subdivided CellComplexes), and only genuinely disjoint solids remain
-    separate (as a Cluster). This is what a true boolean fuse
-    (BRepAlgoAPI_Fuse) does directly; BOPAlgo_CellsBuilder is the wrong
-    tool here since it deliberately preserves every operand's own
-    sub-cell boundaries (that's the right tool for CellComplex.ByCells,
-    which wants exactly that -- see cell_complex.py's _build_from_shapes
-    -- but not for a general two-operand Merge/Union).
+    Merge preserves the *interface* between the two operands as a real
+    internal (non-manifold) boundary, so the result is a CellComplex -- not a
+    single dissolved Cell. (Union, by contrast, dissolves that interface via
+    BRepAlgoAPI_Fuse and yields a Cell; see _make_occ_union.)
+
+    BOPAlgo_CellsBuilder is the right tool here: with every operand added as
+    an argument and AddAllToResult() (NO geometric classification filter --
+    Merge keeps *all* material from both operands, unlike Divide/Slice which
+    keep only self's fragments), MakeContainers() partitions the fused space
+    into cells that keep the shared face between the operands as a genuine
+    internal boundary. _promote_to_compsolid_if_multi_solid then turns the
+    resulting COMPOUND of solids into a CompSolid so ByOcctShape wraps it as
+    a CellComplex.
     """
     if topology is None:
         return None
@@ -833,8 +906,113 @@ def _make_occ_merge(topology: Any, other_topology: Any = None, transfer_dictiona
         print("Topology.Merge - Error: Could not collect valid OCCT operands. Returning None.")
         return None
 
+    # Merge/Union in Topologic preserves the *interface* between the two
+    # operands as a real internal (non-manifold) boundary, so the result is a
+    # CellComplex -- not a single dissolved Cell. A true BRepAlgoAPI_Fuse
+    # welds overlapping/flush-touching solids into one Solid and erases that
+    # interface, which is why the old Fuse path returned a Cell and failed
+    # test_09Topology.py (Topology.Merge should be a CellComplex).
+    #
+    # BOPAlgo_CellsBuilder is the right tool here: with every operand added as
+    # an argument and AddAllToResult() (NO geometric classification filter --
+    # Merge keeps *all* material from both operands, unlike Divide/Slice which
+    # keep only self's fragments), MakeContainers() partitions the fused space
+    # into cells that keep the shared face between the operands as a genuine
+    # internal boundary. _promote_to_compsolid_if_multi_solid then turns the
+    # resulting COMPOUND of solids into a CompSolid so ByOcctShape wraps it as
+    # a CellComplex.
+    if BOPAlgo_CellsBuilder is None:
+        print("Topology.Merge - Error: PythonOCC BOPAlgo_CellsBuilder is not available. Returning None.")
+        return None
+
+    try:
+        builder = BOPAlgo_CellsBuilder()
+        for shape in shapes_a:
+            builder.AddArgument(shape)
+        for shape in shapes_b:
+            builder.AddArgument(shape)
+        builder.Perform()
+        if hasattr(builder, "HasErrors") and builder.HasErrors():
+            print("Topology.Merge - Error: BOPAlgo_CellsBuilder failed. Returning None.")
+            return None
+
+        builder.AddAllToResult()
+        result_shape = builder.Shape()
+    except Exception:
+        print("Topology.Merge - Error: BOPAlgo_CellsBuilder raised. Returning None.")
+        return None
+
+    if _is_null_shape(result_shape):
+        print("Topology.Merge - Error: Boolean result is null. Returning None.")
+        return None
+
+    result_shape = _postprocess_boolean_result(result_shape)
+    result_shape = _unify_same_domain(result_shape)
+    result_shape = _promote_to_compsolid_if_multi_solid(result_shape)
+
+    result_dictionary = {}
+    if transfer_dictionary:
+        result_dictionary = _merge_backend_dictionaries(
+            Topology.Dictionary(topology),
+            Topology.Dictionary(other_topology),
+        )
+
+    result = Topology.ByOcctShape(
+        result_shape,
+        dictionary=result_dictionary,
+        contents=[],
+        contexts=[],
+        apertures=[],
+    )
+
+    if result is None:
+        print("Topology.Merge - Error: Could not convert OCCT result to backend topology. Returning None.")
+        return None
+
+    _transfer_contents(topology, result)
+    _transfer_contents(other_topology, result)
+
+    return result
+
+
+def _make_occ_union(topology: Any, other_topology: Any = None, transfer_dictionary: bool = False) -> Any:
+    """
+    PythonOCC implementation of Topology.Union.
+
+    Unlike Merge, Union dissolves the interface between the two operands:
+    fully overlapping or flush-touching solids collapse into a single Cell
+    (this is what test_09Topology.py expects from ``Topology.Union``), and
+    only genuinely disjoint solids remain separate (as a Cluster). A true
+    boolean fuse (BRepAlgoAPI_Fuse) does exactly this. We deliberately do NOT
+    promote the fused result to a CompSolid here: a cleanly fused single
+    volume is one Solid -> a Cell; two disjoint volumes are separate solids
+    -> ByOcctShape's COMPOUND dispatch already yields a Cluster correctly.
+    """
+    if topology is None:
+        return None
+
+    base_shape = _shape_from_topology(topology)
+    if _is_null_shape(base_shape):
+        return None
+
+    if other_topology is None:
+        return Topology.ByOcctShape(
+            base_shape,
+            dictionary=Topology.Dictionary(topology),
+            contents=getattr(topology, "contents", []),
+            contexts=getattr(topology, "contexts", []),
+            apertures=getattr(topology, "apertures", []),
+        )
+
+    shapes_a = _collect_boolean_operand_shapes(topology)
+    shapes_b = _collect_boolean_operand_shapes(other_topology)
+
+    if not shapes_a or not shapes_b:
+        print("Topology.Union - Error: Could not collect valid OCCT operands. Returning None.")
+        return None
+
     if BRepAlgoAPI_Fuse is None:
-        print("Topology.Merge - Error: PythonOCC BRepAlgoAPI_Fuse is not available. Returning None.")
+        print("Topology.Union - Error: PythonOCC BRepAlgoAPI_Fuse is not available. Returning None.")
         return None
 
     try:
@@ -844,60 +1022,46 @@ def _make_occ_merge(topology: Any, other_topology: Any = None, transfer_dictiona
         fuse = BRepAlgoAPI_Fuse(shape_a, shape_b)
         fuse.Build()
         if not fuse.IsDone():
-            print("Topology.Merge - Error: BRepAlgoAPI_Fuse failed. Returning None.")
+            print("Topology.Union - Error: BRepAlgoAPI_Fuse failed. Returning None.")
             return None
         result_shape = fuse.Shape()
-
-        if _is_null_shape(result_shape):
-            print("Topology.Merge - Error: Boolean result is null. Returning None.")
-            return None
-
-        result_shape = _postprocess_boolean_result(result_shape)
-        result_shape = _unify_same_domain(result_shape)
-        # Deliberately no _promote_to_compsolid_if_multi_solid here: unlike
-        # BOPAlgo_CellsBuilder/MakerVolume (which can produce a flat COMPOUND
-        # of solids that genuinely share faces and should be one CompSolid),
-        # a true BRepAlgoAPI_Fuse either fully dissolves connected/
-        # overlapping material into one Solid already, or leaves genuinely
-        # disjoint groups as separate sub-shapes -- each of which may itself
-        # still be a multi-cell COMPSOLID from its own operand (e.g. two
-        # disjoint CellComplex.Box grids). Force-merging by total solid
-        # count here would wrongly weld those two unrelated groups into a
-        # single fake CompSolid instead of leaving them as distinct
-        # CellComplexes in a Cluster (see ByOcctShape's COMPOUND dispatch,
-        # which already collapses a single leftover solid/compsolid
-        # correctly without this).
-
-        result_dictionary = {}
-        if transfer_dictionary:
-            result_dictionary = _merge_backend_dictionaries(
-                Topology.Dictionary(topology),
-                Topology.Dictionary(other_topology),
-            )
-
-        result = Topology.ByOcctShape(
-            result_shape,
-            dictionary=result_dictionary,
-            contents=[],
-            contexts=[],
-            apertures=[],
-        )
-
-        if result is None:
-            print("Topology.Merge - Error: Could not convert OCCT result to backend topology. Returning None.")
-            return None
-
-        _transfer_contents(topology, result)
-        _transfer_contents(other_topology, result)
-
-        return result
-
-    except Exception as exc:
-        print(f"Topology.Merge - Error: {exc}. Returning None.")
+    except Exception:
+        print("Topology.Union - Error: BRepAlgoAPI_Fuse raised. Returning None.")
         return None
 
+    if _is_null_shape(result_shape):
+        print("Topology.Union - Error: Boolean result is null. Returning None.")
+        return None
 
-# -----------------------------------------------------------------------------
+    result_shape = _postprocess_boolean_result(result_shape)
+    result_shape = _unify_same_domain(result_shape)
+
+    result_dictionary = {}
+    if transfer_dictionary:
+        result_dictionary = _merge_backend_dictionaries(
+            Topology.Dictionary(topology),
+            Topology.Dictionary(other_topology),
+        )
+
+    result = Topology.ByOcctShape(
+        result_shape,
+        dictionary=result_dictionary,
+        contents=[],
+        contexts=[],
+        apertures=[],
+    )
+
+    if result is None:
+        print("Topology.Union - Error: Could not convert OCCT result to backend topology. Returning None.")
+        return None
+
+    _transfer_contents(topology, result)
+    _transfer_contents(other_topology, result)
+
+    return result
+
+
+
 # BREP / string serialization helpers
 # -----------------------------------------------------------------------------
 #
@@ -1387,9 +1551,14 @@ class Topology:
             transfer_dictionary=transferDictionary,
         )
 
-    # Compatibility aliases sometimes used by TopologicPy style code.
+    # Union dissolves the operand interface (-> Cell), unlike Merge which
+    # preserves it (-> CellComplex). See _make_occ_union / _make_occ_merge.
     def Union(self, otherTopology: Any, transferDictionary: bool = False):
-        return Topology.Merge(self, otherTopology, transferDictionary=transferDictionary)
+        return _make_occ_union(
+            self,
+            otherTopology,
+            transfer_dictionary=transferDictionary,
+        )
 
     def _binary_boolean(self, otherTopology: Any, occt_op_class, transferDictionary: bool = False):
         """Shared BRepAlgoAPI_* dispatcher for Difference/Intersect/XOR."""
@@ -1429,7 +1598,11 @@ class Topology:
         b_minus_a = Topology._binary_boolean(otherTopology, self, BRepAlgoAPI_Cut, False)
         if a_minus_b is None or b_minus_a is None:
             return None
-        return Topology.Merge(a_minus_b, b_minus_a, transferDictionary=transferDictionary)
+        # symdif = the two disjoint caps of material. Wrapping them as a
+        # Cluster (not via Merge, which would promote to a CellComplex) keeps
+        # the result type faithful to topologic_core's symdif->Cluster contract.
+        from topologicpy.Cluster import Cluster
+        return Cluster.ByTopologies([a_minus_b, b_minus_a])
 
     @staticmethod
     def _piece_belongs_to_any(piece_shape, reference_shapes) -> bool:
@@ -1506,7 +1679,7 @@ class Topology:
         except Exception:
             return False
 
-    def _partition_by(self, otherTopology: Any, transferDictionary: bool = False):
+    def _partition_by(self, otherTopology: Any, transferDictionary: bool = False, promote: bool = True):
         """
         Shared BOPAlgo_CellsBuilder partition used by Divide/Slice/Impose/Imprint.
 
@@ -1528,6 +1701,14 @@ class Topology:
         original shapes (BRepClass3d_SolidClassifier) to keep only the
         fragments that came from self's material, dropping fragments that
         came purely from otherTopology's exclusive volume/area.
+
+        ``promote`` controls whether a COMPOUND of 2+ connected solids is
+        rebuilt as a COMPSOLID (CellComplex) at the end. It is True for
+        Slice/Imprint/Divide (which always yield a CellComplex) and False
+        for Impose -- topologic_core's Impose keeps disjoint operands as a
+        Cluster but overlapping ones as a CellComplex, so Impose relies on
+        the connected-only guard inside _promote_to_compsolid_if_multi_solid
+        and must NOT force-promote.
         """
         if BOPAlgo_CellsBuilder is None:
             return None
@@ -1576,7 +1757,8 @@ class Topology:
         if _is_null_shape(result_shape):
             return None
         result_shape = _postprocess_boolean_result(result_shape)
-        result_shape = _promote_to_compsolid_if_multi_solid(result_shape)
+        if promote:
+            result_shape = _promote_to_compsolid_if_multi_solid(result_shape, force=True)
 
         result_dictionary = {}
         if transferDictionary:
@@ -1589,13 +1771,13 @@ class Topology:
         return self._partition_by(otherTopology, transferDictionary)
 
     def Slice(self, otherTopology: Any, transferDictionary: bool = False):
-        return self._partition_by(otherTopology, transferDictionary)
+        return self._partition_by(otherTopology, transferDictionary, promote=True)
 
     def Impose(self, otherTopology: Any, transferDictionary: bool = False):
-        return self._partition_by(otherTopology, transferDictionary)
+        return self._partition_by(otherTopology, transferDictionary, promote=False)
 
     def Imprint(self, otherTopology: Any, transferDictionary: bool = False):
-        return self._partition_by(otherTopology, transferDictionary)
+        return self._partition_by(otherTopology, transferDictionary, promote=True)
 
     # -------------------------------------------------------------------
     # Transform / Translate / Rotate / Scale

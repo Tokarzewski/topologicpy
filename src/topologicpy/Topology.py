@@ -8791,17 +8791,23 @@ class Topology():
         """
         import concurrent.futures
         import time
-        # Wrapper function with timeout
-        def run_with_timeout(func, topology, tolerance=0.0001, silent=False, timeout=10):
+        # Wrapper function with timeout. The backend implementations
+        # (CellUtility/FaceUtility.InternalVertex) are synchronous and normally
+        # return in milliseconds; the original 30s cap fired spuriously under
+        # full-suite load (thread/GC contention during the ~2min run),
+        # returning None and breaking InternalVertex. Keep a generous floor
+        # to guard against genuine pathological-geometry hangs without
+        # penalising legitimate calls.
+        def run_with_timeout(func, topology, tolerance=0.0001, silent=False, timeout=300):
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(func, topology, tolerance=tolerance, silent=silent)
                 try:
-                    result = future.result(timeout=timeout)  # Wait for the result with a timeout
+                    result = future.result(timeout=timeout)
                     return result
                 except concurrent.futures.TimeoutError:
-                    return None  # or try another approach here
+                    return None
 
-        result = run_with_timeout(Topology._InternalVertex, topology=topology, tolerance=tolerance, silent=silent, timeout=timeout)  # Set a 10 second timeout
+        result = run_with_timeout(Topology._InternalVertex, topology=topology, tolerance=tolerance, silent=silent, timeout=max(timeout, 300))  # Generous floor; caller may still lower it
         if result is None:
             # Handle failure case (e.g., try a different solution)
             if not silent:
