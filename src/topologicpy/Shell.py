@@ -1253,13 +1253,13 @@ class Shell():
         """
         Returns the internal edges of the input shell.
 
+        Internal edges are edges that are shared by more than one face. Edges that
+        separate the same set of faces are grouped together and self-merged.
+
         Parameters
         ----------
         shell : topologic_core.Shell
             The input shell.
-        groupKey : str , optional
-            The edge dictionary key under which to save the edge group number. The default is "group".
-            Edges that separate the same faces belong to the same group.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -1268,65 +1268,142 @@ class Shell():
         Returns
         -------
         list
-            The list of internal boundaries
+            A list of merged internal-edge groups. Each item is typically an Edge,
+            Wire, Cluster, or another valid topology returned by Topology.SelfMerge.
 
         """
         from topologicpy.Cluster import Cluster
         from topologicpy.Topology import Topology
         from topologicpy.Dictionary import Dictionary
 
+        def _value_at_key(dictionary, key, default=None):
+            try:
+                return Dictionary.ValueAtKey(dictionary, key, default)
+            except TypeError:
+                try:
+                    value = Dictionary.ValueAtKey(dictionary, key)
+                    return default if value is None else value
+                except Exception:
+                    return default
+            except Exception:
+                return default
+
+        def _normalise_id(value):
+            if isinstance(value, list):
+                if len(value) < 1:
+                    return None
+                if len(value) == 1:
+                    value = value[0]
+                else:
+                    return tuple(value)
+            try:
+                return int(value)
+            except Exception:
+                return value
+
+        def _face_id(face, source_faces):
+            d = Topology.Dictionary(face)
+            value = _normalise_id(_value_at_key(d, "__id__", None))
+            if isinstance(value, int):
+                return value
+
+            # Fallback for cases where the returned supertopology face does not
+            # expose the temporary dictionary value reliably.
+            for i, source_face in enumerate(source_faces):
+                try:
+                    if Topology.IsSame(face, source_face):
+                        return i
+                except Exception:
+                    pass
+
+            return None
+
+        def _remove_temporary_key(topology, key):
+            try:
+                d = Topology.Dictionary(topology)
+                d = Dictionary.RemoveKey(d, key)
+                Topology.SetDictionary(topology, d)
+            except Exception:
+                pass
+
         if not Topology.IsInstance(shell, "Shell"):
             if not silent:
                 print("Shell.InternalEdges - Error: The input shell parameter is not a valid Shell. Returning None.")
             return None
+
         faces = Shell.Faces(shell)
-        for i, f in enumerate(faces):
-            d = Topology.Dictionary(f)
-            d = Dictionary.SetValueAtKey(d, "__id__", i)
-            f = Topology.SetDictionary(f, d)
+        if not isinstance(faces, list) or len(faces) < 1:
+            return []
+
+        # Temporarily tag the faces so that supertopology faces can be grouped
+        # deterministically. This avoids using object identity, which can be
+        # unreliable across Core calls.
+        tagged_faces = []
+        for i, face in enumerate(faces):
+            try:
+                d = Topology.Dictionary(face)
+                d = Dictionary.SetValueAtKey(d, "__id__", i)
+                tagged_face = Topology.SetDictionary(face, d)
+                tagged_faces.append(tagged_face if tagged_face else face)
+            except Exception:
+                tagged_faces.append(face)
 
         edges = Topology.Edges(shell)
-        ibEdges = []
-        groups = []
-        for anEdge in edges:
-            faces = Topology.SuperTopologies(anEdge, shell, topologyType="face")
-            if len(faces) > 1:
-                d = Topology.Dictionary(anEdge)
-                ids = []
-                for aFace in faces:
-                    face_d = Topology.Dictionary(aFace)
-                    ids.append(Dictionary.ValueAtKey(face_d, "__id__", -1))
-                ids.sort()
-                ids = str(ids)
-                groups.append(ids)
-                d = Dictionary.SetValueAtKey(d, "__group__", ids)
-                anEdge = Topology.SetDictionary(anEdge, d)
-                ibEdges.append(anEdge)
-                for aFace in faces:
-                    face_d = Topology.Dictionary(aFace)
-                    face_d = Dictionary.RemoveKey(face_d, "__id__")
+        if not isinstance(edges, list) or len(edges) < 1:
+            for face in tagged_faces:
+                _remove_temporary_key(face, "__id__")
+            return []
 
-        groups = list(set(groups))
-        for edge in ibEdges:
-            d = Topology.Dictionary(edge)
-            id = groups.index(Dictionary.ValueAtKey(d, "__group__"))
-            d = Dictionary.SetValueAtKey(d, "__group__", id)
-        edge_groups = []
-        for group in groups:
-            edge_group = Topology.Filter(ibEdges, searchType="equal to", key="__group__", value=group)['filtered']
-            edge_groups.append(edge_group)
+        grouped_edges = {}
+
+        for edge in edges:
+            adjacent_faces = Topology.SuperTopologies(edge, shell, topologyType="face")
+
+            if not isinstance(adjacent_faces, list) or len(adjacent_faces) <= 1:
+                continue
+
+            ids = []
+            for adjacent_face in adjacent_faces:
+                face_id = _face_id(adjacent_face, tagged_faces)
+                if face_id is not None:
+                    ids.append(face_id)
+
+            ids = sorted(set(ids))
+
+            if len(ids) <= 1:
+                continue
+
+            group_key = tuple(ids)
+            grouped_edges.setdefault(group_key, []).append(edge)
+
         final_groups = []
-        for edge_group in edge_groups:
-            final_groups.append(Topology.SelfMerge(Cluster.ByTopologies(edge_group, silent=True), tolerance=tolerance))
-        for edge in ibEdges:
-            d = Topology.Dictionary(edge)
-            d = Dictionary.RemoveKey(d, "__group__")
-            edge = Topology.SetDictionary(edge, d)
+
+        for group_key in sorted(grouped_edges.keys()):
+            edge_group = grouped_edges[group_key]
+
+            if len(edge_group) == 1:
+                final_groups.append(edge_group[0])
+                continue
+
+            cluster = Cluster.ByTopologies(edge_group, silent=True)
+            merged = Topology.SelfMerge(cluster, tolerance=tolerance)
+
+            if Topology.IsInstance(merged, "Topology"):
+                final_groups.append(merged)
+            else:
+                # Fallback: preserve the grouped edges rather than failing.
+                fallback_cluster = Cluster.ByTopologies(edge_group, silent=True)
+                if Topology.IsInstance(fallback_cluster, "Topology"):
+                    final_groups.append(fallback_cluster)
+
+        for face in tagged_faces:
+            _remove_temporary_key(face, "__id__")
+
         return final_groups
 
     
     @staticmethod
-    def IsClosed(shell) -> bool:
+    def IsClosed(shell, silent: bool = False) -> bool:
         """
         Returns True if the input shell is closed. Returns False otherwise.
 
@@ -1341,6 +1418,12 @@ class Shell():
             True if the input shell is closed. False otherwise.
 
         """
+        from topologicpy.Topology import Topology
+        
+        if not Topology.IsInstance(shell, "shell"):
+            if not silent:
+                print("Shell.IsClosed - Error: The input shell parameter is not a valid shell. Retruning None.")
+            return None
         # return shell.IsClosed() # H to Core
         return Core.InstanceCall(shell, "IsClosed")
 

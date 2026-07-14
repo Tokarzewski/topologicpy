@@ -78,6 +78,8 @@ class GraphRAG:
     -----------------
     - add_node: add a vertex and optionally connect it to an existing vertex.
     - connect: connect two existing vertices.
+    - remove_node: remove an unsupported vertex in the matrix workflow.
+    - remove_edge: remove an unsupported edge in the matrix workflow.
     - stop: stop the generation loop.
     """
 
@@ -136,9 +138,9 @@ class GraphRAG:
                 defaultEdgeCategory=defaultEdgeCategory,
                 defaultGeneratedBy=defaultGeneratedBy,
                 defaultEdgeLabel=defaultEdgeLabel,
-                tolerance=tolerance,
-                maxCandidates=max(1, int(maxCandidates or 12)),
-                maxPairs=max(1, int(maxPairs or 40)),
+                tolerance=GraphRAG._positive_float(tolerance, default=0.0001, minimum=0.0),
+                maxCandidates=GraphRAG._positive_int(maxCandidates, default=12, minimum=1),
+                maxPairs=GraphRAG._positive_int(maxPairs, default=40, minimum=1),
                 silent=silent,
             )
         except Exception as e:
@@ -149,7 +151,6 @@ class GraphRAG:
     # ---------------------------------------------------------------------
     # Public workflow methods
     # ---------------------------------------------------------------------
-    @staticmethod
     @staticmethod
     def Generate_old(
         grag,
@@ -175,7 +176,7 @@ class GraphRAG:
         if graph is None:
             return {"ok": False, "status": "error", "message": "The input graph is None.", "graph": graph, "steps": []}
 
-        for step in range(1, max(1, int(maxSteps or 1)) + 1):
+        for step in range(1, GraphRAG._positive_int(maxSteps, default=1, minimum=1) + 1):
             summary_before = GraphRAG.SummarizeGraph(grag, graph, silent=effective_silent)
             evidence = GraphRAG.Evidence(grag, summary_before, silent=effective_silent)
             action = GraphRAG.PickAction(grag, summary_before, evidence, description=description, silent=effective_silent)
@@ -272,7 +273,7 @@ class GraphRAG:
                     print("Latest Number of Nodes:", summary_after.get("num_nodes"))
                     print("Latest Labels:", [n.get("label") for n in summary_after.get("nodes", [])])
 
-            if stagnant >= max(1, int(patience or 1)):
+            if stagnant >= GraphRAG._positive_int(patience, default=1, minimum=1):
                 status = "patience_exhausted"
                 if verbose and not effective_silent:
                     print("→ Stopping because patience was exhausted.")
@@ -319,7 +320,25 @@ Allowed action values are only:
 - connect
 - stop
 """
-            raw = LLM.Prompt(llm, prompt, temperature=0, maxOutputTokens=4096, silent=effective_silent)
+            raw = None
+            prompt_attempts = [
+                {"temperature": 0, "maxOutputTokens": 4096, "silent": effective_silent},
+                {"temperature": 0, "max_completion_tokens": 4096, "silent": effective_silent},
+                {"temperature": 0, "silent": effective_silent},
+                {"silent": effective_silent},
+                {},
+            ]
+            last_error = None
+            for kwargs in prompt_attempts:
+                try:
+                    raw = LLM.Prompt(llm, prompt, **kwargs)
+                    last_error = None
+                    break
+                except TypeError as e:
+                    last_error = e
+                    continue
+            if raw is None and last_error is not None:
+                raise last_error
             if not effective_silent:
                 print("\nRAW LLM RESPONSE:")
                 print(raw)
@@ -432,7 +451,6 @@ Allowed action values are only:
         return out
 
     @staticmethod
-    @staticmethod
     def SummarizeGraph(grag, graph, silent: bool = False) -> Dict[str, Any]:
         """
         Summarises the current working graph as JSON-friendly nodes and edges.
@@ -476,7 +494,7 @@ Allowed action values are only:
 
                 for i, v in enumerate(vertices):
                     idx = v.get("index", i)
-                    props = dict(v.get("dictionary", {}) or {})
+                    props = GraphRAG._record_dictionary(v)
                     vid = props.get(vertex_id_key, props.get("id", f"n{i}"))
                     if vid is None or str(vid).strip() == "":
                         vid = f"n{i}"
@@ -515,7 +533,7 @@ Allowed action values are only:
 
                 out_edges = []
                 for e in edges:
-                    props = dict(e.get("dictionary", {}) or {})
+                    props = GraphRAG._record_dictionary(e)
                     src_index = e.get("src", props.get("src", None))
                     dst_index = e.get("dst", props.get("dst", None))
                     src = index_to_id.get(src_index, None)
@@ -651,23 +669,46 @@ Allowed action values are only:
         Builds the prompt used for graph-edit action selection.
         """
         evidence = evidence or {}
+        graphSummary = graphSummary or {}
+
+        def _safe_nodes(summary):
+            nodes = summary.get("nodes", []) if isinstance(summary, dict) else []
+            out = []
+            for i, n in enumerate(nodes or []):
+                if not isinstance(n, dict):
+                    continue
+                node_id = n.get("id", f"n{i}")
+                label = n.get("label", node_id)
+                out.append({
+                    "id": str(node_id),
+                    "label": str(label),
+                    "ontology_class": n.get("ontology_class"),
+                    "category": n.get("category"),
+                    "degree": int(n.get("degree", 0) or 0),
+                })
+            return out
+
+        def _safe_edges(summary):
+            edges = summary.get("edges", []) if isinstance(summary, dict) else []
+            out = []
+            for e in edges or []:
+                if not isinstance(e, dict):
+                    continue
+                out.append({
+                    "src": e.get("src"),
+                    "dst": e.get("dst"),
+                    "label": str(e.get("label", "connect")),
+                    "ontology_class": e.get("ontology_class"),
+                    "category": e.get("category"),
+                })
+            return out
+
+        allowed_actions = ["add_node", "connect", "remove_node", "remove_edge", "stop"]
         payload = {
             "target_description": description or "",
             "current_graph": {
-                "nodes": [{
-                    "id": n["id"],
-                    "label": n["label"],
-                    "ontology_class": n.get("ontology_class"),
-                    "category": n.get("category"),
-                    "degree": n["degree"],
-                } for n in (graphSummary or {}).get("nodes", [])],
-                "edges": [{
-                    "src": e["src"],
-                    "dst": e["dst"],
-                    "label": e["label"],
-                    "ontology_class": e.get("ontology_class"),
-                    "category": e.get("category"),
-                } for e in (graphSummary or {}).get("edges", [])],
+                "nodes": _safe_nodes(graphSummary),
+                "edges": _safe_edges(graphSummary),
             },
             "corpus_evidence": {
                 "candidate_counts": (evidence.get("candidate_counts") or [])[: getattr(grag, "maxCandidates", 12)],
@@ -675,12 +716,14 @@ Allowed action values are only:
                 "expandable_nodes": evidence.get("expandable_nodes") or [],
                 "pairs": (evidence.get("pairs") or [])[: getattr(grag, "maxPairs", 40)],
             },
-            "allowed_actions": ["add_node", "connect", "stop"],
+            "allowed_actions": allowed_actions,
             "rules": [
                 "Return one JSON object only.",
                 "Use action='add_node' to add a new node and optionally connect it to an existing node.",
                 "Any new node id must be unique and must not appear in current_graph.nodes[*].id.",
                 "Use action='connect' only when both nodes already exist in current_graph.nodes.",
+                "Use action='remove_edge' only when an existing edge is unsupported by corpus evidence.",
+                "Use action='remove_node' only when an existing node is unsupported by corpus evidence.",
                 "Use action='stop' when the graph already satisfies the target description or no justified edit remains.",
                 "Prefer candidate labels and label-pairs supported by corpus_evidence.",
                 "Preserve ontology_class and category metadata when they are present.",
@@ -711,7 +754,7 @@ Allowed action values are only:
         return {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["add_node", "connect", "stop"]},
+                "action": {"type": "string", "enum": ["add_node", "connect", "remove_node", "remove_edge", "stop"]},
                 "label": {"type": "string"},
                 "id": {"type": "string"},
                 "a_id": {"type": "string"},
@@ -912,7 +955,6 @@ Allowed action values are only:
     # Local workflow helpers retained outside Graph API by design
     # ---------------------------------------------------------------------
     @staticmethod
-    @staticmethod
     def _is_tgraph(graph) -> bool:
         """
         Returns True if the input graph is a TGraph.
@@ -960,12 +1002,24 @@ Allowed action values are only:
     @staticmethod
     def _record_dictionary(item) -> Dict[str, Any]:
         """
-        Returns the dictionary of a TGraph record or Topologic topology as a Python dictionary.
+        Returns a merged dictionary for a TGraph record or Topologic topology.
+
+        TGraph-style records often store structural values such as ``index``,
+        ``src`` and ``dst`` at the top level and user metadata in a nested
+        ``dictionary``. Both layers are useful in GraphRAG, so this helper
+        preserves top-level scalar metadata and lets nested dictionary values
+        override ordinary metadata keys.
         """
         if isinstance(item, dict):
-            if isinstance(item.get("dictionary"), dict):
-                return dict(item.get("dictionary") or {})
-            return dict(item)
+            out = {}
+            for key, value in item.items():
+                if key in ("dictionary", "topology", "object", "representation"):
+                    continue
+                out[key] = value
+            nested = item.get("dictionary", None)
+            if isinstance(nested, dict):
+                out.update(nested)
+            return out
         try:
             from topologicpy.Topology import Topology
             return GraphRAG._python_dictionary(Topology.Dictionary(item))
@@ -1056,7 +1110,6 @@ Allowed action values are only:
         return {"nodes": summary.get("nodes", []), "edges": summary.get("edges", [])}
 
     @staticmethod
-    @staticmethod
     def _apply_add_node(grag, graph, action: Dict[str, Any], silent: bool = False) -> Dict[str, Any]:
         try:
             vertex_id_key = getattr(grag, "vertexIDKey", "id")
@@ -1145,7 +1198,6 @@ Allowed action values are only:
             return {"ok": False, "graph": graph, "message": str(e)}
 
     @staticmethod
-    @staticmethod
     def _apply_connect(grag, graph, action: Dict[str, Any], silent: bool = False) -> Dict[str, Any]:
         try:
             edge_label_key = getattr(grag, "edgeLabelKey", "label")
@@ -1202,7 +1254,6 @@ Allowed action values are only:
             return {"ok": False, "graph": graph, "message": str(e)}
 
     @staticmethod
-    @staticmethod
     def _find_vertex_by_id(grag, graph, value):
         if value is None:
             return None
@@ -1217,7 +1268,6 @@ Allowed action values are only:
         return None
 
     @staticmethod
-    @staticmethod
     def _find_vertex_by_label(grag, graph, value):
         if value is None:
             return None
@@ -1231,7 +1281,6 @@ Allowed action values are only:
             return None
         return None
 
-    @staticmethod
     @staticmethod
     def _can_add_connection(grag, graph, vertex, silent: bool = False) -> bool:
         try:
@@ -1252,7 +1301,6 @@ Allowed action values are only:
             return True
 
     @staticmethod
-    @staticmethod
     def _degree_limit_message(grag, graph, vertex) -> str:
         try:
             from topologicpy.GraphDB import GraphDB
@@ -1266,7 +1314,6 @@ Allowed action values are only:
         except Exception:
             return "Degree limit reached."
 
-    @staticmethod
     @staticmethod
     def _unique_action_id(graph, suggested_id: str = None, prefix: str = "n", key: str = "id", silent: bool = False) -> str:
         try:
@@ -1372,18 +1419,29 @@ Allowed action values are only:
             return {}
         text = str(text).strip()
         if text.startswith("```"):
-            text = text.replace("```json", "").replace("```", "").strip()
+            import re
+            text = re.sub(r"^```[A-Za-z0-9_-]*\s*", "", text)
+            text = re.sub(r"\s*```$", "", text).strip()
         try:
             return json.loads(text)
         except Exception:
             pass
-        start = text.find("{")
-        end = text.rfind("}")
-        if start >= 0 and end > start:
+
+        spans = []
+        obj_start = text.find("{")
+        obj_end = text.rfind("}")
+        if obj_start >= 0 and obj_end > obj_start:
+            spans.append((obj_start, obj_end + 1))
+        arr_start = text.find("[")
+        arr_end = text.rfind("]")
+        if arr_start >= 0 and arr_end > arr_start:
+            spans.append((arr_start, arr_end + 1))
+
+        for start, end in sorted(spans, key=lambda item: item[0]):
             try:
-                return json.loads(text[start:end + 1])
+                return json.loads(text[start:end])
             except Exception:
-                return {}
+                continue
         return {}
 
     @staticmethod
@@ -1519,8 +1577,9 @@ Allowed action values are only:
         if label is None:
             return ""
         import re
-        label = str(label).strip().lower()
+        label = str(label).strip()
         label = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", label)
+        label = label.lower()
         return re.sub(r"[^a-z0-9]+", "", label)
 
     @staticmethod
@@ -1742,7 +1801,7 @@ Allowed action values are only:
         return {"nodes": nodes, "matrix": matrix, "edge_labels": edge_labels}
 
     @staticmethod
-    def _matrix_summary(state: Dict[str, Any]) -> Dict[str, Any]:
+    def _matrix_summary(state: Dict[str, Any], grag=None) -> Dict[str, Any]:
         """
         Summarises an editable matrix state using the same shape as SummarizeGraph.
         """
@@ -1754,7 +1813,7 @@ Allowed action values are only:
                 degree = sum(1 for v in matrix[i] if bool(v))
             props = dict(node.get("props") or {})
             props = GraphRAG._ensure_ontology_props(
-                None,
+                grag,
                 props,
                 entity="vertex",
                 label=node.get("label"),
@@ -1764,8 +1823,8 @@ Allowed action values are only:
             nodes.append({
                 "id": str(node.get("id")),
                 "label": str(node.get("label")),
-                "ontology_class": props.get("ontology_class"),
-                "category": props.get("category"),
+                "ontology_class": props.get(GraphRAG._ontology_key(grag, "ontologyClassKey", "ontology_class"), props.get("ontology_class")),
+                "category": props.get(GraphRAG._ontology_key(grag, "categoryKey", "category"), props.get("category")),
                 "degree": int(degree),
                 "x": node.get("x"),
                 "y": node.get("y"),
@@ -1782,7 +1841,7 @@ Allowed action values are only:
                         dst = nodes[j]["id"]
                         label = edge_labels.get(tuple(sorted((src, dst))), "connect")
                         props = GraphRAG._ensure_ontology_props(
-                            None,
+                            grag,
                             {},
                             entity="edge",
                             label=label,
@@ -1793,8 +1852,8 @@ Allowed action values are only:
                             "src": src,
                             "dst": dst,
                             "label": label,
-                            "ontology_class": props.get("ontology_class"),
-                            "category": props.get("category"),
+                            "ontology_class": props.get(GraphRAG._ontology_key(grag, "ontologyClassKey", "ontology_class"), props.get("ontology_class")),
+                            "category": props.get(GraphRAG._ontology_key(grag, "categoryKey", "category"), props.get("category")),
                             "props": props,
                         })
                 except Exception:
@@ -2061,7 +2120,6 @@ Allowed action values are only:
         return {"ok": False, "state": state, "message": f"Unsupported action: {name}."}
 
     @staticmethod
-    @staticmethod
     def _matrix_materialise_graph(grag, state: Dict[str, Any], silent: bool = False):
         """
         Converts the editable matrix state to a TGraph at the end of generation.
@@ -2199,8 +2257,8 @@ Allowed action values are only:
 
         allowed_actions = ("add_node", "connect", "remove_node", "delete_node", "remove_edge", "delete_edge", "stop", "done", "finish")
 
-        for step in range(1, max(1, int(maxSteps or 1)) + 1):
-            summary_before = GraphRAG._matrix_summary(state)
+        for step in range(1, GraphRAG._positive_int(maxSteps, default=1, minimum=1) + 1):
+            summary_before = GraphRAG._matrix_summary(state, grag=grag)
             evidence = GraphRAG.Evidence(grag, summary_before, silent=effective_silent)
 
             raw_action = GraphRAG.PickAction(grag, summary_before, evidence, description=description, silent=effective_silent)
@@ -2221,7 +2279,7 @@ Allowed action values are only:
                 if verbose and not effective_silent:
                     print(f"STEP: {step}")
                     print("→ Ignoring malformed or unusable LLM response.")
-                if stagnant >= max(1, int(patience or 1)):
+                if stagnant >= GraphRAG._positive_int(patience, default=1, minimum=1):
                     status = "patience_exhausted"
                     if verbose and not effective_silent:
                         print("→ Stopping because patience was exhausted.")
@@ -2247,7 +2305,7 @@ Allowed action values are only:
                 if verbose and not effective_silent:
                     print(f"STEP: {step}")
                     print(f"→ Ignoring invalid action: {action_name}")
-                if stagnant >= max(1, int(patience or 1)):
+                if stagnant >= GraphRAG._positive_int(patience, default=1, minimum=1):
                     status = "patience_exhausted"
                     if verbose and not effective_silent:
                         print("→ Stopping because patience was exhausted.")
@@ -2309,7 +2367,7 @@ Allowed action values are only:
                     "summary_after": summary_before,
                     "evidence": evidence,
                 })
-                if stagnant >= max(1, int(patience or 1)):
+                if stagnant >= GraphRAG._positive_int(patience, default=1, minimum=1):
                     status = "patience_exhausted"
                     if verbose and not effective_silent:
                         print("→ Stopping because patience was exhausted.")
@@ -2322,7 +2380,7 @@ Allowed action values are only:
             if isinstance(apply_result.get("state"), dict):
                 state = apply_result.get("state")
 
-            summary_after = GraphRAG._matrix_summary(state)
+            summary_after = GraphRAG._matrix_summary(state, grag=grag)
             changed = bool(apply_result.get("ok")) and (summary_after != summary_before)
             stagnant = 0 if changed else stagnant + 1
 
@@ -2343,7 +2401,7 @@ Allowed action values are only:
                 print("Latest Number of Nodes:", summary_after.get("num_nodes"))
                 print("Latest Labels:", [n.get("label") for n in summary_after.get("nodes", [])])
 
-            if stagnant >= max(1, int(patience or 1)):
+            if stagnant >= GraphRAG._positive_int(patience, default=1, minimum=1):
                 status = "patience_exhausted"
                 if verbose and not effective_silent:
                     print("→ Stopping because patience was exhausted.")
@@ -2365,6 +2423,30 @@ Allowed action values are only:
             "num_steps": len(records),
             "matrix_state": state,
         }
+
+    @staticmethod
+    def _positive_int(value, default: int = 1, minimum: int = 1) -> int:
+        """
+        Returns value coerced to an integer greater than or equal to minimum.
+        """
+        try:
+            result = int(value)
+        except Exception:
+            result = int(default)
+        return max(int(minimum), result)
+
+    @staticmethod
+    def _positive_float(value, default: float = 0.0001, minimum: float = 0.0) -> float:
+        """
+        Returns value coerced to a float greater than minimum.
+        """
+        try:
+            result = float(value)
+        except Exception:
+            result = float(default)
+        if result <= minimum:
+            return float(default)
+        return result
 
     @staticmethod
     def _effective_silent(grag, silent: bool = False) -> bool:

@@ -209,6 +209,7 @@ class Topology():
                           ontologyClass: str = None,
                           category: str = None,
                           label: str = None,
+                          uri: str = None,
                           source: str = None,
                           derivedFrom: str = None,
                           generatedBy: str = None,
@@ -225,12 +226,17 @@ class Topology():
         if topology is None:
             return None
         try:
-            from topologicpy.Ontology import Ontology
+            try:
+                from topologicpy.Ontology import Ontology
+            except Exception:
+                from Ontology import Ontology
+
             topology = Ontology.Annotate(
                 topology,
                 ontologyClass=ontologyClass,
                 category=category,
                 label=label,
+                uri=uri,
                 source=source,
                 derivedFrom=derivedFrom,
                 generatedBy=generatedBy,
@@ -299,6 +305,7 @@ class Topology():
                     ontologyClass: str = None,
                     category: str = None,
                     label: str = None,
+                    uri: str = None,
                     source: str = None,
                     derivedFrom: str = None,
                     generatedBy: str = None,
@@ -318,6 +325,8 @@ class Topology():
             The semantic category. Default is None.
         label : str , optional
             A human-readable label. Default is None.
+        uri : str , optional
+            A stable URI or QName for the topology instance. Default is None.
         source : str , optional
             A source file, URI, or process identifier. Default is None.
         derivedFrom : str , optional
@@ -341,6 +350,7 @@ class Topology():
             ontologyClass=ontologyClass,
             category=category,
             label=label,
+            uri=uri,
             source=source,
             derivedFrom=derivedFrom,
             generatedBy=generatedBy,
@@ -349,18 +359,68 @@ class Topology():
         )
 
     @staticmethod
-    def OntologyClass(topology, defaultValue=None):
+    def OntologyClass(topology, defaultValue=None, silent: bool = False):
         """
         Returns the ontology class assigned to the input topology.
+
+        Parameters
+        ----------
+        topology : topologic_core.Topology
+            The input topology.
+        silent : bool , optional
+            If True, error and warning messages are suppressed. Default is False.
+        
+        Returns
+        -------
+        Ontology.Class
+            The ontology class of the input topology
         """
+
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.OntologyClass - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
         try:
-            from topologicpy.Ontology import Ontology
+            try:
+                from topologicpy.Ontology import Ontology
+            except Exception:
+                from Ontology import Ontology
             return Ontology.Class(topology, defaultValue=defaultValue)
         except Exception:
             return defaultValue
 
     @staticmethod
-    def AddApertures(topology, apertures, exclusive=False, subTopologyType=None, tolerance=0.001):
+    def OntologyURI(topology, defaultValue=None, silent: bool = False):
+        """
+        Returns the ontology URI assigned to the input topology.
+
+        Parameters
+        ----------
+        topology : topologic_core.Topology
+            The input topology.
+        silent : bool , optional
+            If True, error and warning messages are suppressed. Default is False.
+        
+        Returns
+        -------
+        str
+            The ontology URI of the input topology
+        """
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.OntologyURI- Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+        try:
+            try:
+                from topologicpy.Ontology import Ontology
+            except Exception:
+                from Ontology import Ontology
+            return Ontology._value(topology, Ontology.ONTOLOGY_URI_KEY, defaultValue)
+        except Exception:
+            return defaultValue
+
+    @staticmethod
+    def AddApertures(topology, apertures, exclusive=False, subTopologyType=None, tolerance=0.001, silent: bool = False):
         """
         Adds the input list of apertures to the input topology or to its subtopologies based on the input subTopologyType.
 
@@ -376,6 +436,8 @@ class Topology():
             The subtopology type to which to add the apertures. This can be "cell", "face", "edge", or "vertex". It is case insensitive. If set to None, the apertures will be added to the input topology. Default is None.
         tolerance : float , optional
             The desired tolerance. Default is 0.001. This is larger than the usual 0.0001 as it seems to work better.
+        silent : bool , optional
+            If True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -396,12 +458,16 @@ class Topology():
             return None
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.AddApertures - Error: The input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.AddApertures - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         if not apertures:
+            if not silent:
+                print("Topology.Apertures- Warning: The input apertures parameter is an empty list. Returning the input topology.")
             return topology
         if not isinstance(apertures, list):
-            print("Topology.AddApertures - Error: the input apertures parameter is not a list. Returning None.")
+            if not silent:
+                print("Topology.AddApertures - Error: the input apertures parameter is not a list. Returning None.")
             return None
 
         apertures = [x for x in apertures if Topology.IsInstance(x, "Topology")]
@@ -411,7 +477,8 @@ class Topology():
         if not subTopologyType:
             subTopologyType = "self"
         if not subTopologyType.lower() in ["self", "cell", "face", "edge", "vertex"]:
-            print("Topology.AddApertures - Error: the input subtopology type parameter is not a recognized type. Returning None.")
+            if not silent:
+                print("Topology.AddApertures - Error: the input subtopology type parameter is not a recognized type. Returning None.")
             return None
 
         cleaned_apertures = []
@@ -455,7 +522,11 @@ class Topology():
         return topology
     
     @staticmethod
-    def AddContent(topology, contents, subTopologyType=None, tolerance=0.0001):
+    def AddContent(topology,
+                   contents = None,
+                   subTopologyType: str = None,
+                   tolerance: float = 0.0001,
+                   silent: bool = False):
         """
         Adds the input list of contents to the input topology or to its subtpologies based on the input subTopologyType.
 
@@ -469,6 +540,8 @@ class Topology():
             The subtopology type to which to add the contents. This can be "cellcomplex", "cell", "shell", "face", "wire", "edge", or "vertex". It is case insensitive. If set to None, the contents will be added to the input topology. Default is None.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -483,17 +556,23 @@ class Topology():
 
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.AddContent - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.AddContent - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         if not contents:
+            if not silent:
+                print("Topology.AddContent - Warning: the input contents parameter is not a valid input. Returning the input topology unmodified.")
             return topology
         if not isinstance(contents, list):
             contents = [contents]
         if not isinstance(contents, list):
-            print("Topology.AddContent - Error: the input contents parameter is not a list. Returning None.")
+            if not silent:
+                print("Topology.AddContent - Error: the input contents parameter is not a list. Returning None.")
             return None
         contents = [x for x in contents if Topology.IsInstance(x, "Topology")]
         if len(contents) < 1:
+            if not silent:
+                print("Topology.AddContent - Warning: the input contents parameter is empty. Returning the input topology unmodified.")
             return topology
         if not subTopologyType:
             subTopologyType = "self"
@@ -557,7 +636,7 @@ class Topology():
         return topology
     
     @staticmethod
-    def AddDictionary(topology, dictionary):
+    def AddDictionary(topology, dictionary, silent: bool = True):
         """
         Adds the input dictionary to the input topology.
 
@@ -567,6 +646,8 @@ class Topology():
             The input topology.
         dictionary : topologic_core.Dictionary
             The input dictionary.
+        silent : bool , optional
+            If True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -577,10 +658,12 @@ class Topology():
         from topologicpy.Dictionary import Dictionary
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.AddDictionary - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.AddDictionary - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         if not Topology.IsInstance(dictionary, "Dictionary"):
-            print("Topology.AddDictionary - Error: the input dictionary parameter is not a dictionary. Returning None.")
+            if not silent:
+                print("Topology.AddDictionary - Error: the input dictionary parameter is not a dictionary. Returning None.")
             return None
         tDict = Topology.Dictionary(topology)
         if len(Dictionary.Keys(tDict)) < 1:
@@ -594,7 +677,10 @@ class Topology():
         return topology
     
     @staticmethod
-    def AdjacentTopologies(topology, hostTopology, topologyType=None):
+    def AdjacentTopologies(topology,
+                           hostTopology,
+                           topologyType: str = None,
+                           silent: bool = False):
         """
         Returns the topologies, as specified by the input topology type, adjacent to the input topology within the input host topology.
 
@@ -736,13 +822,15 @@ class Topology():
                 topologyType = _infer_input_type(topology)
 
             if not isinstance(topologyType, str):
-                print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a string. Returning None.")
+                if not silent:
+                    print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a string. Returning None.")
                 return None
 
             topologyType = topologyType.lower()
 
             if topologyType not in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex"]:
-                print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a recognized type. Returning None.")
+                if not silent:
+                    print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a recognized type. Returning None.")
                 return None
 
             input_type = _infer_input_type(topology)
@@ -750,7 +838,8 @@ class Topology():
             if input_type == "vertex":
                 vertex_index = _resolve_vertex_index(topology)
                 if vertex_index is None:
-                    print("Topology.AdjacentTopologies - Error: Could not resolve the input topology as a TGraph vertex. Returning None.")
+                    if not silent:
+                        print("Topology.AdjacentTopologies - Error: Could not resolve the input topology as a TGraph vertex. Returning None.")
                     return None
 
                 if topologyType == "vertex":
@@ -764,7 +853,8 @@ class Topology():
             if input_type == "edge":
                 edge_index = _resolve_edge_index(topology)
                 if edge_index is None:
-                    print("Topology.AdjacentTopologies - Error: Could not resolve the input topology as a TGraph edge. Returning None.")
+                    if not silent:
+                        print("Topology.AdjacentTopologies - Error: Could not resolve the input topology as a TGraph edge. Returning None.")
                     return None
 
                 if topologyType == "edge":
@@ -784,8 +874,8 @@ class Topology():
                     return result
 
                 return []
-
-            print("Topology.AdjacentTopologies - Error: Could not resolve the input topology as a TGraph vertex or edge. Returning None.")
+            if not silent:
+                print("Topology.AdjacentTopologies - Error: Could not resolve the input topology as a TGraph vertex or edge. Returning None.")
             return None
 
         # ------------------------------------------------------------------
@@ -793,22 +883,26 @@ class Topology():
         # ------------------------------------------------------------------
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.AdjacentTopologies - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.AdjacentTopologies - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
 
         if not Topology.IsInstance(hostTopology, "Topology") and not Topology.IsInstance(hostTopology, "Graph"):
-            print("Topology.AdjacentTopologies - Error: the input hostTopology parameter is not a valid topology or graph. Returning None.")
+            if not silent:
+                print("Topology.AdjacentTopologies - Error: the input hostTopology parameter is not a valid topology or graph. Returning None.")
             return None
 
         if not topologyType:
             topologyType = Topology.TypeAsString(topology).lower()
 
         if not isinstance(topologyType, str):
-            print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a string. Returning None.")
+            if not silent:
+                print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a string. Returning None.")
             return None
 
         if not topologyType.lower() in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex"]:
-            print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a recognized type. Returning None.")
+            if not silent:
+                print("Topology.AdjacentTopologies - Error: the input topologyType parameter is not a recognized type. Returning None.")
             return None
 
         adjacentTopologies = []
@@ -1203,18 +1297,24 @@ class Topology():
                 except:
                     error = True
             elif topologyType.lower() == "cellcomplex":
-                raise Exception("Topology.AdjacentTopologies - Error: Cannot search for adjacent topologies of a CellComplex")
+                if not silent:
+                    print("Topology.AdjacentTopologies - Error: Cannot search for adjacent topologies of a CellComplex. Returning None.")
+                return None
 
         elif Topology.IsInstance(topology, "Cluster"):
-            raise Exception("Topology.AdjacentTopologies - Error: Cannot search for adjacent topologies of a Cluster")
+            if not silent:
+                print("Topology.AdjacentTopologies - Error: Cannot search for adjacent topologies of a Cluster. Returning None.")
+            return None
 
         if error:
-            raise Exception("Topology.AdjacentTopologies - Error: Failure in search for adjacent topologies of type " + topologyType)
+            if not silent:
+                print(f"Topology.AdjacentTopologies - Error: Failure in search for adjacent topologies of type {topologyType}. Returning None.")
+            return None
 
         return adjacentTopologies
 
     @staticmethod
-    def Analyze(topology):
+    def Analyze(topology, silent: bool = False):
         """
         Returns an analysis string that describes the input topology.
 
@@ -1230,9 +1330,11 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.Analyze - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.Analyze - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         return Core.Topology.Analyze(topology)
+    
     @staticmethod
     def Apertures(topology, subTopologyType=None, silent: bool = False):
         """
@@ -1261,7 +1363,6 @@ class Topology():
         if not Topology.IsInstance(topology, "Topology"):
             if not silent:
                 print("Topology.Apertures - Error: the input topology parameter is not a valid topology. Returning None.")
-                print("Topology:", topology)
                 curframe = inspect.currentframe()
                 calframe = inspect.getouterframes(curframe, 2)
                 print('caller name:', calframe[1][3])
@@ -1277,7 +1378,7 @@ class Topology():
             for content in contents:
                 d = Topology.Dictionary(content)
                 if len(Dictionary.Keys(d)) > 0:
-                    type = Dictionary.ValueAtKey(d,"type")
+                    type = Dictionary.ValueAtKey(d,"type", "unknown")
                     if "aperture" in type.lower():
                         apertures.append(content)
         elif subTopologyType.lower() == "vertex":
@@ -1305,7 +1406,7 @@ class Topology():
         return apertures
 
     @staticmethod
-    def ApertureTopologies(topology, subTopologyType=None):
+    def ApertureTopologies(topology, subTopologyType: str = None, silent: bool = False):
         """
         Returns the aperture topologies of the input topology.
 
@@ -1315,7 +1416,9 @@ class Topology():
             The input topology.
         subTopologyType : string , optional
             The subtopology type from which to retrieve the apertures. This can be "cell", "face", "edge", or "vertex" or "all". It is case insensitive. If set to "all", then all apertures will be returned. If set to None, the apertures will be retrieved only from the input topology. Default is None.
-       
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        
         Returns
         -------
         list
@@ -1324,7 +1427,8 @@ class Topology():
         """
         from topologicpy.Aperture import Aperture
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.ApertureTopologies - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.ApertureTopologies - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         apertures = Topology.Apertures(topology=topology, subTopologyType=subTopologyType)
         apTopologies = []
@@ -1337,7 +1441,8 @@ class Topology():
         topologies: Iterable[Any],
         key: str,
         missing_label: str = "__MISSING__",
-        return_counts: bool = False
+        return_counts: bool = False,
+        silent: bool = False
     ) -> Tuple[Dict[Any, List[Any]], Dict[Any, int]]:
         """
         Bins a list of Topologic topologies into groups based on identical key/value
@@ -1356,6 +1461,8 @@ class Topology():
         return_counts : bool , optional
             If True, returns a second dictionary of group -> count.
             Default is False.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -1413,6 +1520,12 @@ class Topology():
         _hk = _hashable_key
         _missing = missing_label
 
+        topologies = [t for t in topologies if Topology.IsInstance(t, "topology")]
+        if len(topologies) == 0:
+            if not silent:
+                print("Topology.BinByDictionary - Error: The input topologies list parameter does not contain any valid topologies. Returning None.")
+            return None
+
         for t in topologies:
             d = _Topo.Dictionary(t)
             if not d:
@@ -1464,8 +1577,7 @@ class Topology():
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         ontology : bool , optional
-            If True, the returned topology is annotated with TopologicPy ontology metadata.
-            Default is False.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -1520,6 +1632,11 @@ class Topology():
 
         def getApertures(topology):
             return Topology.Apertures(topology)
+        
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Decompose - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
 
         if Topology.Type(topology) < 32:
             if not silent:
@@ -1675,6 +1792,14 @@ class Topology():
             the resultant topology.
 
         """
+        if not Topology.IsInstance(topologyA, "topology"):
+            if not silent:
+                print("Topology.Difference - Error: The input topologyA parameter is not a valid topology. Returning None.")
+            return None
+        if not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Difference - Error: The input topologyB parameter is not a valid topology. Returning None.")
+            return None
         return Topology._Boolean(topologyA=topologyA, topologyB=topologyB, operation="difference", tranDict=tranDict, tolerance=tolerance, silent=silent)
     
     @staticmethod
@@ -1825,7 +1950,6 @@ class Topology():
                 print("Topology.Intersect - Error: The topologyB input parameter is not a valid Topology. Returning None.")
             return None
         
-        from topologicpy.Vertex import Vertex
         # Sort the two topologies by their type from lower to higher so comparison can be eased.
         if Topology.Type(topologyB) < Topology.Type(topologyA):
             temp = topologyA
@@ -1908,6 +2032,21 @@ class Topology():
             the resultant topology.
 
         """
+        if not Topology.IsInstance(topologyA, "topology") and not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Slice - Error: The inputs topologyA and topologyB are not valid topologies. Returning None.")
+            return None
+
+        if not Topology.IsInstance(topologyA, "topology"):
+            if not silent:
+                print("Topology.Slice - Error: The topologyA input parameter is not a valid topology. Returning None.")
+            return topologyA
+        
+        if not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Slice - Warning: The topologyB input parameter is not a valid topology. Returning topologyA.")
+            return topologyA
+
         return Topology._Boolean(topologyA=topologyA, topologyB=topologyB, operation="slice", tranDict=tranDict, tolerance=tolerance, silent=silent)
     
     @staticmethod
@@ -1934,6 +2073,20 @@ class Topology():
             the resultant topology.
 
         """
+        if not Topology.IsInstance(topologyA, "topology") and not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Impose - Error: The inputs topologyA and topologyB are not valid topologies. Returning None.")
+            return None
+
+        if not Topology.IsInstance(topologyA, "topology"):
+            if not silent:
+                print("Topology.Impose - Error: The topologyA input parameter is not a valid topology. Returning None.")
+            return topologyA
+        
+        if not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Impose - Warning: The topologyB input parameter is not a valid topology. Returning topologyA.")
+            return topologyA
         return Topology._Boolean(topologyA=topologyA, topologyB=topologyB, operation="impose", tranDict=tranDict, tolerance=tolerance, silent=silent)
     
     @staticmethod
@@ -1960,6 +2113,20 @@ class Topology():
             the resultant topology.
 
         """
+        if not Topology.IsInstance(topologyA, "topology") and not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Imprint - Error: The inputs topologyA and topologyB are not valid topologies. Returning None.")
+            return None
+
+        if not Topology.IsInstance(topologyA, "topology"):
+            if not silent:
+                print("Topology.Imprint - Error: The topologyA input parameter is not a valid topology. Returning None.")
+            return topologyA
+        
+        if not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Imprint - Warning: The topologyB input parameter is not a valid topology. Returning topologyA.")
+            return topologyA
         return Topology._Boolean(topologyA=topologyA, topologyB=topologyB, operation="imprint", tranDict=tranDict, tolerance=tolerance, silent=silent)
     
     @staticmethod
@@ -1978,8 +2145,7 @@ class Topology():
         tranDict : bool , optional
             If set to True the dictionaries of the operands are merged and transferred to the result. Default is False.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -2416,7 +2582,7 @@ class Topology():
         return box
 
     @staticmethod
-    def BREPString(topology, version=3):
+    def BREPString(topology, version: int = 3, silent: bool = False):
         """
         Returns the BRep string of the input topology.
 
@@ -2426,6 +2592,8 @@ class Topology():
             The input topology.
         version : int , optional
             The desired BRep version number. Default is 3.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -2434,7 +2602,8 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.BREPString - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.BREPString - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         st = None
         try:
@@ -2445,147 +2614,6 @@ class Topology():
             except:
                 st = None
         return st
-    
-    # @staticmethod
-    # def ByGeometry(vertices=[], edges=[], faces=[], topologyType: str = None, tolerance: float = 0.0001, ontology: bool = False, silent: bool = False):
-    #     """
-    #     Create a topology by the input lists of vertices, edges, and faces.
-
-    #     Parameters
-    #     ----------
-    #     vertices : list
-    #         The input list of vertices in the form of [x, y, z]
-    #     edges : list , optional
-    #         The input list of edges in the form of [i, j] where i and j are vertex indices.
-    #     faces : list , optional
-    #         The input list of faces in the form of [i, j, k, l, ...] where the items in the list are vertex indices. The face is assumed to be closed to the last vertex is connected to the first vertex automatically.
-    #     topologyType : str , optional
-    #         The desired highest topology type. The options are: "Vertex", "Edge", "Wire", "Face", "Shell", "Cell", "CellComplex".
-    #         It is case insensitive. If any of these options are selected, the returned topology will only contain this type either a single topology
-    #         or as a Cluster of these types of topologies. If set to None, a "Cluster" will be returned of vertices, edges, and/or faces. Default is None.
-    #     tolerance : float , optional
-    #         The desired tolerance. Default is 0.0001.
-    #     silent : bool , optional
-    #         If set to True, error and warning messages are suppressed. Default is False.
-
-    #     Returns
-    #     -------
-    #     topology : topologic_core.Topology
-    #         The created topology. The topology will have a dictionary embedded in it that records the input attributes (color, id, lengthUnit, name, type)
-
-    #     """
-    #     from topologicpy.Vertex import Vertex
-    #     from topologicpy.Edge import Edge
-    #     from topologicpy.Wire import Wire
-    #     from topologicpy.Face import Face
-    #     from topologicpy.Shell import Shell
-    #     from topologicpy.Cell import Cell
-    #     from topologicpy.CellComplex import CellComplex
-    #     from topologicpy.Cluster import Cluster
-
-    #     def topologyByFaces(faces, topologyType, tolerance=0.0001):
-    #         if len(faces) == 1:
-    #             return faces[0]
-
-    #         output = None
-    #         if topologyType == "cell":
-    #             c = Cell.ByFaces(faces, tolerance=tolerance)
-    #             if Topology.IsInstance(c, "Cell"):
-    #                 output = c
-    #             else:
-    #                 cc = CellComplex.ByFaces(faces, tolerance=tolerance)
-    #                 if Topology.IsInstance(cc, "CellComplex"):
-    #                     output = CellComplex.ExternalBoundary(cc)
-    #         elif topologyType == "cellcomplex":
-    #             output = CellComplex.ByFaces(faces, tolerance=tolerance, silent=silent)
-    #             if Topology.IsInstance(output, "CellComplex"):
-    #                 cells = Topology.Cells(output)
-    #                 if len(cells) == 1:
-    #                     output = cells[0]
-    #             else:
-    #                 output = Cluster.ByTopologies(faces)
-    #         elif topologyType == "shell":
-    #             output = Shell.ByFaces(faces, tolerance=tolerance)  # This can return a list
-    #             if Topology.IsInstance(output, "Shell"):
-    #                 return output
-    #         elif topologyType == None or topologyType== "face":
-    #             output = Cluster.ByTopologies(faces)
-
-    #         return output
-
-    #     def topologyByEdges(edges, topologyType):
-    #         if len(edges) == 1:
-    #             return edges[0]
-
-    #         output = Cluster.ByTopologies(edges)
-    #         if topologyType == "wire":
-    #             output = Topology.SelfMerge(output, tolerance=tolerance)
-    #             if Topology.IsInstance(output, "Wire"):
-    #                 return output
-    #             return None
-    #         return output
-
-    #     vertices = [v for v in vertices if v]
-    #     edges = [e for e in edges if e]
-    #     faces = [f for f in faces if f]
-
-    #     return_topology = None
-
-    #     if not vertices:
-    #         return None
-
-    #     topVerts = [Vertex.ByCoordinates(v[0], v[1], v[2]) for v in vertices]
-    #     topEdges = []
-    #     topFaces = []
-
-    #     if not topologyType == None:
-    #         topologyType = topologyType.lower()
-
-    #     if topologyType == "vertex":
-    #         if len(topVerts) == 0:
-    #             return None
-    #         if len(topVerts) == 1:
-    #             return topVerts[0]
-    #         else:
-    #             return Cluster.ByTopologies(topVerts)
-    #     elif topologyType == "edge":
-    #         if len(edges) == 0:
-    #             return None
-    #         if len(edges) == 1 and len(vertices) >= 2:
-    #             return Edge.ByVertices(topVerts[edges[0][0]], topVerts[edges[0][1]], tolerance=tolerance)
-    #         else:
-    #             topEdges = [Edge.ByVertices([topVerts[e[0]], topVerts[e[1]]], tolerance=tolerance) for e in edges]
-    #             return Cluster.ByTopologies(topEdges)
-
-    #     if topologyType == "wire" and edges:
-    #         topEdges = [Edge.ByVertices([topVerts[e[0]], topVerts[e[1]]], tolerance=tolerance) for e in edges]
-    #         if topEdges:
-    #             return_topology = topologyByEdges(topEdges, topologyType)
-    #     elif faces:
-    #         for aFace in faces:
-    #             faceEdges = [Edge.ByVertices([topVerts[aFace[i]], topVerts[aFace[i + 1]]], tolerance=tolerance) for i in range(len(aFace) - 1)]
-    #             # Connect the last vertex to the first one
-    #             faceEdges.append(Edge.ByVertices([topVerts[aFace[-1]], topVerts[aFace[0]]], tolerance=tolerance))
-
-    #             if len(faceEdges) > 2:
-    #                 faceWire = Wire.ByEdges(faceEdges, tolerance=tolerance)
-    #                 try:
-    #                     topFace = Face.ByWire(faceWire, tolerance=tolerance, silent=True)
-    #                     if Topology.IsInstance(topFace, "Face"):
-    #                         topFaces.append(topFace)
-    #                     elif isinstance(topFace, list):
-    #                         topFaces.extend(topFace)
-    #                 except:
-    #                     pass
-    #         if topFaces:
-    #             return_topology = topologyByFaces(topFaces, topologyType=topologyType, tolerance=tolerance)
-    #     elif edges:
-    #         topEdges = [Edge.ByVertices([topVerts[e[0]], topVerts[e[1]]], tolerance=tolerance) for e in edges]
-    #         if topEdges:
-    #             return_topology = topologyByEdges(topEdges, topologyType)
-    #     else:
-    #         return_topology = Cluster.ByTopologies(topVerts)
-    #     return return_topology
     
     @staticmethod
     def ByGeometry(vertices=[], edges=[], faces=[], topologyType: str = None, tolerance: float = 0.0001, ontology: bool = False, silent: bool = False):
@@ -2607,8 +2635,7 @@ class Topology():
             topology will only contain this type either as a single topology or as a Cluster of these types of
             topologies. If set to None, a Cluster will be returned of vertices, edges, and/or faces. Default is None.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -2928,10 +2955,20 @@ class Topology():
             return None
 
         return Cluster_ByTopologies(topVertsAll)
+    
     @staticmethod
-    def ByBIMPath(path, guidKey: str = "guid", colorKey: str = "color", typeKey: str = "type",
-                        defaultColor: list = [255,255,255,1], defaultType: str = "Structure",
-                        authorKey="author", dateKey="date", mantissa: int = 6, angTolerance: float = 0.001, tolerance: float = 0.0001):
+    def ByBIMPath(path,
+                  guidKey: str = "guid",
+                  colorKey: str = "color",
+                  typeKey: str = "type",
+                  defaultColor: list = [255,255,255,1],
+                  defaultType: str = "Structure",
+                  authorKey="author",
+                  dateKey="date",
+                  mantissa: int = 6,
+                  angTolerance: float = 0.001,
+                  tolerance: float = 0.0001,
+                  silent: bool = False):
         """
         Imports topologies from the input BIM file. See https://dotbim.net/
 
@@ -2959,6 +2996,8 @@ class Topology():
                 The angle tolerance in degrees under which no rotation is carried out. Default is 0.001 degrees.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -2968,28 +3007,38 @@ class Topology():
         """
         import json
         if not path:
-            print("Topology.ByBIMPath - Error: the input path parameter is not a valid path. Returning None.")
+            if not silent:
+                print("Topology.ByBIMPath - Error: the input path parameter is not a valid path. Returning None.")
             return None
         topologies = None
         with open(path, "r") as bim_file:
                 json_string = str(bim_file.read())
                 topologies = Topology.ByBIMString(string=json_string, guidKey=guidKey, colorKey=colorKey, typeKey=typeKey,
                             defaultColor=defaultColor, defaultType=defaultType,
-                            authorKey=authorKey, dateKey=dateKey, mantissa=mantissa, angTolerance=angTolerance, tolerance=tolerance)
+                            authorKey=authorKey, dateKey=dateKey, mantissa=mantissa, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
         try:
             with open(path, "r") as bim_file:
                 json_string = str(bim_file.read())
                 topologies = Topology.ByBIMString(string=json_string, guidKey=guidKey, colorKey=colorKey, typeKey=typeKey,
                             defaultColor=defaultColor, defaultType=defaultType,
-                            authorKey=authorKey, dateKey=dateKey, mantissa=mantissa, angTolerance=angTolerance, tolerance=tolerance)
+                            authorKey=authorKey, dateKey=dateKey, mantissa=mantissa, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
         except:
             print("Topology.ByBIMPath - Error: the BIM file is not a valid file. Returning None.")
         return topologies
     
     @staticmethod
-    def ByBIMString(string, guidKey: str = "guid", colorKey: str = "color", typeKey: str = "type",
-                        defaultColor: list = [255,255,255,1], defaultType: str = "Structure",
-                        authorKey: str = "author", dateKey: str = "date", mantissa: int = 6, angTolerance: float = 0.001, tolerance: float = 0.0001):
+    def ByBIMString(string,
+                    guidKey: str = "guid",
+                    colorKey: str = "color",
+                    typeKey: str = "type",
+                    defaultColor: list = [255,255,255,1],
+                    defaultType: str = "Structure",
+                    authorKey: str = "author",
+                    dateKey: str = "date",
+                    mantissa: int = 6,
+                    angTolerance: float = 0.001,
+                    tolerance: float = 0.0001,
+                    silent: bool = False):
         """
         Imports topologies from the input BIM file. See https://dotbim.net/
 
@@ -3017,6 +3066,8 @@ class Topology():
                 The angle tolerance in degrees under which no rotation is carried out. Default is 0.001 degrees.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -3071,14 +3122,31 @@ class Topology():
             return file
         json_dictionary = json.loads(string)
         file = convert_JSON_to_file(json_dictionary)
-        return Topology.ByBIMFile(file, guidKey=guidKey, colorKey=colorKey, typeKey=typeKey,
-                                  defaultColor=defaultColor, defaultType=defaultType,
-                                  authorKey=authorKey, dateKey=dateKey,
-                                  mantissa=mantissa, angTolerance=angTolerance, tolerance=tolerance)
+        return Topology.ByBIMFile(file,
+                                  guidKey=guidKey,
+                                  colorKey=colorKey,
+                                  typeKey=typeKey,
+                                  defaultColor=defaultColor,
+                                  defaultType=defaultType,
+                                  authorKey=authorKey,
+                                  dateKey=dateKey,
+                                  mantissa=mantissa,
+                                  angTolerance=angTolerance,
+                                  tolerance=tolerance,
+                                  silent=silent)
     @staticmethod
-    def ByBIMFile(file, guidKey: str = "guid", colorKey: str = "color", typeKey: str = "type",
-                        defaultColor: list = [255,255,255,1], defaultType: str = "Structure",
-                        authorKey="author", dateKey="date", mantissa: int = 6, angTolerance: float = 0.001, tolerance: float = 0.0001):
+    def ByBIMFile(file,
+                  guidKey: str = "guid",
+                  colorKey: str = "color",
+                  typeKey: str = "type",
+                  defaultColor: list = [255,255,255,1],
+                  defaultType: str = "Structure",
+                  authorKey="author",
+                  dateKey="date",
+                  mantissa: int = 6,
+                  angTolerance: float = 0.001,
+                  tolerance: float = 0.0001,
+                  silent: bool = False):
         """
         Imports topologies from the input BIM (dotbimpy.file.File) file object. See https://dotbim.net/
 
@@ -3106,6 +3174,8 @@ class Topology():
                 The angle tolerance in degrees under which no rotation is carried out. Default is 0.001 degrees.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -3160,7 +3230,11 @@ class Topology():
             #roll, pitch, yaw = quaternion_to_euler([rot.qx, rot.qy, rot.qz, rot.qw])
             vector = element.vector
             topology = topologies[mesh_id]
-            if Topology.IsInstance(topology, "Topology"):
+            if not Topology.IsInstance(topology, "Topology"):
+                if not silent:
+                    print("Topology.ByBIMFile - Warning: Could not create topology. Skipping.")
+                continue
+            else:
                 topology = Topology.RotateByQuaternion(topology=topology, origin=Vertex.Origin(), quaternion=quaternion, angTolerance=angTolerance, tolerance=tolerance)
                 topology = Topology.Translate(topology, vector.x, vector.y, vector.z)
                 topology = Topology.SetDictionary(topology, d)
@@ -3177,8 +3251,7 @@ class Topology():
         file : file object
             The BREP file.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -3194,8 +3267,12 @@ class Topology():
                 print("Topology.ByBREPFile - Error: the input file parameter is not a valid file. Returning None.")
             return None
         brep_string = file.read()
-        topology = Topology.ByBREPString(brep_string)
+        topology = Topology.ByBREPString(brep_string, ontology=ontology, silent=silent)
         file.close()
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.ByBREPFile - Error: Could not create the topology. Returning None.")
+            return None
         return topology
     
     @staticmethod
@@ -3208,8 +3285,7 @@ class Topology():
         path : str
             The path to the BREP file.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -3229,7 +3305,7 @@ class Topology():
             if not silent:
                 print("Topology.ByBREPPath - Error: the BREP file is not a valid file. Returning None.")
             return None
-        return Topology.ByBREPFile(file)
+        return Topology.ByBREPFile(file, ontology=ontology, silent=silent)
 
     @staticmethod
     def ByDXFFile(file, sides: int = 16, tolerance: float = 0.0001, silent: bool = False):
@@ -3513,35 +3589,50 @@ class Topology():
                   excludeTypes: list = [],
                   dictionaryMode: str = "basic",
                   clean: bool = False,
+                  scale: float = 1.0,
+                  topologyType: str = None,
+                  circleSides: int = 24,
+                  ontology: bool = True,
                   epsilon: float = 0.01,
                   angTolerance: float = 0.1,
                   tolerance: float = 0.0001,
-                  silent: bool = False
-                  ) -> list[Any]:
+                  silent: bool = False) -> list:
         """
         Import an IFC file into a list of TopologicPy topologies using the
         Bonsai triangulation pipeline. See IFC.TopologiesByFile.
 
         Parameters
         ----------
-        file : ifcopenshell.file
-            The input IFC file object.
+        file : str or ifcopenshell.file-like object
+            Prefer passing a path string. If an ifcopenshell file-like object is
+            supplied, this method attempts to serialise it to STEP text.
         includeTypes : list , optional
-            IFC object types to include. Case-insensitive. Default is [].
+            The list of IFC entity types to include. If empty, all supported types are
+            included. Default is [].
         excludeTypes : list , optional
-            IFC object types to exclude. Case-insensitive. Default is [].
+            The list of IFC entity types to exclude. Default is [].
         dictionaryMode : str , optional
-            Options are "none", "basic", or "psets". Default is "basic".
+            The dictionary import mode. Options are "none", "basic", and "full".
+            Default is "basic".
         clean : bool , optional
-            If set to True, coplanar faces and collinear edges are removed. Default is False.
+            If set to True, the imported topologies are cleaned. Default is False.
+        scale : float , optional
+            The scale factor applied to imported coordinates. Default is 1.0.
+        topologyType : str , optional
+            The desired output topology type. If set to None, the method returns the
+            most appropriate topology type for each imported product. Default is None.
+        circleSides : int , optional
+            The number of sides used to approximate circular geometry. Default is 24.
+        ontology : bool , optional
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         epsilon : float , optional
-            The desired epsilon (another form of tolerance) for finding if two faces are coplanar. Default is 0.01.
+            The geometric epsilon used during import. Default is 0.01.
         angTolerance : float , optional
-            The desired angular tolerance for removing collinear edges. Default is 0.1.
+            The angular tolerance used during import. Default is 0.1.
         tolerance : float , optional
-            TopologicPy tolerance. Default is 0.0001.
+            The desired tolerance. Default is 0.0001.
         silent : bool , optional
-            If True, warnings and progress messages are suppressed. Default is False.
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -3550,15 +3641,19 @@ class Topology():
         """
 
         from topologicpy.IFC import IFC
-        return IFC.TopologiesByFile(file,
-                             includeTypes=includeTypes,
-                             excludeTypes=excludeTypes,
-                             dictionaryMode=dictionaryMode,
-                             clean=clean,
-                             epsilon=epsilon,
-                             angTolerance=angTolerance,
-                             tolerance=tolerance,
-                             silent=silent)
+        return IFC.TopologiesByFile(file = file,
+                                    includeTypes = includeTypes,
+                                    excludeTypes = excludeTypes,
+                                    dictionaryMode = dictionaryMode,
+                                    clean = clean,
+                                    scale = scale,
+                                    topologyType = topologyType,
+                                    circleSides = circleSides,
+                                    ontology = ontology,
+                                    epsilon = epsilon,
+                                    angTolerance = angTolerance,
+                                    tolerance = tolerance,
+                                    silent = silent)
 
     @staticmethod
     def ByIFCPath(path: str,
@@ -3566,29 +3661,44 @@ class Topology():
                   excludeTypes: list = [],
                   dictionaryMode: str = "basic",
                   clean: bool = False,
-                  epsilon: float = 0.0001,
+                  scale: float = 1.0,
+                  topologyType: str = None,
+                  circleSides: int = 24,
+                  ontology: bool = True,
+                  epsilon: float = 0.01,
                   angTolerance: float = 0.1,
                   tolerance: float = 0.0001,
-                  silent: bool = False) -> list[Any]:
+                  silent: bool = False) -> list:
         """
         Imports the topologies from an IFC file path. See IFC.TopologiesByPath
 
         Parameters
         ----------
         path : str
-            The path to the IFC file.
+            The path to the input IFC file.
         includeTypes : list , optional
-            The list of IFC object types to include. It is case insensitive. If set to an empty list, all types are included. Default is [].
+            The list of IFC entity types to include. If empty, all supported types are
+            included. Default is [].
         excludeTypes : list , optional
-            The list of IFC object types to exclude. It is case insensitive. If set to an empty list, no types are excluded. Default is [].
+            The list of IFC entity types to exclude. Default is [].
         dictionaryMode : str , optional
-            Options are "none", "basic", or "psets". Default is "basic".
+            The dictionary import mode. Options are "none", "basic", and "full".
+            Default is "basic".
         clean : bool , optional
-            If set to True, coplanar faces and collinear edges are removed. Default is False.
+            If set to True, the imported topologies are cleaned. Default is False.
+        scale : float , optional
+            The scale factor applied to imported coordinates. Default is 1.0.
+        topologyType : str , optional
+            The desired output topology type. If set to None, the method returns the
+            most appropriate topology type for each imported product. Default is None.
+        circleSides : int , optional
+            The number of sides used to approximate circular geometry. Default is 24.
+        ontology : bool , optional
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         epsilon : float , optional
-            The desired epsilon (another form of tolerance) for finding if two faces are coplanar. Default is 0.01.
+            The geometric epsilon used during import. Default is 0.01.
         angTolerance : float , optional
-            The desired angular tolerance for removing collinear edges. Default is 0.1.
+            The angular tolerance used during import. Default is 0.1.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -3602,15 +3712,19 @@ class Topology():
         """
         
         from topologicpy.IFC import IFC
-        return IFC.TopologiesByPath(path,
-                             includeTypes=includeTypes,
-                             excludeTypes=excludeTypes,
-                             dictionaryMode=dictionaryMode,
-                             clean=clean,
-                             epsilon=epsilon,
-                             angTolerance=angTolerance,
-                             tolerance=tolerance,
-                             silent=silent)
+        return IFC.TopologiesByPath(path = path,
+                                    includeTypes = includeTypes,
+                                    excludeTypes = excludeTypes,
+                                    dictionaryMode = dictionaryMode,
+                                    clean = clean,
+                                    scale = scale,
+                                    topologyType = topologyType,
+                                    circleSides = circleSides,
+                                    ontology = ontology,
+                                    epsilon = epsilon,
+                                    angTolerance = angTolerance,
+                                    tolerance = tolerance,
+                                    silent = silent)
 
     '''
     @staticmethod
@@ -3653,8 +3767,7 @@ class Topology():
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -3675,7 +3788,7 @@ class Topology():
             if not silent:
                 print("Topology.ByJSONFile - Error: Could not load the JSON file: {e}. Returning None.")
             return None
-        return Topology.ByJSONDictionary(json_dict, tolerance=tolerance, ontology=ontology, silent=silent)
+        return Topology.ByJSONDictionary(json_dict, ontology=ontology, tolerance=tolerance, silent=silent)
     
     @staticmethod
     def ByJSONPath(path, ontology: bool = False, tolerance: float = 0.0001, silent: bool = False):
@@ -3687,8 +3800,7 @@ class Topology():
         path : str
             The file path to the json file.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -3712,227 +3824,7 @@ class Topology():
             if not silent:
                 print("Topology.ByJSONPath - Error: Could not load file: {e}. Returning None.")
             return None
-        return Topology.ByJSONDictionary(json_dict, tolerance=tolerance, ontology=ontology, silent=silent)
-    
-    # @staticmethod
-    # def ByJSONDictionary(jsonDictionary: dict, tolerance: float = 0.0001, ontology: bool = False, silent: bool = False):
-    #     """
-    #     Imports the topology from a JSON dictionary.
-
-    #     Parameters
-    #     ----------
-    #     jsonDictionary : dict
-    #         The input JSON dictionary.
-    #     tolerance : float , optional
-    #         The desired tolerance. Default is 0.0001.
-    #     silent : bool , optional
-    #         If set to True, error and warning messages are suppressed. Default is False.
-
-    #     Returns
-    #     -------
-    #     list
-    #         The list of imported topologies (Warning: the list could contain 0, 1, or many topologies, but this method will always return a list)
-
-    #     """
-    #     from topologicpy.Vertex import Vertex
-    #     from topologicpy.Edge import Edge
-    #     from topologicpy.Wire import Wire
-    #     from topologicpy.Face import Face
-    #     from topologicpy.Shell import Shell
-    #     from topologicpy.Cell import Cell
-    #     from topologicpy.CellComplex import CellComplex
-    #     from topologicpy.Cluster import Cluster
-    #     from topologicpy.Dictionary import Dictionary
-
-    #     # Containers for created entities
-    #     vertices = {}
-    #     edges = {}
-    #     wires = {}
-    #     faces = {}
-    #     shells = {}
-    #     cells = {}
-    #     cell_complexes = {}
-
-    #     vertex_apertures = []
-    #     edge_apertures = []
-    #     face_apertures = []
-    #     for entity in jsonDictionary:
-    #         entity_type = entity['type']
-    #         entity_dict = Dictionary.ByKeysValues(keys=list(entity['dictionary'].keys()),
-    #                                             values=list(entity['dictionary'].values()))
-
-    #         parent_entity = None
-
-    #         # Create basic topological entities
-    #         if entity_type == 'Vertex':
-    #             parent_entity = Vertex.ByCoordinates(*entity['coordinates'])
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict, silent=silent)
-    #             vertices[entity['uuid']] = parent_entity
-
-    #         elif entity_type == 'Edge':
-    #             vertex1 = vertices[entity['vertices'][0]]
-    #             vertex2 = vertices[entity['vertices'][1]]
-    #             parent_entity = Edge.ByVertices([vertex1, vertex2], tolerance=tolerance, silent=silent)
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict, silent=silent)
-    #             edges[entity['uuid']] = parent_entity
-
-    #         elif entity_type == 'Wire':
-    #             wire_edges = [edges[uuid] for uuid in entity['edges']]
-    #             parent_entity = Wire.ByEdges(wire_edges, tolerance=tolerance, silent=silent)
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict, silent=silent)
-    #             wires[entity['uuid']] = parent_entity
-
-    #         elif entity_type == 'Face':
-    #             face_wires = [wires[uuid] for uuid in entity['wires']]
-    #             if len(face_wires) > 1:
-    #                 parent_entity = Face.ByWires(face_wires[0], face_wires[1:], tolerance=tolerance, silent=silent)
-    #             else:
-    #                 parent_entity = Face.ByWire(face_wires[0], tolerance=tolerance, silent=silent)
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict, silent=silent)
-    #             faces[entity['uuid']] = parent_entity
-
-    #         elif entity_type == 'Shell':
-    #             shell_faces = [faces[uuid] for uuid in entity['faces']]
-    #             parent_entity = Shell.ByFaces(shell_faces, tolerance=tolerance, silent=silent)
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict, silent=silent)
-    #             shells[entity['uuid']] = parent_entity
-
-    #         elif entity_type == 'Cell':
-    #             cell_shells = [shells[uuid] for uuid in entity['shells']]
-    #             if len(cell_shells) > 1:
-    #                 parent_entity = Cell.ByShells(cell_shells[0], cell_shells[1:], tolerance=tolerance, silent=silent)
-    #             else:
-    #                 parent_entity = Cell.ByShell(cell_shells[0])
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict)
-    #             cells[entity['uuid']] = parent_entity
-
-    #         elif entity_type == 'CellComplex':
-    #             complex_cells = [cells[uuid] for uuid in entity['cells']]
-    #             parent_entity = CellComplex.ByCells(complex_cells)
-    #             parent_entity = Topology.SetDictionary(parent_entity, entity_dict)
-    #             cell_complexes[entity['uuid']] = parent_entity
-
-    #         # Step 3: Handle apertures within each entity
-    #         if 'apertures' in entity:
-    #             # Containers for created entities
-    #             ap_vertices = {}
-    #             ap_edges = {}
-    #             ap_wires = {}
-    #             ap_faces = {}
-    #             for aperture_list in entity['apertures']:
-    #                 types = [aperture_data['type'] for aperture_data in aperture_list]
-    #                 save_vertex = False
-    #                 save_edge = False
-    #                 save_wire = False
-    #                 save_face = False
-
-    #                 if 'Face' in types:
-    #                     save_face = True
-    #                 elif 'Wire' in types:
-    #                     save_wire = True
-    #                 elif 'Edge' in types:
-    #                     save_edge = True
-    #                 elif 'Vertex' in types:
-    #                     save_vertex = True
-
-    #                 apertures = []
-    #                 for aperture_data in aperture_list:
-    #                     aperture_type = aperture_data['type']
-    #                     aperture_dict = Dictionary.ByKeysValues(keys=list(aperture_data['dictionary'].keys()),
-    #                                                             values=list(aperture_data['dictionary'].values()))
-                        
-    #                     if aperture_type == 'Vertex':
-    #                         aperture_entity = Vertex.ByCoordinates(*aperture_data['coordinates'])
-    #                         aperture_entity = Topology.SetDictionary(aperture_entity, aperture_dict)
-    #                         ap_vertices[aperture_data['uuid']] = aperture_entity
-    #                         if save_vertex == True:
-    #                             apertures.append(aperture_entity)
-                        
-    #                     elif aperture_type == 'Edge':
-    #                         vertex1 = ap_vertices[aperture_data['vertices'][0]]
-    #                         vertex2 = ap_vertices[aperture_data['vertices'][1]]
-    #                         aperture_entity = Edge.ByVertices([vertex1, vertex2])
-    #                         aperture_entity = Topology.SetDictionary(aperture_entity, aperture_dict)
-    #                         ap_edges[aperture_data['uuid']] = aperture_entity
-    #                         if save_edge == True:
-    #                             apertures.append(aperture_entity)
-
-    #                     elif aperture_type == 'Wire':
-    #                         wire_edges = [ap_edges[uuid] for uuid in aperture_data['edges']]
-    #                         aperture_entity = Wire.ByEdges(wire_edges)
-    #                         aperture_entity = Topology.SetDictionary(aperture_entity, aperture_dict)
-    #                         ap_wires[aperture_data['uuid']] = aperture_entity
-    #                         if save_wire == True:
-    #                             apertures.append(aperture_entity)
-
-    #                     elif aperture_type == 'Face':
-    #                         face_wires = [ap_wires[uuid] for uuid in aperture_data['wires']]
-    #                         if len(face_wires) > 1:
-    #                             aperture_entity = Face.ByWires(face_wires[0], face_wires[1:])
-    #                         else:
-    #                             aperture_entity = Face.ByWire(face_wires[0])
-    #                         aperture_entity = Topology.SetDictionary(aperture_entity, aperture_dict)
-    #                         ap_faces[aperture_data['uuid']] = aperture_entity
-    #                         if save_face == True:
-    #                             apertures.append(aperture_entity)
-                            
-    #                 # Assign the built apertures to the parent entity
-    #                 if len(apertures) > 0:
-    #                     if entity_type == "Face":
-    #                         face_apertures += apertures
-    #                     elif entity_type == 'Edge':
-    #                         edge_apertures += apertures
-    #                     elif entity_type == 'Vertex':
-    #                         vertex_apertures += apertures
-
-    #             # Update the parent entity in its respective container
-    #             if entity_type == 'Vertex':
-    #                 vertices[entity['uuid']] = parent_entity
-    #             elif entity_type == 'Edge':
-    #                 edges[entity['uuid']] = parent_entity
-    #             elif entity_type == 'Wire':
-    #                 wires[entity['uuid']] = parent_entity
-    #             elif entity_type == 'Face':
-    #                 faces[entity['uuid']] = parent_entity
-    #             elif entity_type == 'Shell':
-    #                 shells[entity['uuid']] = parent_entity
-    #             elif entity_type == 'Cell':
-    #                 cells[entity['uuid']] = parent_entity
-    #             elif entity_type == 'CellComplex':
-    #                 cell_complexes[entity['uuid']] = parent_entity
-            
-    #         d = Topology.Dictionary(parent_entity)
-    #         top_level = Dictionary.ValueAtKey(d, "toplevel")
-    #     tp_vertices = list(vertices.values())
-    #     tp_edges = list(edges.values())
-    #     tp_wires = list(wires.values())
-    #     tp_faces = list(faces.values())
-    #     tp_shells = list(shells.values())
-    #     tp_cells = list(cells.values())
-    #     tp_cell_complexes = list(cell_complexes.values())
-    #     everything = tp_vertices + tp_edges + tp_wires + tp_faces + tp_shells + tp_cells + tp_cell_complexes
-    #     top_level_list = []
-    #     for entity in everything:
-    #         d = Topology.Dictionary(entity)
-    #         top_level = Dictionary.ValueAtKey(d, "toplevel")
-    #         if top_level == 1:
-    #             if len(face_apertures) > 0:
-    #                 entity = Topology.AddApertures(entity, face_apertures, subTopologyType="Face", tolerance=tolerance)
-    #             if len(edge_apertures) > 0:
-    #                 entity = Topology.AddApertures(entity, edge_apertures, subTopologyType="Edge", tolerance=0.001)
-    #             if len(vertex_apertures) > 0:
-    #                 entity = Topology.AddApertures(entity, vertex_apertures, subTopologyType="Vertex", tolerance=0.001)
-    #             top_level_list.append(entity)
-    #     bins, counts = Topology.BinByDictionaryKey(top_level_list, key="__cluster__")
-    #     return_topologies = []
-    #     keys = bins.keys()
-    #     for key in keys:
-    #         if key == "__MISSING__":
-    #             return_topologies += bins[key]
-    #         else:
-    #             cluster = Cluster.ByTopologies(bins[key])
-    #             return_topologies.append(cluster)
-    #     return return_topologies
+        return Topology.ByJSONDictionary(json_dict, ontology=ontology, tolerance=tolerance, silent=silent)
 
     @staticmethod
     def ByJSONDictionary(jsonDictionary: dict, ontology: bool = False, tolerance: float = 0.0001, silent: bool = False):
@@ -3944,8 +3836,7 @@ class Topology():
         jsonDictionary : dict
             The input JSON dictionary.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -4297,8 +4188,7 @@ class Topology():
         string : str
             The input JSON string.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -4351,8 +4241,7 @@ class Topology():
         transferDictionaries : bool , optional
             If set to True, the python dictionaries will be transferred to the coorespoding topologies. Default is False.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
@@ -4459,6 +4348,7 @@ class Topology():
                 transposeAxes: bool = True,
                 removeCoplanarFaces: bool = False,
                 selfMerge: bool = True,
+                ontology: bool = False,
                 mantissa : int = 6,
                 tolerance: float = 0.0001):
         """
@@ -4481,6 +4371,8 @@ class Topology():
             If set to True, coplanar faces are merged. Default is True.
         selfMerge : bool , optional
             If set to True, the faces of the imported topologies will each be self-merged to create higher-dimensional objects. Otherwise, they remain a cluster of faces. Default is False.
+        ontology : bool , optional
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
@@ -4507,11 +4399,16 @@ class Topology():
         mtl_string = None
         if mtlFile:
             mtl_string = mtlFile.read()
-        return Topology.ByOBJString(obj_string, mtl_string,
-                        defaultColor=defaultColor, defaultOpacity=defaultOpacity,
-                        transposeAxes=transposeAxes, removeCoplanarFaces=removeCoplanarFaces,
-                        selfMerge=selfMerge,
-                        mantissa=mantissa, tolerance=tolerance)
+        return Topology.ByOBJString(obj_string,
+                                    mtl_string,
+                                    defaultColor = defaultColor,
+                                    defaultOpacity = defaultOpacity,
+                                    transposeAxes = transposeAxes,
+                                    removeCoplanarFaces = removeCoplanarFaces,
+                                    selfMerge = selfMerge,
+                                    ontology = ontology,
+                                    mantissa = mantissa,
+                                    tolerance = tolerance)
 
     @staticmethod
     def ByOBJPath(objPath,
@@ -4520,6 +4417,7 @@ class Topology():
                   transposeAxes: bool = True,
                   removeCoplanarFaces: bool = False,
                   selfMerge: bool = False,
+                  ontology: bool = False,
                   mantissa : int = 6,
                   tolerance: float = 0.0001):
         """
@@ -4540,6 +4438,8 @@ class Topology():
             If set to True, coplanar faces are merged. Default is True.
         selfMerge : bool , optional
             If set to True, the faces of the imported topologies will each be self-merged to create higher-dimensional objects. Otherwise, they remain a cluster of faces. Default is False.
+        ontology : bool , optional
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
@@ -4584,6 +4484,7 @@ class Topology():
                                     transposeAxes=transposeAxes,
                                     removeCoplanarFaces=removeCoplanarFaces,
                                     selfMerge = selfMerge,
+                                    ontology = ontology,
                                     mantissa=mantissa,
                                     tolerance=tolerance)
 
@@ -4595,6 +4496,7 @@ class Topology():
                     transposeAxes: bool = True,
                     removeCoplanarFaces: bool = False,
                     selfMerge: bool = False,
+                    ontology: bool = False,
                     mantissa: int = 6,
                     tolerance: float = 0.0001):
         """
@@ -4633,6 +4535,8 @@ class Topology():
             If set to True, coplanar faces are merged. Default is False.
         selfMerge : bool , optional
             If set to True, imported face clusters are self-merged. Default is False.
+        ontology : bool , optional
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         mantissa : int , optional
             The number of decimal places to round coordinates to. Default is 6.
         tolerance : float , optional
@@ -5140,11 +5044,10 @@ class Topology():
                 group_topo = _set_dict(group_topo, group_name, hint_mat)
 
             imported.append(group_topo)
-
-        return imported
+        return Topology._OntologyAnnotateList(imported, ontology=ontology, generatedBy="Topology.ByOBJString", annotateSubtopologies=True, silent=True)
 
     @staticmethod
-    def ByOCCTShape(occtShape):
+    def ByOCCTShape(occtShape, ontology: bool = False, silent: bool = False):
         """
         Creates a topology from the input OCCT shape. See https://dev.opencascade.org/doc/overview/html/occt_user_guides__modeling_data.html.
 
@@ -5159,9 +5062,26 @@ class Topology():
             The created topology.
 
         """
-        return Core.Topology.ByOcctShape(occtShape, "")
+        topology = Core.Topology.ByOcctShape(occtShape, "")
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.ByOCCTShape - Error: Could not create the topology. Returning None")
+            return None
+        return Topology._OntologyAnnotate(topology, ontology=ontology, generatedBy="Topology.ByOOCTShape", annotateSubtopologies=True, silent=True)
+
     @staticmethod
-    def ByPDFFile(file, wires=False, faces=False, includeTypes=[], excludeTypes=[], edgeColorKey="edge_color", edgeWidthKey="edge_width", faceColorKey="face_color", faceOpacityKey="face_opacity", tolerance=0.0001, silent=False):
+    def ByPDFFile(file,
+                  wires=False,
+                  faces=False,
+                  includeTypes: list = [],
+                  excludeTypes: list = [],
+                  edgeColorKey: str = "edge_color",
+                  edgeWidthKey: str = "edge_width",
+                  faceColorKey: str = "face_color",
+                  faceOpacityKey: str = "face_opacity",
+                  ontology: bool = False,
+                  tolerance=0.0001,
+                  silent=False):
         """
         Import PDF file and convert its entities to topologies.
 
@@ -5187,6 +5107,8 @@ class Topology():
             The dictionary key under which to store the face color. Default is None.
         faceOpacityKey : str , optional
             The dictionary key under which to store the face opacity. Default is None.
+        ontology : bool , optional
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -5392,7 +5314,7 @@ class Topology():
                             edge = Topology.SetDictionary(edge, dictionary)
                         topologic_entities.append(tp_object)
 
-        return topologic_entities
+        return Topology._OntologyAnnotateList(topologic_entities, ontology=ontology, generatedBy="Topology.ByPDFFile", annotateSubtopologies=True, silent=True)
 
     @staticmethod
     def ByPDFPath(path, wires=False, faces=False, includeTypes=[], excludeTypes=[], edgeColorKey="edge_color", edgeWidthKey="edge_width", faceColorKey="face_color", faceOpacityKey="face_opacity", tolerance=0.0001, silent=False):
@@ -5489,8 +5411,7 @@ class Topology():
         string : str
             The input brep string.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -5645,7 +5566,7 @@ class Topology():
         except:
             print("Topology.ByXYZPath - Error: the XYZ file is not a valid file. Returning None.")
             return None
-        return Topology.ByXYZFile(file, frameIdKey=frameIdKey, vertexIdKey=frameIdKey)
+        return Topology.ByXYZFile(file, frameIdKey=frameIdKey, vertexIdKey=vertexIdKey)
     
     def CanonicalMatrix(topology, n: int = 10, normalize: bool = False, mantissa: int = 6, silent: bool = False):
         """
@@ -5872,7 +5793,7 @@ class Topology():
         return Topology.SubTopologies(topology=topology, subTopologyType="cell")
     
     @staticmethod
-    def CenterOfMass(topology):
+    def CenterOfMass(topology, silent: bool = False):
         """
         Returns the center of mass of the input topology. See https://en.wikipedia.org/wiki/Center_of_mass.
 
@@ -5880,6 +5801,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -5888,7 +5811,8 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.CenterofMass - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.CenterofMass - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         # return topology.CenterOfMass() # H to Core
         return Core.InstanceCall(topology, 'CenterOfMass')
@@ -5986,116 +5910,111 @@ class Topology():
         return Topology.CenterOfMass(topology)
 
     @staticmethod
-    def ClusterByKeys(topologies, *keys, silent=False):
+    def ClusterByKeys(topologies, *keys, silent: bool = False):
         """
-            Clusters the input list of topologies based on the input key or keys.
+        Clusters the input list of topologies based on the input key or keys.
 
-            Parameters
-            ----------
-            topologies : list
-                The input list of topologies.
-            keys : str or list or comma-separated str input parameters
-                The key or keys in the topology's dictionary to use for clustering.
-            silent : bool , optional
-                If set to True, error and warning messages are suppressed. Default is False.
+        Parameters
+        ----------
+        topologies : list
+            The input list of topologies.
+        keys : str or list or comma-separated str input parameters
+            The key or keys in the topology dictionaries to use for clustering.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
+        Returns
+        -------
+        list
+            A nested list of topologies where each element is a list of topologies
+            with the same key values.
 
-            Returns
-            -------
-            list
-                A nested list of topologies where each element is a list of topologies with the same key values.
-            """
-        
+        """
+
         from topologicpy.Dictionary import Dictionary
         from topologicpy.Helper import Helper
         import inspect
 
-        topologies_list = []
+        def _hashable(value):
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                return value
+
+            if isinstance(value, (list, tuple)):
+                return tuple(_hashable(v) for v in value)
+
+            if isinstance(value, dict):
+                return tuple(sorted((k, _hashable(v)) for k, v in value.items()))
+
+            try:
+                hash(value)
+                return value
+            except Exception:
+                return repr(value)
+
         if Topology.IsInstance(topologies, "Topology"):
             if not silent:
                 print("Topology.ClusterByKeys - Warning: The input topologies parameter is a single topology. Returning one cluster.")
             return [[topologies]]
-        if isinstance(topologies, list):
-            print("topologies_list 1:", topologies_list)
-            topologies_list = Helper.Flatten(topologies)
-            print("topologies_list 2:", topologies_list)
-            topologies_list = [x for x in topologies_list if Topology.IsInstance(x, "Topology")]
-            print("topologies_list 3:", topologies_list)
-            if len(topologies_list) == 0:
-                if not silent:
-                    print("Topology.ClusterByKeys - Error: The input topologies parameter does not contain any valid topologies. Returning None.")
-                    curframe = inspect.currentframe()
-                    calframe = inspect.getouterframes(curframe, 2)
-                    print('caller name:', calframe[1][3])
-                return None
-        else:
+
+        if not isinstance(topologies, list):
             if not silent:
                 print("Topology.ClusterByKeys - Error: The input topologies parameter is not a valid list. Returning None.")
                 curframe = inspect.currentframe()
                 calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
+                print("caller name:", calframe[1][3])
             return None
-        
-        keys_list = list(keys)
-        keys_list = Helper.Flatten(keys_list)
 
-        if len(keys_list) == 0:
+        topologies_list = Helper.Flatten(topologies)
+        topologies_list = [t for t in topologies_list if Topology.IsInstance(t, "Topology")]
+
+        if len(topologies_list) == 0:
             if not silent:
-                print("Topology.ClusterByKeys - Error: The input keys parameter is an empty list. Returning None.")
+                print("Topology.ClusterByKeys - Error: The input topologies parameter does not contain any valid topologies. Returning None.")
                 curframe = inspect.currentframe()
                 calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
+                print("caller name:", calframe[1][3])
             return None
-        keys_list = [x for x in keys_list if isinstance(x, str)]
-        
+
+        raw_keys = Helper.Flatten(list(keys))
+        keys_list = []
+
+        for key in raw_keys:
+            if isinstance(key, str):
+                keys_list.extend([k.strip() for k in key.split(",") if k.strip()])
+
         if len(keys_list) == 0:
             if not silent:
                 print("Topology.ClusterByKeys - Error: The input keys parameter does not contain any valid strings. Returning None.")
                 curframe = inspect.currentframe()
                 calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
+                print("caller name:", calframe[1][3])
             return None
 
-        clusters = []
-        values = []
+        groups = {}
+        missing_marker = "__MISSING__"
+
         for topology in topologies_list:
             d = Topology.Dictionary(topology)
-
             d_keys = Dictionary.Keys(d)
-            if len(d_keys) > 0:
-                values_list = []
-                for key in keys_list:
-                    v = Dictionary.ValueAtKey(d, key)
-                    if not v == None:
-                        values_list.append(v)
-                values_list = str(values_list)
-                d = Dictionary.SetValueAtKey(d, "_clustering_key_", values_list)
-                topology = Topology.SetDictionary(topology, d)
-                values.append(values_list)
 
-        remaining_topologies = topologies_list
-        for value in values:
-            if len(remaining_topologies) == 0:
-                break
-            dic = Topology.Filter(remaining_topologies, topologyType="any", searchType="equal to", key="_clustering_key_", value=value)
-            filtered_topologies = dic['filtered']
-            final_topologies = []
-            if len(filtered_topologies) > 0:
-                for filtered_topology in filtered_topologies:
-                    d = Topology.Dictionary(filtered_topology)
-                    d = Dictionary.RemoveKey(d, "_clustering_key_")
-                    keys = Dictionary.Keys(d)
-                    if len(keys) > 0:
-                        filtered_topology = Topology.SetDictionary(filtered_topology, d)
-                    final_topologies.append(filtered_topology)
-                clusters.append(final_topologies)
-            remaining_topologies = dic['other']
-        if len(remaining_topologies) > 0:
-            clusters.append(remaining_topologies)
-        return clusters
+            if not isinstance(d_keys, list):
+                d_keys = []
+
+            values = []
+
+            for key in keys_list:
+                if key in d_keys:
+                    values.append(_hashable(Dictionary.ValueAtKey(d, key)))
+                else:
+                    values.append(missing_marker)
+
+            group_key = tuple(values)
+            groups.setdefault(group_key, []).append(topology)
+
+        return list(groups.values())
 
     @staticmethod
-    def ClusterFaces(topology, angTolerance=2, tolerance=0.0001):
+    def ClusterFaces(topology, angTolerance=2, tolerance=0.0001, silent: bool = False):
         """
         Clusters the faces of the input topology by their direction.
 
@@ -6107,6 +6026,8 @@ class Topology():
             The desired angular tolerance. Default is 0.1.
         tolerance : float, optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -6117,6 +6038,11 @@ class Topology():
         from topologicpy.Vector import Vector
         from topologicpy.Face import Face
         from topologicpy.Cluster import Cluster
+
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.ClusterFaces - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
 
         faces = Topology.SubTopologies(topology, subTopologyType="face")
         face_normals = []
@@ -6152,7 +6078,7 @@ class Topology():
             clusters[ind].append(face)
         final_clusters = []
         for cluster in clusters:
-            final_clusters.append(Topology.SelfMerge(Cluster.ByTopologies(cluster), tolerance=tolerance))
+            final_clusters.append(Topology.SelfMerge(Cluster.ByTopologies(cluster), tolerance=tolerance, silent=silent))
         return final_clusters
 
     @staticmethod
@@ -6193,48 +6119,9 @@ class Topology():
 
         return Topology.SubTopologies(topology=topology, subTopologyType="cluster")
     
-    @staticmethod
-    def Contains(topologyA,
-                 topologyB,
-                 mantissa: int = 6,
-                 tolerance: float = 0.0001,
-                 silent: bool = False):
-        """
-        Returns True if topologyA contains topologyB. Contains is the inverse of "within," where geometry A contains geometry B.
-        The interior and boundary of B are completely contained within the interior of A.
-
-        Parameters
-        ----------
-        topologyA : topologic_core.Topology
-            The first input topology
-        topologyB : topologic_core. Topology
-            The second input topology.
-        mantissa : int , optional
-            The desired length of the mantissa. Default is 6.
-        tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        bool
-            True if topologyA contains topologyB. False otherwise.
-
-        """
-        if not Topology.IsInstance(topologyA, "topology"):
-            if not silent:
-                print("Topology.Contains - Error: The topologyA input parameter is not a valid Topology. Returning None.")
-            return None
-        
-        if not Topology.IsInstance(topologyB, "topology"):
-            if not silent:
-                print("Topology.Contains - Error: The topologyB input parameter is not a valid Topology. Returning None.")
-            return None
-        return Topology.SpatialRelationship(topologyA, topologyB, include=["contains"], mantissa=mantissa, tolerance=tolerance, silent=silent) == "contains"
 
     @staticmethod
-    def Contents(topology):
+    def Contents(topology, silent: bool = False):
         """
         Returns the contents of the input topology
 
@@ -6242,6 +6129,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -6250,7 +6139,8 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.Contents - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                    print("Topology.Contents - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         contents = []
         # _ = topology.Contents(contents) # H to Core
@@ -6258,7 +6148,7 @@ class Topology():
         return contents
     
     @staticmethod
-    def Contexts(topology):
+    def Contexts(topology, silent: bool = False):
         """
         Returns the list of contexts of the input topology
 
@@ -6266,6 +6156,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -6274,7 +6166,8 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.Contexts - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.Contexts - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         contexts = []
         # _ = topology.Contexts(contexts) # H to Core
@@ -6415,7 +6308,7 @@ class Topology():
             return convex_hull
     
     @staticmethod
-    def Copy(topology, deep=False):
+    def Copy(topology, deep=False, silent: bool = False):
         """
         Returns a copy of the input topology
 
@@ -6425,6 +6318,8 @@ class Topology():
             The input topology.
         deep : bool , optional
             If set to True, a deep copy will be performed (this is slow). Othwerwise, it will not. Default is False
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -6434,58 +6329,25 @@ class Topology():
         """
         from topologicpy.Dictionary import Dictionary
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.Copy - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.Copy - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         if deep:
             return Topology.ByJSONString(Topology.JSONString([topology]))[0]
         d = Topology.Dictionary(topology)
-        return_topology = Topology.ByBREPString(Topology.BREPString(topology))
+        return_topology = Topology.ByBREPString(Topology.BREPString(topology), silent=silent)
+        if not Topology.IsInstance(return_topology, "Topology"):
+            if not silent:
+                print("Topology.Copy - Error: Could not copy the topology. Returning None.")
+            return None
         keys = Dictionary.Keys(d)
         if len(keys) > 0:
             return_topology = Topology.SetDictionary(return_topology, d)
         return return_topology
 
-    @staticmethod
-    def CoveredBy(topologyA,
-                 topologyB,
-                 mantissa: int = 6,
-                 tolerance: float = 0.0001,
-                 silent: bool = False):
-        """
-        Returns True if topologyA is covered by topologyB, with topologyA's surface lying entirely on topologyB's surface. 
-
-        Parameters
-        ----------
-        topologyA : topologic_core.Topology
-            The first input topology
-        topologyB : topologic_core. Topology
-            The second input topology.
-        mantissa : int , optional
-            The desired length of the mantissa. Default is 6.
-        tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        bool
-            True if topologyA is covered by topologyB. False otherwise.
-
-        """
-        if not Topology.IsInstance(topologyA, "topology"):
-            if not silent:
-                print("Topology.CoveredBy - Error: The topologyA input parameter is not a valid Topology. Returning None.")
-            return None
-        
-        if not Topology.IsInstance(topologyB, "topology"):
-            if not silent:
-                print("Topology.CoveredB - Error: The topologyB input parameter is not a valid Topology. Returning None.")
-            return None
-        return Topology.SpatialRelationship(topologyA, topologyB, include=["coveredBy"], mantissa=mantissa, tolerance=tolerance, silent=silent) == "coveredBy"
 
     @staticmethod
-    def Degree(topology, hostTopology):
+    def Degree(topology, hostTopology, silent: bool = False):
         """
         Returns the number of immediate super topologies that use the input topology
 
@@ -6495,6 +6357,8 @@ class Topology():
             The input topology.
         hostTopology : topologic_core.Topology
             The input host topology to which the input topology belongs
+        silent : bool, optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -6502,27 +6366,61 @@ class Topology():
             The degree of the topology (the number of immediate super topologies that use the input topology).
         
         """
-        if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.Degree - Error: the input topology parameter is not a valid topology. Returning None.")
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Degree - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
-        if not Topology.IsInstance(hostTopology, "Topology"):
-            print("Topology.Degree - Error: the input hostTopology parameter is not a valid topology. Returning None.")
+        if not Topology.IsInstance(hostTopology, "topology"):
+            if not silent:
+                print("Topology.Degree - Error: the input hostTopology parameter is not a valid topology. Returning None.")
             return None
         
         hostTopologyType = Topology.TypeAsString(hostTopology).lower()
-        type = Topology.TypeAsString(topology).lower()
-        superType = ""
-        if type == "vertex" and (hostTopologyType == "cellcomplex" or hostTopologyType == "cell" or hostTopologyType == "shell"):
-            superType = "face"
-        elif type == "vertex" and (hostTopologyType == "wire" or hostTopologyType == "edge"):
-            superType = "edge"
-        elif type == "edge" and (hostTopologyType == "cellcomplex" or hostTopologyType == "cell" or hostTopologyType == "shell"):
-            superType = "face"
-        elif type == "face" and (hostTopologyType == "cellcomplex"):
-            superType = "cell"
-        superTopologies = Topology.SuperTopologies(topology, hostTopology=hostTopology, topologyType=superType)
+        topology_type = Topology.TypeAsString(topology).lower()
+
+        superType = None
+
+        if topology_type == "vertex":
+            if hostTopologyType in ["edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster"]:
+                superType = "edge"
+
+        elif topology_type == "edge":
+            if hostTopologyType in ["wire"]:
+                superType = "wire"
+            elif hostTopologyType in ["face", "shell", "cell", "cellcomplex", "cluster"]:
+                superType = "face"
+
+        elif topology_type == "wire":
+            if hostTopologyType in ["face", "shell", "cell", "cellcomplex", "cluster"]:
+                superType = "face"
+
+        elif topology_type == "face":
+            if hostTopologyType in ["shell"]:
+                superType = "shell"
+            elif hostTopologyType in ["cell", "cellcomplex", "cluster"]:
+                superType = "cell"
+
+        elif topology_type == "shell":
+            if hostTopologyType in ["cell", "cellcomplex", "cluster"]:
+                superType = "cell"
+
+        elif topology_type == "cell":
+            if hostTopologyType in ["cellcomplex", "cluster"]:
+                superType = "cellcomplex"
+
+        if superType is None:
+            return 0
+
+        superTopologies = Topology.SuperTopologies(
+            topology,
+            hostTopology=hostTopology,
+            topologyType=superType,
+            silent=silent,
+        )
+
         if not superTopologies:
             return 0
+
         return len(superTopologies)
     
     @staticmethod
@@ -6625,7 +6523,6 @@ class Topology():
         if not Topology.IsInstance(topology, "Topology") and not Topology.IsInstance(topology, "Graph"):
             if not silent:
                 print("Topology.Dictionary - Error: the input topology parameter is not a valid topology. Returning None.")
-                print("Topology:", topology)
                 curframe = inspect.currentframe()
                 calframe = inspect.getouterframes(curframe, 2)
                 print("caller name:", calframe[1][3])
@@ -6840,7 +6737,7 @@ class Topology():
                 print("Topology.Edges - Warning: The input is a lower dimension than an edge. Returning an empty list.")
             return []
 
-        return Topology.SubTopologies(topology=topology, subTopologyType="edge")
+        return Topology.SubTopologies(topology=topology, subTopologyType="edge", silent=silent)
     
     @staticmethod
     def Explode(topology, origin=None, scale: float = 1.25, typeFilter: str = None, axes: str = "xyz", transferDictionaries: bool = False, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
@@ -6976,7 +6873,7 @@ class Topology():
         if typeFilter.lower() == "self":
             topologies = [topology]
         else:
-            topologies = Topology.SubTopologies(topology, subTopologyType=typeFilter.lower())
+            topologies = Topology.SubTopologies(topology, subTopologyType=typeFilter.lower(), silent=silent)
 
         newTopologies = []
 
@@ -7017,10 +6914,19 @@ class Topology():
         return Cluster.ByTopologies(newTopologies, silent=silent)
     
     @staticmethod
-    def ExportToBIM(topologies, path : str, overwrite: bool = False, version: str = "1.0.0",
-                    guidKey: str = "guid", colorKey: str = "color", typeKey: str = "type",
-                    defaultColor: list = [255,255,255,1], defaultType: str = "Structure",
-                    author: str = "topologicpy", date: str = None, mantissa: int = 6, tolerance: float = 0.0001):
+    def ExportToBIM(topologies,
+                    path : str,
+                    overwrite: bool = False,
+                    version: str = "1.0.0",
+                    guidKey: str = "guid",
+                    colorKey: str = "color",
+                    typeKey: str = "type",
+                    defaultColor: list = [255,255,255,1],
+                    defaultType: str = "Structure",
+                    author: str = "topologicpy",
+                    mantissa: int = 6,
+                    tolerance: float = 0.0001,
+                    silent: bool = False):
         """
         Exports the input topology to a BIM file. See https://dotbim.net/
 
@@ -7052,6 +6958,8 @@ class Topology():
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -7087,6 +6995,7 @@ class Topology():
         if not overwrite and exists(path):
             print("Topology.ExportToBIM - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
             return None
+        
         # Get the current date
         current_date = datetime.datetime.now()
 
@@ -7095,6 +7004,11 @@ class Topology():
         
         if Topology.IsInstance(topologies, "Topology"):
             topologies = [topologies]
+        topologies = [t for t in topologies if Topology.IsInstance(t, "topology")]
+        if len(topologies) == 0:
+            if not silent:
+                print("Topology.ExportToBIM - Error: The input list of topologies does not contain any valid topologies. Returning None.")
+            return None
         # Prepare input data
         final_topologies = []
         for topology in topologies:
@@ -7159,12 +7073,16 @@ class Topology():
         file = dotbimpy.File(version, meshes=meshes, elements=elements, info=file_info)
         try:
             file.save(path)
+            if not silent:
+                print("Topology.ExportToBIM - Information: File saved successfully. Returning True.")
             return True
         except:
+            if not silent:
+                print("Topology.ExportToBIM - Error: Could not save the file. Returning False.")
             return False
 
     @staticmethod
-    def ExportToBREP(topology, path, overwrite=False, version=3):
+    def ExportToBREP(topology, path, overwrite=False, version=3, silent: bool = False):
         """
         Exports the input topology to a BREP file. See https://dev.opencascade.org/doc/occt-6.7.0/overview/html/occt_brep_format.html.
 
@@ -7178,6 +7096,8 @@ class Topology():
             If set to True the ouptut file will overwrite any pre-existing file. Otherwise, it won't. Default is False.
         version : int , optional
             The desired version number for the BREP file. Default is 3.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -7187,17 +7107,20 @@ class Topology():
         """
         from os.path import exists
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.ExportToBREP - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.ExportToBREP - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         if not isinstance(path, str):
-            print("Topology.ExportToBREP - Error: the input path parameter is not a valid string. Returning None.")
+            if not silent:
+                print("Topology.ExportToBREP - Error: the input path parameter is not a valid string. Returning None.")
             return None
         # Make sure the file extension is .brep
         ext = path[len(path)-5:len(path)]
         if ext.lower() != ".brep":
             path = path+".brep"
         if not overwrite and exists(path):
-            print("Topology.ExportToBREP - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
+            if not silent:
+                print("Topology.ExportToBREP - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
             return None
         f = None
         try:
@@ -7206,15 +7129,21 @@ class Topology():
             else:
                 f = open(path, "x") # Try to create a new File
         except:
-            raise Exception("Error: Could not create a new file at the following location: "+path)
+            if not silent:
+                print(f"Topology.ExportToBREP - Error: Could not create a new file at the following location: {path}. Returning None.")
+            return None
         if (f):
             s = Topology.BREPString(topology, version)
             f.write(s)
             f.close()    
+            if not silent:
+                print(f"Topology.ExportToBREP - Information: File save successfully. Returning True.")
             return True
-        return False
+        if not silent:
+            print(f"Topology.ExportToBREP - Error: Could not save the file at the following location: {path}. Returning None.")
+        return None
 
-    def ExportToDXF(topologies, path: str,  overwrite: bool = False, mantissa: int = 6):
+    def ExportToDXF(topologies, path: str,  overwrite: bool = False, mantissa: int = 6, silent: bool = False):
         """
         Exports the input topology to a DXF file. See https://en.wikipedia.org/wiki/AutoCAD_DXF.
         THe DXF version is 'R2010'
@@ -7230,6 +7159,8 @@ class Topology():
             If set to True the ouptut file will overwrite any pre-existing file. Otherwise, it won't. Default is False.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -7265,14 +7196,17 @@ class Topology():
             topologies = [topologies]
         topologies = [topology for topology in topologies if Topology.IsInstance(topology, "Topology")]
         if len(topologies) < 1:
-            print("Topology.ExportToDXF - Error: The inupt list parameter topologies does not contain any valid topologies. Returning None.")
+            if not silent:
+                print("Topology.ExportToDXF - Error: The inupt list parameter topologies does not contain any valid topologies. Returning None.")
+            return None
         # Make sure the file extension is .brep
         ext = path[len(path)-4:len(path)]
         if ext.lower() != ".dxf":
             path = path+".dxf"
         if not overwrite and exists(path):
-            print("Topology.ExportToDXF - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
-            return None
+            if not silent:
+                print("Topology.ExportToDXF - Error: a file already exists at the specified path and overwrite is set to False. Returning False.")
+            return False
         
         def add_vertices(vertices, msp):
             for v in vertices:
@@ -7413,7 +7347,7 @@ class Topology():
         return ''
     '''
     @staticmethod
-    def ExportToJSON(topologies, path, overwrite=False):
+    def ExportToJSON(topologies, path, overwrite: bool = False, silent: bool = False):
         """
         Exports the input list of topologies to a JSON file.
 
@@ -7425,6 +7359,8 @@ class Topology():
             The path to the JSON file.
         overwrite : bool , optional
             If set to True the ouptut file will overwrite any pre-existing file. Otherwise, it won't. Default is False.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -7438,7 +7374,8 @@ class Topology():
         if ext.lower() != ".json":
             path = path+".json"
         if not overwrite and exists(path):
-            print("Topology.ExportToJSON - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
+            if not silent:
+                print("Topology.ExportToJSON - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
             return None
         f = None
         try:
@@ -7447,17 +7384,24 @@ class Topology():
             else:
                 f = open(path, "x") # Try to create a new File
         except:
-            raise Exception("Error: Could not create a new file at the following location: "+path)
+            f = None
+            pass
+        
         if (f):
-            jsondata = json.loads(Topology.JSONString(topologies))
+            jsondata = json.loads(Topology.JSONString(topologies, silent=silent))
             if jsondata != None:
                 json.dump(jsondata, f, indent=4, sort_keys=True)
                 f.close()
                 return True
             else:
                 f.close()
+                if not silent:
+                    print(f"Topology.ExportToJSON - Error: Could not writre to the file at the following location: {path}. Returning False.")
                 return False
-        return False
+        else:
+            if not silent:
+                print(f"Topology.ExportToJSON - Error: Could not create a new file at the following location: {path}. Returning None.")
+            return None
 
     @staticmethod
     def Faces(topology, silent: bool = False):
@@ -7504,10 +7448,10 @@ class Topology():
                 print('caller name:', calframe[1][3])
             return []
         
-        return Topology.SubTopologies(topology=topology, subTopologyType="face")
+        return Topology.SubTopologies(topology=topology, subTopologyType="face", silent=silent)
 
     @staticmethod
-    def Fix(topology, topologyType: str = "CellComplex", tolerance: float = 0.0001):
+    def Fix(topology, topologyType: str = "CellComplex", tolerance: float = 0.0001, silent: bool = False):
         """
         Attempts to fix the input topology to matched the desired output type.
 
@@ -7519,6 +7463,8 @@ class Topology():
             The desired output topology type. This must be one of "vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster". It is case insensitive. Default is "CellComplex"
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -7534,6 +7480,11 @@ class Topology():
         from topologicpy.Cell import Cell
         from topologicpy.CellComplex import CellComplex
         from topologicpy.Cluster import Cluster
+
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Fix - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
 
         topology = Cluster.ByTopologies([topology])
         a_type = Topology.TypeAsString(topology).lower()
@@ -7667,7 +7618,7 @@ class Topology():
         return topology
 
     @staticmethod
-    def JSONString(topologies, mantissa: int = 6):
+    def JSONString(topologies, mantissa: int = 6, silent: bool = False):
         """
         Exports the input list of topologies to a JSON string
 
@@ -7885,6 +7836,11 @@ class Topology():
                     clean_topologies += c_topologies
                 else:
                     clean_topologies.append(topology)
+        
+        if len(clean_topologies) == 0:
+            if not silent:
+                print("Topology.JSONString - Error: The input topologies parameter does not contain any valid topologies. Returning None.")
+            return None
 
         for topology in clean_topologies:
             json_data += getJSONData(topology, topLevel=True, uuidKey="uuid")
@@ -8117,7 +8073,12 @@ class Topology():
         return True
 
     @staticmethod
-    def Filter(topologies, topologyType="any", searchType="any", key=None, value=None):
+    def Filter(topologies,
+               topologyType: str = "any",
+               searchType: str = "any",
+               key: str = None,
+               value=None,
+               silent: bool = None):
         """
         Filters the input list of topologies based on the input parameters.
 
@@ -8142,6 +8103,8 @@ class Topology():
         value : any , optional
             The value to search for at the specified key. Default is None which means
             it will filter by topology type only.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -8221,12 +8184,22 @@ class Topology():
             if has_wildcards(pattern):
                 return fnmatch.fnmatch(candidate, "*" + pattern)
             return candidate.endswith(pattern)
+        
+        # Input validation
+        if not isinstance(topologies, list):
+            if not silent:
+                print("Topology.Filter - Error: The input topologies parameter is not a valid list. Returning None.")
+            return None
+        
+        topologies = [t for t in topologies if Topology.IsInstance(t, "topology")]
+        
+        if len(topologies) == 0:
+            if not silent:
+                print("Topology.Filter - Error: The input topologies parameter does not contain any valid topologies. Returning None.")
+            return None
 
         filteredTopologies = []
         otherTopologies = []
-
-        if not isinstance(topologies, list):
-            return {"filtered": filteredTopologies, "other": otherTopologies}
 
         topologyType = "any" if topologyType is None else str(topologyType).lower()
         searchType = "any" if searchType is None else str(searchType).lower()
@@ -8679,7 +8652,7 @@ class Topology():
         }
 
     @staticmethod
-    def HighestType(topology):
+    def HighestType(topology, silent: bool = False):
         """
         Returns the highest topology type found in the input topology.
 
@@ -8695,6 +8668,11 @@ class Topology():
 
         """
         from topologicpy.Cluster import Cluster
+
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.HighestType - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
 
         if (Topology.Type(topology) == Topology.TypeID("Cluster")):
             return Cluster.HighestType(topology)
@@ -8816,17 +8794,39 @@ class Topology():
         return result
 
     @staticmethod
-    def IsInstance(topology, type: str):
+    def IsInstance(topology, type: str, silent: bool = True):
         """
         Returns True if the input topology is an instance of the class specified by the input type string.
+
+        Parameters
+        ----------
+        topology : topologic_core.Topology
+            The input topology.
+        type : str
+            The topology type string to compare against. Acceptable values are "vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster", "topology", "context", "aperture", "dictionary", "graph", "tgraph". It is case insensitive.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        topologic_core.Vertex
+            A vertex guaranteed to be inside the input topology.
+
         """
 
         from topologicpy.Core import Core
 
         if not isinstance(type, str):
-            return False
+            if not silent:
+                print("Topology.IsInstance - Error: The input type parameter is not a valid string. Returning None.")
+            return None
 
         t = type.lower()
+
+        if not t in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster", "topology", "context", "aperture", "dictionary", "graph", "tgraph"]:
+            if not silent:
+                print("Topology.IsInstance - Error: The input type parameter is not a recognised topology type. Returning None.")
+            return None
 
         is_tgraph = False
         try:
@@ -8874,7 +8874,7 @@ class Topology():
         return False
     
     @staticmethod
-    def IsPlanar(topology, mantissa: int = 6, tolerance: float = 0.0001):
+    def IsPlanar(topology, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Returns True if all the vertices of the input topology are co-planar. Returns False otherwise.
 
@@ -8886,6 +8886,8 @@ class Topology():
             The desired length of the mantissa. Default is 6
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -8916,7 +8918,8 @@ class Topology():
             return [a, b, c, d]
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.IsPlanar - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.IsPlanar - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         vertices = Topology.Vertices(topology, silent=True)
 
@@ -10156,7 +10159,7 @@ class Topology():
         }
 
     @staticmethod
-    def Move(topology, x=0, y=0, z=0):
+    def Move(topology, x=0, y=0, z=0, transferDictionaries: bool = True, silent: bool = False):
         """
         Moves the input topology.
 
@@ -10170,6 +10173,10 @@ class Topology():
             The y distance value. Default is 0.
         z : float , optional
             The z distance value. Default is 0.
+        transferDictionaries : bool , optional
+            If set to True, the dictionaries are transfered from the original object to the translated object. Default is True.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10177,10 +10184,21 @@ class Topology():
             The moved topology.
 
         """
-        return Topology.Translate(topology, x=x, y=y, z=z)
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Move - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+        
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster"]:
+            if not silent:
+                print("Topology.Move - Error: The input topology parameter is not a valid topology for moving. Returning None.")
+            return None
+        
+        return Topology.Translate(topology, x=x, y=y, z=z, transferDictionaries = transferDictionaries, silent = silent)
     
     @staticmethod
-    def NonPlanarFaces(topology, tolerance=0.0001):
+    def NonPlanarFaces(topology, tolerance: float = 0.0001, silent: bool = False):
         """
         Returns any nonplanar faces in the input topology
         
@@ -10190,6 +10208,8 @@ class Topology():
             The input topology.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -10198,10 +10218,11 @@ class Topology():
         
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.NonPlanarFaces - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.NonPlanarFaces - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
-        faces = Topology.SubTopologies(topology, subTopologyType="face")
-        return [f for f in faces if not Topology.IsPlanar(f, tolerance=tolerance)]
+        faces = Topology.SubTopologies(topology, subTopologyType="face", silent=silent)
+        return [f for f in faces if not Topology.IsPlanar(f, tolerance=tolerance, silent=silent)]
     
     @staticmethod
     def OBJString(*topologies,
@@ -10382,7 +10403,7 @@ class Topology():
         return "".join(obj_parts), "".join(mtl_parts)
     
     @staticmethod
-    def OCCTShape(topology):
+    def OCCTShape(topology, silent: bool = False):
         """
         Returns the occt shape of the input topology.
 
@@ -10390,6 +10411,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10400,11 +10423,15 @@ class Topology():
         if not Topology.IsInstance(topology, "Topology"):
             print("Topology.OCCTShape - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
-        # return topology.GetOcctShape() # H to Core
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster"]:
+            if not silent:
+                print("Topology.OCCTShape - Error: The input topology parameter does not have an OCCTShape. Returning None.")
+            return None
         return Core.InstanceCall(topology, 'GetOcctShape')
 
     @staticmethod
-    def OpenFaces(topology):
+    def OpenFaces(topology, silent: bool = False):
         """
         Returns the faces that border no cells.
 
@@ -10412,6 +10439,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -10421,13 +10450,19 @@ class Topology():
         """
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.OpenFaces - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.OpenFaces - Error: the input topology parameter is not a valid topology. Returning None.")
+            return None
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["face", "shell", "cell", "cellcomplex", "cluster"]:
+            if not silent:
+                print("Topology.OpenFaces - Error: The input topology parameter is not a suitable topology for this function. Returning None.")
             return None
         
-        return [f for f in Topology.SubTopologies(topology, subTopologyType="face") if Topology.Degree(f, hostTopology=topology) < 1]
+        return [f for f in Topology.SubTopologies(topology, subTopologyType="face", silent=silent) if Topology.Degree(f, hostTopology=topology, silent=silent) < 1]
     
     @staticmethod
-    def OpenEdges(topology):
+    def OpenEdges(topology, silent: bool = True):
         """
         Returns the edges that border only one face.
 
@@ -10435,6 +10470,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -10444,13 +10481,19 @@ class Topology():
         """
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.OpenEdges - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.OpenEdges - Error: the input topology parameter is not a valid topology. Returning None.")
+            return None
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster", "aperture"]:
+            if not silent:
+                print("Topology.OpenEdges - Error: The input topology parameter is not a suitable topology for this function. Returning None.")
             return None
         
-        return [e for e in Topology.SubTopologies(topology, subTopologyType="edge") if Topology.Degree(e, hostTopology=topology) < 2]
+        return [e for e in Topology.SubTopologies(topology, subTopologyType="edge", silent=silent) if Topology.Degree(e, hostTopology=topology, silent=silent) < 2]
     
     @staticmethod
-    def OpenVertices(topology):
+    def OpenVertices(topology, silent: bool = False):
         """
         Returns the vertices that border only one edge.
 
@@ -10458,6 +10501,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -10467,13 +10512,19 @@ class Topology():
         """
 
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.OpenVertices - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.OpenVertices - Error: the input topology parameter is not a valid topology. Returning None.")
+            return None
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster", "aperture"]:
+            if not silent:
+                print("Topology.OpenVertices - Error: The input topology parameter is not a suitable topology for this function. Returning None.")
             return None
         
-        return [v for v in Topology.SubTopologies(topology, subTopologyType="vertex") if Topology.Degree(v, hostTopology=topology) < 2]
+        return [v for v in Topology.SubTopologies(topology, subTopologyType="vertex", silent=silent) if Topology.Degree(v, hostTopology=topology, silent=silent) < 2]
     
     @staticmethod
-    def Orient(topology, origin=None, dirA=[0, 0, 1], dirB=[0, 0, 1], tolerance=0.0001):
+    def Orient(topology, origin=None, dirA=[0, 0, 1], dirB=[0, 0, 1], tolerance: float = 0.0001, silent: bool = False):
         """
         Orients the input topology such that the input such that the input dirA vector is parallel to the input dirB vector.
 
@@ -10489,6 +10540,8 @@ class Topology():
             The target direction vector. The input topology will be rotated such that the input dirA vector is parallel to this vector. Default is [0, 0, 1].
         tolerance : float , optional
             The desired tolerance. Default is 0.0001
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10499,7 +10552,13 @@ class Topology():
         from topologicpy.Vertex import Vertex
         from topologicpy.Vector import Vector
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.Orient - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.Orient - Error: the input topology parameter is not a valid topology. Returning None.")
+            return None
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster", "aperture"]:
+            if not silent:
+                print("Topology.Orient - Error: The input topology parameter is not suitable for this function. Returning None.")
             return None
         if not Topology.IsInstance(origin, "Vertex"):
             origin = Topology.Centroid(topology)
@@ -10510,7 +10569,7 @@ class Topology():
         return return_topology
 
     @staticmethod
-    def Place(topology, originA=None, originB=None, mantissa: int = 6):
+    def Place(topology, originA=None, originB=None, mantissa: int = 6, silent: bool = False):
         """
         Places the input topology at the specified location.
 
@@ -10524,6 +10583,8 @@ class Topology():
             The new location at which to place the topology. If set to None, the world origin (0, 0, 0) is used. Default is None.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10533,6 +10594,13 @@ class Topology():
         """
         from topologicpy.Vertex import Vertex
         if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.Place - Error: The input topology is not a valid topology. Returning None.")
+            return None
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["vertex", "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster", "aperture"]:
+            if not silent:
+                print("Topology.Place - Error: The input topology parameter is not suitable for this function. Returning None.")
             return None
         if not Topology.IsInstance(originA, "Vertex"):
             originA = Topology.Centroid(topology)
@@ -10589,13 +10657,18 @@ class Topology():
         
         if not Topology.IsInstance(topology, "topology"):
             if not silent:
-                print("Topology.CanonicalMatrix - Error: The input topology parameter is not a valid topology. Returning None.")
+                print("Topology.PrincipalAxes - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+        topology_type = Topology.TypeAsString(topology)
+        if not topology_type.lower() in ["face", "shell", "cell", "cellcomplex", "cluster", "aperture"]:
+            if not silent:
+                print("Topology.PrincipalAxes - Error: The input topology parameter is not suitable for this function. Returning None.")
             return None
         
         faces = Topology.Faces(topology)
         if len(faces) == 0:
             if not silent:
-                print("Topology.CanonicalMatrix - Error: The input topology parameter does not contain any faces. Returning None.")
+                print("Topology.PrincipalAxes - Error: The input topology parameter does not contain any faces. Returning None.")
             return None
         
         # Step 1: Derive a copy topology to work with.
@@ -10671,23 +10744,18 @@ class Topology():
                 print('caller name:', calframe[1][3])
             return None
         return_topology = topology
-        if Topology.IsInstance(topology, "Vertex") or Topology.IsInstance(topology, "Edge"): #Vertex or Edge or Cluster, return the original topology
-            return return_topology
+        if Topology.IsInstance(topology, "vertex") or Topology.IsInstance(topology, "edge"):
+            return_topoology = topology
         elif Topology.IsInstance(topology, "Wire"):
             return_topology = Wire.RemoveCollinearEdges(topology, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
-            return return_topology
         elif Topology.IsInstance(topology, "Face"):
             return_topology = Face.RemoveCollinearEdges(topology, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
-            return return_topology
         elif Topology.IsInstance(topology, "Shell"):
             return_topology = Shell.RemoveCollinearEdges(topology, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
-            return return_topology
         elif Topology.IsInstance(topology, "Cell"):
             return_topology = Cell.RemoveCollinearEdges(topology, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
-            return return_topology
         elif Topology.IsInstance(topology, "CellComplex"):
             return_topology = CellComplex.RemoveCollinearEdges(topology, angTolerance=angTolerance, tolerance=tolerance, silent=silent)
-            return return_topology
         elif Topology.IsInstance(topology, "Cluster"):
             topologies = []
             topologies += Cluster.FreeVertices(topology)
@@ -10696,10 +10764,17 @@ class Topology():
             for face in faces:
                 topologies.append(Face.RemoveCollinearEdges(face, angTolerance=angTolerance, tolerance=tolerance, silent=silent))
             return_topology = Topology.SelfMerge(Cluster.ByTopologies(topologies), tolerance=tolerance)
+        else:
+            if not silent:
+                print("Topology.RemoveCollinearEdges - Error: The input topology parameter is not a valid topology. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print('caller name:', calframe[1][3])
+            return_topology = None
         return return_topology
 
     @staticmethod
-    def RemoveContent(topology, contents):
+    def RemoveContent(topology, contents, silent: bool = False):
         """
         Removes the input content list from the input topology
 
@@ -10707,8 +10782,10 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
-        contentList : list
+        contents : list
             The input list of contents.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10716,6 +10793,10 @@ class Topology():
             The input topology with the input list of contents removed.
 
         """
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.RemoveContent - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
         if isinstance(contents, list) == False:
             contents = [contents]
         # return topology.RemoveContents(contents) # H to Core
@@ -10834,7 +10915,7 @@ class Topology():
         return return_topology
 
     @staticmethod
-    def RemoveEdges(topology, edges=[], tolerance=0.0001):
+    def RemoveEdges(topology, edges: list = [], tolerance: float = 0.0001, silent: bool = False):
         """
         Removes the input list of faces from the input topology
 
@@ -10846,6 +10927,8 @@ class Topology():
             The input list of edges.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10856,6 +10939,8 @@ class Topology():
 
         from topologicpy.Cluster import Cluster
         if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.RemoveEdges - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         edges = [e for e in edges if Topology.IsInstance(e, "Edge")]
         if len(edges) < 1:
@@ -10894,7 +10979,7 @@ class Topology():
             return Topology.SelfMerge(Cluster.ByTopologies(remaining_edges), tolerance=tolerance)
 
     @staticmethod
-    def RemoveFaces(topology, faces=[], tolerance=0.0001):
+    def RemoveFaces(topology, faces: list = [], tolerance: float = 0.0001, silent: bool = False):
         """
         Removes the input list of faces from the input topology
 
@@ -10906,6 +10991,8 @@ class Topology():
             The input list of faces.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10916,6 +11003,8 @@ class Topology():
 
         from topologicpy.Cluster import Cluster
         if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.RemoveFaces - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         faces = [f for f in faces if Topology.IsInstance(f, "Face")]
         if len(faces) < 1:
@@ -10940,7 +11029,7 @@ class Topology():
         return Topology.SelfMerge(Cluster.ByTopologies(remaining_faces), tolerance=tolerance)
     
     @staticmethod
-    def RemoveFacesBySelectors(topology, selectors=[], tolerance = 0.0001):
+    def RemoveFacesBySelectors(topology, selectors: list = [], tolerance: float = 0.0001, silent: bool = False):
         """
         Removes faces that contain the input list of selectors (vertices) from the input topology
 
@@ -10952,6 +11041,8 @@ class Topology():
             The input list of selectors (vertices).
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -10962,9 +11053,13 @@ class Topology():
         from topologicpy.Vertex import Vertex
 
         if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.RemoveFacesBySelectors - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         selectors = [v for v in selectors if Topology.IsInstance(v, "Vertex")]
         if len(selectors) < 1:
+            if not silent:
+                print("Topology.RemoveFacesBySelectors - Warning: The input selectors parameter does not contain any valid selectors. Returning the input topology.")
             return topology
         t_faces = Topology.Faces(topology)
         to_remove = []
@@ -10979,10 +11074,10 @@ class Topology():
                 to_remove.append(t_f)
         if len(to_remove) < 1:
             return topology
-        return Topology.RemoveFaces(topology, faces = to_remove)
+        return Topology.RemoveFaces(topology, faces = to_remove, silent=silent)
 
     @staticmethod
-    def RemoveVertices(topology, vertices=[], tolerance=0.0001):
+    def RemoveVertices(topology, vertices: list = [], tolerance: float = 0.0001, silent: bool = False):
         """
         Removes the input list of vertices from the input topology
 
@@ -10994,6 +11089,8 @@ class Topology():
             The input list of vertices.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -11004,9 +11101,13 @@ class Topology():
 
         from topologicpy.Cluster import Cluster
         if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.RemoveVertices - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         vertices = [v for v in vertices if Topology.IsInstance(v, "Vertex")]
         if len(vertices) < 1:
+            if not silent:
+                print("Topology.RemoveFacesBySelectors - Warning: The input vertices parameter does not contain any valid selectors. Returning the input topology.")
             return topology
         t_vertices = Topology.Vertices(topology, silent=True)
         t_edges = Topology.Edges(topology)
@@ -11042,7 +11143,7 @@ class Topology():
             return Topology.SelfMerge(Cluster.ByTopologies(remaining_vertices), tolerance=tolerance)
     
     @staticmethod
-    def Cleanup(topology=None):
+    def Cleanup(topology=None, silent: bool = False):
         """
         Cleans up all resources in which are managed by topologic library. Use this to manage your application's memory consumption.
         USE WITH CARE. This methods deletes dictionaries, contents, and contexts
@@ -11051,6 +11152,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology , optional
             If specified the resources used by the input topology will be deleted. If not, ALL resources will be deleted.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -11059,13 +11162,14 @@ class Topology():
         """
         if not topology == None:
             if not Topology.IsInstance(topology, "Topology"):
-                print("Topology.Cleanup - Error: The input topology parameter is not a valid topology. Returning None.")
+                if not silent:
+                    print("Topology.Cleanup - Error: The input topology parameter is not a valid topology. Returning None.")
                 return None
         Core.Topology.Cleanup(topology)
         return topology
 
     @staticmethod
-    def ReplaceVertices(topology, verticesA: list = [], verticesB: list = [], mantissa: int = 6, tolerance: float = 0.0001):
+    def ReplaceVertices(topology, verticesA: list = [], verticesB: list = [], mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Replaces the vertices in the first input list with the vertices in the second input list and rebuilds the input topology. The two lists must be of the same length.
 
@@ -11081,6 +11185,8 @@ class Topology():
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -11088,9 +11194,19 @@ class Topology():
             The new topology.
 
         """
-        if not len(verticesA) == len(verticesB):
-            print("Topology.ReplaceVertices - Error: The input parameters verticesA and verticesB must be the same length")
+
+        if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.ReplaceVertices - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
+        if not len(verticesA) == len(verticesB):
+            if not silent:
+                print("Topology.ReplaceVertices - Error: The input parameters verticesA and verticesB must be the same length. Returning None.")
+            return None
+        if not len(verticesA) == 0:
+            if not silent:
+                print("Topology.ReplaceVertices - Warning: The input parameters verticesA and verticesB have not valid vertices. Returning the inoput topology.")
+            return topology
         from topologicpy.Vertex import Vertex
         geom = Topology.Geometry(topology, mantissa=mantissa)
         g_verts = geom['vertices']
@@ -11464,7 +11580,7 @@ class Topology():
 
     
     @staticmethod
-    def SelectSubTopology(topology, selector, subTopologyType="vertex"):
+    def SelectSubTopology(topology, selector, subTopologyType: str = "vertex", silent: bool = False):
         """
         Returns the subtopology within the input topology based on the input selector and the subTopologyType.
 
@@ -11476,6 +11592,8 @@ class Topology():
             A vertex located on the desired subtopology.
         subTopologyType : str , optional.
             The desired subtopology type. This can be of "vertex", "edge", "wire", "face", "shell", "cell", or "cellcomplex". It is case insensitive. Default is "vertex".
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -11484,8 +11602,12 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
+            if not silent:
+                print("Topology.SelectSubTopology - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         if not Topology.IsInstance(selector, "Vertex"):
+            if not silent:
+                print("Topology.SelectSubtopology - Error: The input selector parameter is not a valid vertex. Returning None.")
             return None
         t = 1
         if subTopologyType.lower() == "vertex":
@@ -11505,88 +11627,6 @@ class Topology():
         # return topology.SelectSubtopology(selector, t) # H to Core
         return Core.InstanceCall(topology, 'SelectSubtopology', selector, t)
 
-    
-    # @staticmethod
-    # def SelfMerge(topology, transferDictionaries: bool = False, tolerance: float = 0.0001):
-    #     """
-    #     Self merges the input topology to return the most logical topology type given the input data.
-
-    #     Parameters
-    #     ----------
-    #     topology : topologic_core.Topology
-    #         The input topology.
-    #     tolerance : float , optional
-    #         The desired tolerance. Default is 0.0001
-
-    #     Returns
-    #     -------
-    #     topologic_core.Topology
-    #         The self-merged topology.
-
-    #     """
-    #     from topologicpy.Cluster import Cluster
-
-    #     if not Topology.IsInstance(topology, "Topology"):
-    #         return None #return Silently
-    #     if not Topology.Type(topology) == Topology.TypeID("Cluster"):
-    #         topology = Cluster.ByTopologies([topology])
-    #     resultingTopologies = []
-    #     topCC = Topology.CellComplexes(topology)
-    #     topCells = Topology.Cells(topology)
-    #     topShells = Topology.Shells(topology)
-    #     topFaces = Topology.Faces(topology)
-    #     topWires = Topology.Wires(topology)
-    #     topEdges = Topology.Edges(topology)
-    #     topVertices = Topology.Vertices(topology, silent=True)
-    #     if len(topCC) == 1:
-    #         cc = topCC[0]
-    #         ccVertices = Topology.Vertices(cc)
-    #         if len(topVertices) == len(ccVertices):
-    #             resultingTopologies.append(cc)
-    #     if len(topCC) == 0 and len(topCells) == 1:
-    #         cell = topCells[0]
-    #         ccVertices = Topology.Vertices(cell)
-    #         if len(topVertices) == len(ccVertices):
-    #             resultingTopologies.append(cell)
-    #     if len(topCC) == 0 and len(topCells) == 0 and len(topShells) == 1:
-    #         shell = topShells[0]
-    #         ccVertices = Topology.Vertices(shell)
-    #         if len(topVertices) == len(ccVertices):
-    #             resultingTopologies.append(shell)
-    #     if len(topCC) == 0 and len(topCells) == 0 and len(topShells) == 0 and len(topFaces) == 1:
-    #         face = topFaces[0]
-    #         ccVertices = Topology.Vertices(face)
-    #         if len(topVertices) == len(ccVertices):
-    #             resultingTopologies.append(face)
-    #     if len(topCC) == 0 and len(topCells) == 0 and len(topShells) == 0 and len(topFaces) == 0 and len(topWires) == 1:
-    #         wire = topWires[0]
-    #         ccVertices = Topology.Vertices(wire)
-    #         if len(topVertices) == len(ccVertices):
-    #             resultingTopologies.append(wire)
-    #     if len(topCC) == 0 and len(topCells) == 0 and len(topShells) == 0 and len(topFaces) == 0 and len(topWires) == 0 and len(topEdges) == 1:
-    #         edge = topEdges[0]
-    #         ccVertices = Topology.Vertices(edge)
-    #         if len(topVertices) == len(ccVertices):
-    #             resultingTopologies.append(edge)
-    #     if len(topCC) == 0 and len(topCells) == 0 and len(topShells) == 0 and len(topFaces) == 0 and len(topWires) == 0 and len(topEdges) == 0 and len(topVertices) == 1:
-    #         vertex = topVertices[0]
-    #         resultingTopologies.append(vertex)
-    #     if len(resultingTopologies) == 1:
-    #         return resultingTopologies[0]
-    #     try:
-    #         return_topology = topology.SelfMerge()
-    #     except:
-    #         return_topology = None
-    #     if Topology.IsInstance(return_topology, "CellComplex"):
-    #         cells = Topology.Cells(return_topology)
-    #         if isinstance(cells, list):
-    #             if len(cells) > 1:
-    #                 topA = cells[0]
-    #                 topB = Cluster.ByTopologies(cells[1:])
-    #                 return_topology = Topology.Merge(topA, topB, tolerance=tolerance)
-    #             else:
-    #                 return_topology = cells[0]
-    #     return return_topology
 
     @staticmethod
     def SelfMerge(topology,
@@ -11609,8 +11649,7 @@ class Topology():
             If set to True, the dictionary of the input Cluster is transferred to
             the returned singleton candidate when applicable. Default is False.
         ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the created/imported topology or graph. Default is True.
+            If True, the returned topology is annotated with TopologicPy ontology metadata. Default is False.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
@@ -11765,7 +11804,7 @@ class Topology():
         return Topology._OntologyAnnotate(return_topology, ontology=ontology, generatedBy="Topology.SelfMerge", annotateSubtopologies=True, silent=True)
     
     @staticmethod
-    def SetDictionary(topology, dictionary, silent=False):
+    def SetDictionary(topology, dictionary, silent: biool = False):
         """
         Sets the input topology's dictionary to the input dictionary.
 
@@ -11895,8 +11934,14 @@ class Topology():
                 topology["dictionary"].setdefault("active", topology.get("active", True))
 
             if _is_tgraph_edge_record(topology):
+                # Preserve legacy structural keys for backwards compatibility,
+                # and also expose the canonical _005 aliases used by the
+                # ontology/RDF layer. Ontology_005 filters active/directed and
+                # maps src/dst to top:srcId/top:dstId when exported.
                 topology["dictionary"].setdefault("src", topology.get("src"))
                 topology["dictionary"].setdefault("dst", topology.get("dst"))
+                topology["dictionary"].setdefault("srcId", topology.get("src"))
+                topology["dictionary"].setdefault("dstId", topology.get("dst"))
                 topology["dictionary"].setdefault("directed", topology.get("directed", False))
 
             return topology
@@ -11924,7 +11969,29 @@ class Topology():
         return topology
     
     @staticmethod
-    def SetSnapshot(topology, snapshot=None, timestamp=None, key="timestamp", silent=False):
+    def SetSnapshot(topology, snapshot=None, timestamp=None, key: str = "timestamp", silent: bool = False):
+        """
+        Sets a date/time stamped snapshot and stores it in the input topology's content system.
+
+        Parameters
+        ----------
+        topology : topologic_core.Topology
+            The input topology
+        snapshot : topologic_core.Topology
+            The snapshot topology to be stored.
+        timestamp : datetime
+            The date/time stamp to store in the snapshot's dictionary
+        key : str, optional
+            The dictionary key under which to store the timestamp.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        topologic_core.Topology
+            The input topology with the snapshot stored in it.
+
+        """
         from topologicpy.Dictionary import Dictionary
         from datetime import datetime
         def is_valid_timestamp(timestamp):
@@ -11973,7 +12040,7 @@ class Topology():
         return topology
     
     @staticmethod
-    def SharedTopologies(topologyA, topologyB):
+    def SharedTopologies(topologyA, topologyB, silent: bool = False):
         """
         Returns the shared topologies between the two input topologies
 
@@ -11983,6 +12050,8 @@ class Topology():
             The first input topology.
         topologyB : topologic_core.Topology
             The second input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -11991,10 +12060,12 @@ class Topology():
 
         """
         if not Topology.IsInstance(topologyA, "Topology"):
-            print("Topology.SharedTopologies - Error: the input topologyA parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.SharedTopologies - Error: the input topologyA parameter is not a valid topology. Returning None.")
             return None
         if not Topology.IsInstance(topologyB, "Topology"):
-            print("Topology.SharedTopologies - Error: the input topologyB parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.SharedTopologies - Error: the input topologyB parameter is not a valid topology. Returning None.")
             return None
         vOutput = []
         eOutput = []
@@ -12011,7 +12082,7 @@ class Topology():
         return {"vertices":vOutput, "edges":eOutput, "wires":wOutput, "faces":fOutput}
 
     @staticmethod
-    def SharedVertices(topologyA, topologyB):
+    def SharedVertices(topologyA, topologyB, silent: bool = False):
         """
         Returns the shared vertices between the two input topologies
 
@@ -12021,6 +12092,8 @@ class Topology():
             The first input topology.
         topologyB : topologic_core.Topology
             The second input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -12028,18 +12101,22 @@ class Topology():
             The list of shared vertices.
 
         """
-        d = Topology.SharedTopologies(topologyA, topologyB)
-        l = None
-        if isinstance(d, dict):
-            try:
-                l = d['vertices']
-            except:
-                l = None
-        return l
+        if not Topology.IsInstance(topologyA, "Topology"):
+            if not silent:
+                print("Topology.SharedVertices - Error: the input topologyA parameter is not a valid topology. Returning None.")
+            return None
+        if not Topology.IsInstance(topologyB, "Topology"):
+            if not silent:
+                print("Topology.SharedVertices - Error: the input topologyB parameter is not a valid topology. Returning None.")
+            return None
+        
+        vOutput = []
+        _ = Core.InstanceCall(topologyA, 'SharedTopologies', topologyB, 1, vOutput)
+        return vOutput
     
     
     @staticmethod
-    def SharedEdges(topologyA, topologyB):
+    def SharedEdges(topologyA, topologyB, silent: bool = False):
         """
         Returns the shared edges between the two input topologies
 
@@ -12056,17 +12133,20 @@ class Topology():
             The list of shared edges.
 
         """
-        d = Topology.SharedTopologies(topologyA, topologyB)
-        l = None
-        if isinstance(d, dict):
-            try:
-                l = d['edges']
-            except:
-                l = None
-        return l
+        if not Topology.IsInstance(topologyA, "Topology"):
+            if not silent:
+                print("Topology.SharedEdges - Error: the input topologyA parameter is not a valid topology. Returning None.")
+            return None
+        if not Topology.IsInstance(topologyB, "Topology"):
+            if not silent:
+                print("Topology.SharedEdges - Error: the input topologyB parameter is not a valid topology. Returning None.")
+            return None
+        eOutput = []
+        _ = Core.InstanceCall(topologyA, 'SharedTopologies', topologyB, 2, eOutput)
+        return eOutput
     
     @staticmethod
-    def SharedWires(topologyA, topologyB):
+    def SharedWires(topologyA, topologyB, silent: bool = False):
         """
         Returns the shared wires between the two input topologies
 
@@ -12083,17 +12163,20 @@ class Topology():
             The list of shared wires.
 
         """
-        d = Topology.SharedTopologies(topologyA, topologyB)
-        l = None
-        if isinstance(d, dict):
-            try:
-                l = d['wires']
-            except:
-                l = None
-        return l
+        if not Topology.IsInstance(topologyA, "Topology"):
+            if not silent:
+                print("Topology.SharedWires - Error: the input topologyA parameter is not a valid topology. Returning None.")
+            return None
+        if not Topology.IsInstance(topologyB, "Topology"):
+            if not silent:
+                print("Topology.SharedWires - Error: the input topologyB parameter is not a valid topology. Returning None.")
+            return None
+        wOutput = []
+        _ = Core.InstanceCall(topologyA, 'SharedTopologies', topologyB, 4, wOutput)
+        return wOutput
     
     @staticmethod
-    def SharedFaces(topologyA, topologyB):
+    def SharedFaces(topologyA, topologyB, silent: bool = False):
         """
         Returns the shared faces between the two input topologies
 
@@ -12110,14 +12193,17 @@ class Topology():
             The list of shared faces.
 
         """
-        d = Topology.SharedTopologies(topologyA, topologyB)
-        l = None
-        if isinstance(d, dict):
-            try:
-                l = d['faces']
-            except:
-                l = None
-        return l
+        if not Topology.IsInstance(topologyA, "Topology"):
+            if not silent:
+                print("Topology.SharedFaces - Error: the input topologyA parameter is not a valid topology. Returning None.")
+            return None
+        if not Topology.IsInstance(topologyB, "Topology"):
+            if not silent:
+                print("Topology.SharedFaces - Error: the input topologyB parameter is not a valid topology. Returning None.")
+            return None
+        fOutput = []
+        _ = Core.InstanceCall(topologyA, 'SharedTopologies', topologyB, 8, fOutput)
+        return fOutput
 
     @staticmethod
     def Shells(topology, silent: bool = False):
@@ -12153,13 +12239,13 @@ class Topology():
                 print("Topology.Shells - Warning: The input is a lower dimension than a shell. Returning an empty list.")
             return []
         
-        return Topology.SubTopologies(topology=topology, subTopologyType="shell")
+        return Topology.SubTopologies(topology=topology, subTopologyType="shell", silent=silent)
 
     @staticmethod
     def ShortestEdge(topologyA,
-                        topologyB,
-                        tolerance: float = 0.0001,
-                        silent: bool = False):
+                     topologyB,
+                     tolerance: float = 0.0001,
+                     silent: bool = False):
         """
         Returns the shortest connecting Edge between two topologies.
 
@@ -12595,11 +12681,11 @@ class Topology():
 
     @staticmethod
     def ShortestDistance(topologyA,
-                            topologyB,
-                            mantissa: int = 6,
-                            tolerance: float = 0.0001,
-                            silent: bool = False
-                            ):
+                         topologyB,
+                         mantissa: int = 6,
+                         tolerance: float = 0.0001,
+                         silent: bool = False
+                         ):
         """
         Returns the shortest Euclidean distance between two topologies.
 
@@ -12631,9 +12717,19 @@ class Topology():
             computed.
         """
         from topologicpy.Edge import Edge
-        
+
+        if not Topology.IsInstance(topologyA, "Topology"):
+            if not silent:
+                print("Topology.ShortestDistance - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(topologyB, "Topology"):
+            if not silent:
+                print("Topology.ShortestDistance - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+
         # If the two topologies intersect, then the shortest distance is 0
-        if Topology.IsInstance(Topology.Intersect(topologyA, topologyB), "topology"):
+        if Topology.IsInstance(Topology.Intersect(topologyA, topologyB, tolerance=tolerance, silent=silent), "topology"):
             return 0
         
         edge = Topology.ShortestEdge(topologyA,
@@ -13607,7 +13703,29 @@ class Topology():
         return min_faces
     
     @staticmethod
-    def Snapshots(topology, key="timestamp", start=None, end=None, silent=False):
+    def Snapshots(topology, start=None, end=None, key="timestamp", silent: bool = False):
+        """
+        Returns the list of the stored snapshots within the start and end timestamps.
+
+        Parameters
+        ----------
+        topology : topologic_core.Topology
+            The input topology.
+        start : datetime
+            The start date/time.
+        end : datetime
+            The end date/time.
+        key : str , optional
+            The dictionary key under which the timestampe is store. Default is "timestamp".
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        
+        Returns
+        -------
+        list
+            The list of the snapshots that fit the input parameters.
+        
+        """
         from topologicpy.Dictionary import Dictionary
         from datetime import datetime
         def is_valid_timestamp(timestamp):
@@ -13634,7 +13752,7 @@ class Topology():
         if not Topology.IsInstance(topology, "Topology"):
             if not silent:
                 print("Topology.Snapshots - Error: The input topology parameter is not a valid topology. Returning None.")
-                return None
+            return None
         if start == None:
             start = datetime.datetime(year=1900, month=1, day=1) # Set the start date to a date in the distant past
         if end == None:
@@ -13646,7 +13764,7 @@ class Topology():
         if not is_valid_timestamp(end):
             if not silent:
                 print("Topology.Snapshots - Error: The input end parameter is not a valid timestamp. Returning None.")
-                return None
+            return None
         contents = Topology.Contents(topology)    
         snapshots = []
         for content in contents:
@@ -13659,7 +13777,14 @@ class Topology():
         return snapshots
 
     @staticmethod
-    def SortBySelectors(topologies, selectors, exclusive=False, tolerance=0.0001):
+    def SortBySelectors(
+        topologies,
+        selectors,
+        exclusive: bool = False,
+        bvhThreshold: int = 256,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+        ):
         """
         Sorts the input list of topologies according to the input list of selectors.
 
@@ -13668,42 +13793,183 @@ class Topology():
         topologies : list
             The input list of topologies.
         selectors : list
-            The input list of selectors (vertices).
+            The input list of selectors. These should be vertices.
         exclusive : bool , optional
-            If set to True only one selector can be used to select on topology. Default is False.
+            If set to True, each topology can be selected by at most one selector.
+            Default is False.
+        bvhThreshold : int , optional
+            BVH acceleration is used only when len(topologies) * len(selectors)
+            is greater than or equal to this value. Set to 0 to always attempt BVH.
+            Default is 256.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
-
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        
         Returns
         -------
         dict
-            A dictionary containing the list of sorted and unsorted topologies. The keys are "sorted" and "unsorted".
+            A dictionary containing the list of sorted and unsorted topologies.
+            The keys are "sorted" and "unsorted".
 
         """
+
         from topologicpy.Vertex import Vertex
 
-        usedTopologies = []
+        if not isinstance(topologies, list):
+            if not silent:
+                print("Topology.SortBySelectors - Error: The input topologies parameter is not a valid list. Returning None.")
+            return None
+
+        if not isinstance(selectors, list):
+            if not silent:
+                print("Topology.SortBySelectors - Error: The input selectors parameter is not a valid list. Returning None.")
+            return None
+
+        topologies = [t for t in topologies if Topology.IsInstance(t, "topology")]
+
+        # NOTE: The original code had this condition inverted.
+        if len(topologies) == 0:
+            if not silent:
+                print("Topology.SortBySelectors - Error: The input topologies parameter does not contain any valid topologies. Returning None.")
+            return None
+
+        if len(selectors) == 0:
+            return {"sorted": [], "unsorted": topologies}
+
+        n_topologies = len(topologies)
+        n_selectors = len(selectors)
+
         sortedTopologies = []
-        unsortedTopologies = []
-        for i in range(len(topologies)):
-            usedTopologies.append(0)
-        
-        for i in range(len(selectors)):
+        selectedTopologies = [0] * n_topologies
+        usedTopologies = [0] * n_topologies
+
+        indexByID = {id(t): i for i, t in enumerate(topologies)}
+
+        def _is_valid_vertex(selector):
+            try:
+                return Topology.IsInstance(selector, "vertex")
+            except:
+                return False
+
+        def _is_internal(selector, topology):
+            try:
+                return Vertex.IsInternal(selector, topology, tolerance=tolerance)
+            except:
+                return False
+
+        def _candidate_indices_from_bvh_result(result):
+            """
+            Attempts to normalize different possible BVH.Clashes return formats
+            into a sorted list of topology indices.
+            """
+            if result is None:
+                return []
+
+            if not isinstance(result, list):
+                result = [result]
+
+            indices = []
+
+            for item in result:
+                if isinstance(item, int):
+                    if 0 <= item < n_topologies:
+                        indices.append(item)
+                    continue
+
+                if id(item) in indexByID:
+                    indices.append(indexByID[id(item)])
+                    continue
+
+                if isinstance(item, dict):
+                    # Support common possible BVH item dictionary formats.
+                    for key in ["topology", "item", "object", "content"]:
+                        value = item.get(key, None)
+                        if id(value) in indexByID:
+                            indices.append(indexByID[id(value)])
+                            break
+
+                    for key in ["index", "id"]:
+                        value = item.get(key, None)
+                        if isinstance(value, int) and 0 <= value < n_topologies:
+                            indices.append(value)
+                            break
+
+            return sorted(set(indices))
+
+        def _all_candidate_indices():
+            return list(range(n_topologies))
+
+        useBVH = (n_topologies * n_selectors) >= max(0, bvhThreshold)
+        bvh = None
+
+        if useBVH:
+            try:
+                from topologicpy.BVH import BVH
+
+                try:
+                    bvh = BVH.ByTopologies(topologies, tolerance=tolerance, silent=True)
+                except TypeError:
+                    # Fallback for older/newer BVH signatures.
+                    bvh = BVH.ByTopologies(topologies)
+
+                if bvh is None:
+                    useBVH = False
+
+            except:
+                useBVH = False
+
+        for selector in selectors:
             found = False
-            for j in range(len(topologies)):
-                if usedTopologies[j] == 0:
-                    if Vertex.IsInternal( selectors[i], topologies[j], tolerance=tolerance):
-                        sortedTopologies.append(topologies[j])
-                        if exclusive == True:
-                            usedTopologies[j] = 1
-                        found = True
-                        break
-            if found == False:
+
+            if not _is_valid_vertex(selector):
                 sortedTopologies.append(None)
-        for i in range(len(usedTopologies)):
-            if usedTopologies[i] == 0:
-                unsortedTopologies.append(topologies[i])
-        return {"sorted":sortedTopologies, "unsorted":unsortedTopologies}
+                continue
+
+            candidateIndices = None
+
+            if useBVH and bvh is not None:
+                try:
+                    try:
+                        candidates = BVH.Clashes(bvh, selector, tolerance=tolerance, silent=True)
+                    except TypeError:
+                        try:
+                            candidates = BVH.Clashes(bvh, selector, tolerance=tolerance)
+                        except TypeError:
+                            candidates = BVH.Clashes(bvh, selector)
+
+                    candidateIndices = _candidate_indices_from_bvh_result(candidates)
+
+                except:
+                    candidateIndices = None
+
+            if candidateIndices is None:
+                candidateIndices = _all_candidate_indices()
+
+            for j in candidateIndices:
+                if exclusive and usedTopologies[j] == 1:
+                    continue
+
+                if _is_internal(selector, topologies[j]):
+                    sortedTopologies.append(topologies[j])
+                    selectedTopologies[j] = 1
+
+                    if exclusive:
+                        usedTopologies[j] = 1
+
+                    found = True
+                    break
+
+            if not found:
+                sortedTopologies.append(None)
+
+        unsortedTopologies = [
+            topologies[i]
+            for i in range(n_topologies)
+            if selectedTopologies[i] == 0
+        ]
+
+        return {"sorted": sortedTopologies, "unsorted": unsortedTopologies}
 
     @staticmethod
     def SpatialRelationship(topologyA,
@@ -13711,6 +13977,7 @@ class Topology():
                             include: list = ["contains", "coveredBy", "covers", "crosses", "disjoint", "equals", "overlaps", "touches","within", "proximity"],
                             proximityValues = [1, 5, 10],
                             proximityLabels = ["near", "intermediate", "far"],
+                            useShortestDistance: bool = False,
                             mantissa: int = 6,
                             tolerance: float = 0.0001,
                             silent: bool = False):
@@ -13746,6 +14013,9 @@ class Topology():
         proximityLabels: list , optional
             The list of range labels (e.g. "near", "intermediate", "far") that correspond to the proximityValues list.
             The list must have the same number of elements as the proximityValues list. Default is ["near", "intermediate", "far"]
+        useShortestDistance : bool , optional
+            If set to True, the shortest distance between the two input topologies is used.
+            Otherwise, the distance between their centroids is used. Default is False.
         mantissa : int , optional
             The desired length of the mantissa. Default is 6.
         tolerance : float , optional
@@ -13783,302 +14053,689 @@ class Topology():
 
         inc = {s.lower() for s in include}
 
-        # ---------- helpers ----------
-        def _dim(t):
-            return Topology.Dimensionality(t)
-
-        def _ext_boundary_or_none(t):
-            # Cells/Shells use their external shell; closed shells and wires return None
-            if Topology.IsInstance(t, "CellComplex"):
-                return Topology.ExternalBoundary(t, silent=True)
-            if Topology.IsInstance(t, "Shell"):
-                eb = Topology.ExternalBoundary(t, silent=True)
-                if eb == None:
-                    return t
-            return Topology.ExternalBoundary(t, silent=True)
-
-        def _intersects(a, b):
-            return Topology.Intersect(a, b, tolerance=tolerance, silent=silent) is not None
-
-        def _symdiff_is_none(a, b):
-            return Topology.SymmetricDifference(a, b, tolerance=tolerance, silent=silent) is None
-
-        def _interior_intersection_exists(a, b):
-            inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
-            if inter is None: return False
-            eb_parts = []
-            eb_a = _ext_boundary_or_none(a)
-            eb_b = _ext_boundary_or_none(b)
-            if eb_a is not None: eb_parts.append(eb_a)
-            if eb_b is not None: eb_parts.append(eb_b)
-            if eb_parts:
-                eb_union = Cluster.ByTopologies(eb_parts)
-                interior_part = Topology.Difference(inter, eb_union, tolerance=tolerance, silent=silent)
-                return interior_part is not None
-            # no boundaries to subtract ⇒ any non-null intersection implies interior–interior
-            return True
-
-        def _vertex_is_endpoint_of_edge(v, e):
-            eb_e = _ext_boundary_or_none(e)
-            if eb_e is None:
-                return False
-            ev = Topology.Vertices(eb_e) or []
-            for p in ev:
-                if Topology.IsSame(v, p):
-                    return True
-                try:
-                    if Vertex.Distance(v, p, mantissa=mantissa) <= tolerance:
-                        return True
-                except Exception:
-                    pass
-            return False
-
-        def _vertex_is_interior_of_edge(v, e):
-            if Topology.Intersect(v, e, tolerance=tolerance, silent=silent) is None:
-                return False
-            return not _vertex_is_endpoint_of_edge(v, e)
-        
-        def _edge_endpoints(e):
-            """Return the two endpoint vertices of an Edge e."""
-            from topologicpy.Edge import Edge as _E
-            try:
-                v0 = _E.StartVertex(e, silent=True)
-                v1 = _E.EndVertex(e, silent=True)
-                return [v0, v1] if (v0 is not None and v1 is not None) else []
-            except Exception:
-                # Fallback: try boundary vertices if Start/End not available
-                eb = _ext_boundary_or_none(e)
-                return Topology.Vertices(eb) or []
-        
-        def _wire_endpoints(w):
-            """Return the two endpoint vertices of a wire w."""
-            from topologicpy.Wire import Wire as _W
-            try:
-                v0 = _W.StartVertex(w, silent=True)
-                v1 = _W.EndVertex(w, silent=True)
-                return [v0, v1] if (v0 is not None and v1 is not None) else []
-            except Exception:
-                # Fallback: try boundary vertices if Start/End not available
-                eb = _ext_boundary_or_none(w)
-                return Topology.Vertices(w) or []
-
-        def _is_endpoint(v, t):
-            """True if vertex v coincides with an endpoint of edge or wire t (within tolerance)."""
-            from topologicpy.Vertex import Vertex as _V
-            eps = tolerance
-
-            if Topology.IsInstance(t, "edge"):
-                for p in _edge_endpoints(t):
-                    # Prefer exact topologic test; backstop with metric distance
-                    if Topology.IsSame(v, p):
-                        return True
-                    try:
-                        if _V.Distance(v, p) <= eps:
-                            return True
-                    except Exception:
-                        pass
-            elif Topology.IsInstance(t, "wire"):
-                for p in _wire_endpoints(t):
-                    # Prefer exact topologic test; backstop with metric distance
-                    if Topology.IsSame(v, p):
-                        return True
-                    try:
-                        if _V.Distance(v, p) <= eps:
-                            return True
-                    except Exception:
-                        pass
-            return False
-
-        # ---------- predicates ----------
-
-        def proximity(a, b, proximityValues, proximityLabels):
-            sd = Topology.ShortestDistance(a,b, tolerance=tolerance, silent=silent)
-            for i, pv in enumerate(proximityValues):
-                if sd <= pv:
-                    return proximityLabels[i]
-            return None
-
-        def contains(a, b):
-            # The inverse of "within," where geometry A contains geometry B.
-            # The interior and boundary of B are completely contained within the interior of A.
-            # Boundary of B should not intersect with the boundary of A.
-
-            # print("contains - a:", a)
-            # print("contains - b:", b)
-
-            eb_a = Topology.ExternalBoundary(a) or a
-            # print("contains - eb_a:", eb_a)
-
-            # print("Topology.Difference(b,eb_a) == None:", Topology.Difference(b,eb_a) == None)
-            # print("Topology.Difference(b,a) == None:", Topology.Difference(b,a) == None)
-            if Topology.Intersect(b,eb_a) is not None:
-                return False 
-            return Topology.Difference(b,a) == None
-
-        def coveredBy(a, b):
-            return covers(b, a)
-
-        def covers(a, b):
-            # Geometry B lies entirely on the surface of (2D) or within (3D) geometry A.
-            # This is a weaker version of Contains() as it allows for B to touch A's boundary.
-            return Topology.Difference(b, a, tolerance=tolerance, silent=silent) is None
-
-        def crosses(a, b):
-            da, db = _dim(a), _dim(b)
-            inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
-            if inter is None:
-                return False
-
-            # 1D–1D special case (Edges/Wires):
-            # crosses iff the intersection is a point that lies in the INTERIOR of both edges
-            if da == 1 and db == 1:
-                inter_edges = Topology.Edges(inter, silent=True) or []
-                if inter_edges:
-                    # Shared segment → not crosses (this is overlaps)
-                    return False
-                inter_verts = Topology.Vertices(inter, silent=True) or []
-                if not inter_verts:
-                    return False
-                v = inter_verts[0]
-                # interior point of both → neither endpoint
-                return (not _is_endpoint(v, a)) and (not _is_endpoint(v, b))
-
-            # 1D–2D or 1D–3D: interior–interior contact and not inclusion → crosses
-            if (da == 1 and db in (2, 3)) or (db == 1 and da in (2, 3)):
-                # exclude inclusion/coverage
-                if covers(a, b) or covers(b, a):
-                    return False
-                return Topology.Intersect(a,b) is not None
-
-            # Do NOT classify 0D–2D/3D as crosses (point-in-region/volume → within/coveredBy)
-            # 0D–1D interior handled by other logic (if you support vertex-on-edge crosses)
-
-            return False
-
-        def disjoint(a, b):
-            return not _intersects(a, b)
-
-        def equals(a, b):
-            a_ = Topology.ExternalBoundary(a, silent=True) if (Topology.IsInstance(a, "CellComplex")) else a
-            b_ = Topology.ExternalBoundary(b, silent=True) if (Topology.IsInstance(b, "CellComplex")) else b
-            return _symdiff_is_none(a_, b_)
-
-        def overlaps(a, b):
-            # The intersection of the two geometries results in a new, distinct geometry of the same dimension.
-            # For example, two overlapping polygons produce a new polygon.
-
-            if _dim(a) != _dim(b):
-                return False
-            if equals(a, b):
-                return False
-            inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
-            if inter == None:
-                return False
-            if _dim(inter) != _dim(a):
-                return False
-            # if not _intersects(a, b):
-            #     return False
-            if covers(a, b) or covers(b, a):
-                return False
-            return not _symdiff_is_none(a, b)
-        
-        def touches(a, b):
-            # Touches: The geometries share at least one point on their boundaries but their interiors do not intersect.
-            # This rule is exempted for 0D-0D, 0D-1D, and 1D-1D cases.
-
-            da, db = _dim(a), _dim(b)
-            inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
-            if inter is None:
-                return False
-
-            # Special case for 0D-0D and 0D-1D (Vertices <-> Vertices, Vertices <-> Edges/Wires)
-            if da == 0:
-                if db == 0 or db == 1:
-                    return True
-            if db == 0:
-                if da == 0 or da == 1:
-                    return True
-
-            # Special case for 1D-1D (Edges/Wires <-> Edges/Wires)
-            # boundary contact only if the intersection is a point
-            # that is an endpoint of at least one edge.
-            if da == 1 and db == 1:
-                inter_edges = Topology.Edges(inter, silent=True) or []
-                if inter_edges:
-                    # Collinear overlap → NOT touches (let overlaps handle it)
-                    return False
-                inter_verts = Topology.Vertices(inter, silent=True) or []
-                if not inter_verts:
-                    return False
-                v = inter_verts[0]
-                # touches iff the point is an endpoint of A or B
-                return _is_endpoint(v, a) or _is_endpoint(v, b)
-            
-            # Special case for 1D-1D (Edges/Wires <-> Edges/Wires)
-            # boundary contact only if the intersection is a point
-            # that is an endpoint of at least one edge.
-            if (da == 1 and db == 2) or (da == 2 and db == 1):
-                inter_edges = Topology.Edges(inter, silent=True) or []
-                if inter_edges:
-                    # Collinear overlap → NOT touches (let overlaps handle it)
-                    return False
-                inter_verts = Topology.Vertices(inter, silent=True) or []
-                if not inter_verts:
-                    return False
-                v = inter_verts[0]
-                # touches iff the point is an endpoint of A or B
-                return _is_endpoint(v, a) or _is_endpoint(v, b)
-            
-            # Generic rule for other dimension pairs:
-            # boundary–boundary contact AND NO interior–interior contact
-            if _interior_intersection_exists(a, b):
-                return False
-            if Topology.IsInstance(a, "shell"):
-                eb_a = a
-            else:
-                eb_a = _ext_boundary_or_none(a)
-            if Topology.IsInstance(b, "shell"):
-                eb_b = b
-            else:
-                eb_b = _ext_boundary_or_none(b)
-            if eb_a is None or eb_b is None:
-                return False
-            return Topology.Intersect(eb_a, eb_b, tolerance=tolerance, silent=silent) is not None
-        
-        def within(a, b):
-            return contains(b, a)
 
         # ---------- decision order (first-true wins) ----------
         # 1) disjoint
-        if "disjoint" in inc and disjoint(topologyA, topologyB):
+        if "disjoint" in inc and Topology.Disjoint(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "disjoint"
         # 2) equals
-        if "equals" in inc and equals(topologyA, topologyB):
+        if "equals" in inc and Topology.Equals(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "equals"
         # 3) crosses (MUST be before contains/within/covers/coveredBy to avoid your issue)
-        if "crosses" in inc and crosses(topologyA, topologyB):
+        if "crosses" in inc and Topology.Crosses(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "crosses"
         # 4) contains / within (strict)
-        if "contains" in inc and contains(topologyA, topologyB):
+        if "contains" in inc and Topology.Contains(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "contains"
-        if "within" in inc and within(topologyA, topologyB):
+        if "within" in inc and Topology.Within(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "within"
         # 5) covers / coveredBy (non-strict)
-        if "covers" in inc and covers(topologyA, topologyB):
+        if "covers" in inc and Topology.Covers(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "covers"
-        if ("coveredby" in inc or "coveredBy" in include) and coveredBy(topologyA, topologyB):
+        if ("coveredby" in inc or "coveredBy" in include) and Topology.CoveredBy(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "coveredBy"
         # 6) overlaps (same dimension only)
-        if "overlaps" in inc and overlaps(topologyA, topologyB):
+        if "overlaps" in inc and Topology.Overlaps(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "overlaps"
         # 7) touches (incl. vertex-at-endpoint)
-        if "touches" in inc and touches(topologyA, topologyB):
+        if "touches" in inc and Topology.Touches(topologyA, topologyB, tolerance=tolerance, silent=silent):
             return "touches"
         # 8) proximity
         if "proximity" in inc:
-            return proximity(topologyA, topologyB, proximityValues, proximityLabels)
+            return Topology.Proximity(topologyA, topologyB, proximityValues, proximityLabels, useShortestDistance=useShortestDistance, tolerance=tolerance, silent=silent)
         
         return None
+
+# Spatial Relationships
+
+   # Helpers
+
+    def _ext_boundary_or_none(t, tolerance: float = 0.0001, silent: bool = False):
+        # Cells/Shells use their external shell; closed shells and wires return None
+        if Topology.IsInstance(t, "CellComplex"):
+            return Topology.ExternalBoundary(t, silent=True)
+        if Topology.IsInstance(t, "Shell"):
+            eb = Topology.ExternalBoundary(t, silent=True)
+            if eb == None:
+                return t
+        return Topology.ExternalBoundary(t, silent=True)
+
+    def _interior_intersection_exists(a, b, tolerance: float = 0.0001, silent: bool = False):
+        from topologicpy.Cluster import Cluster
+        inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
+        if inter is None: return False
+        eb_parts = []
+        eb_a = Topology._ext_boundary_or_none(a, tolerance=tolerance, silent=silent)
+        eb_b = Topology._ext_boundary_or_none(b, tolerance=tolerance, silent=silent)
+        if eb_a is not None: eb_parts.append(eb_a)
+        if eb_b is not None: eb_parts.append(eb_b)
+        if eb_parts:
+            eb_union = Cluster.ByTopologies(eb_parts)
+            interior_part = Topology.Difference(inter, eb_union, tolerance=tolerance, silent=silent)
+            return interior_part is not None
+        # no boundaries to subtract ⇒ any non-null intersection implies interior–interior
+        return True
+
+    def _edge_endpoints(e, tolerance: float = 0.0001, silent: bool = False):
+        """Return the two endpoint vertices of an Edge e."""
+        from topologicpy.Edge import Edge
+        try:
+            v0 = Edge.StartVertex(e, silent=True)
+            v1 = Edge.EndVertex(e, silent=True)
+            return [v0, v1] if (v0 is not None and v1 is not None) else []
+        except Exception:
+            # Fallback: try boundary vertices if Start/End not available
+            eb = Topology._ext_boundary_or_none(e)
+            return Topology.Vertices(eb) or []
+    
+    def _wire_endpoints(w, tolerance: float = 0.0001, silent: bool = False):
+        """Return the two endpoint vertices of a wire w."""
+        from topologicpy.Wire import Wire
+        try:
+            v0 = Wire.StartVertex(w, silent=True)
+            v1 = Wire.EndVertex(w, silent=True)
+            return [v0, v1] if (v0 is not None and v1 is not None) else []
+        except Exception:
+            # Fallback: try boundary vertices if Start/End not available
+            eb = Topology._ext_boundary_or_none(w)
+            return Topology.Vertices(w) or []
+
+    def _is_endpoint(v, t, tolerance: float = 0.0001, silent: bool = False):
+        """True if vertex v coincides with an endpoint of edge or wire t (within tolerance)."""
+        from topologicpy.Vertex import Vertex
+
+        if Topology.IsInstance(t, "edge"):
+            for p in Topology._edge_endpoints(t):
+                # Prefer exact topologic test; backstop with metric distance
+                if Topology.IsSame(v, p):
+                    return True
+                try:
+                    if Vertex.Distance(v, p) <= tolerance:
+                        return True
+                except Exception:
+                    pass
+        elif Topology.IsInstance(t, "wire"):
+            for p in Topology._wire_endpoints(t):
+                # Prefer exact topologic test; backstop with metric distance
+                if Topology.IsSame(v, p):
+                    return True
+                try:
+                    if Vertex.Distance(v, p) <= tolerance:
+                        return True
+                except Exception:
+                    pass
+        return False
+    
+    @staticmethod
+    def Proximity(
+        topologyA,
+        topologyB,
+        proximityValues,
+        proximityLabels,
+        useShortestDistance: bool = False,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ):
+        """
+        Returns the proximity label between two input topologies.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The first input topology.
+        topolgoyB : topologic_core.Topology
+            The second input topology.
+        proximityValues : list
+            A list of distance threshold values sorted in ascending order.
+        proximityLabels : list
+            A list of proximity labels corresponding to the proximityValues list.
+        useShortestDistance : bool , optional
+            If set to True, the shortest distance between the two input topologies is used.
+            Otherwise, the distance between their centroids is used. Default is False.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        str or None
+            The proximity label corresponding to the first threshold greater than or equal
+            to the computed distance, or None if no threshold is matched.
+        """
+        from topologicpy.Vertex import Vertex
+        a = topologyA
+        b = topologyB
+
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Proximity - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Proximity - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+
+        if not isinstance(proximityValues, (list, tuple)):
+            if not silent:
+                print("Topology.Proximity - Error: The proximityValues input parameter is not a list or a tuple. Returning None.")
+            return None
+        if not isinstance(proximityLabels, (list, tuple)):
+            if not silent:
+                print("Topology.Proximity - Error: The proximityLabels input parameter is not a list or a tuple. Returning None.")
+            return None
+
+        if len(proximityValues) == 0:
+            if not silent:
+                print("Topology.Proximity - Error: The proximityValues input parameter is an empty list or tuple. Returning None.")
+            return None
+        
+        if len(proximityLabels) == 0:
+            if not silent:
+                print("Topology.Proximity - Error: The proximityLabels input parameter is an empty list or tuple. Returning None.")
+            return None
+        
+        if len(proximityValues) != len(proximityLabels):
+            if not silent:
+                print("Topology.Proximity - Error: The proximityValues and proximityLabels input parameters are not equal in length. Returning None.")
+            return None
+
+        try:
+            bands = sorted(
+                [(float(v), str(proximityLabels[i])) for i, v in enumerate(proximityValues)],
+                key=lambda x: x[0],
+            )
+        except Exception:
+            return None
+
+        sd = None
+
+        if useShortestDistance:
+            try:
+                sd = Topology.ShortestDistance(a, b, tolerance=tolerance, silent=True)
+                sd = float(sd)
+            except Exception:
+                sd = None
+
+        if sd is None:
+            try:
+                va = Topology.Centroid(a)
+                vb = Topology.Centroid(b)
+                ca = Vertex.Coordinates(va)
+                cb = Vertex.Coordinates(vb)
+                dx = float(ca[0]) - float(cb[0])
+                dy = float(ca[1]) - float(cb[1])
+                dz = float(ca[2]) - float(cb[2])
+                sd = (dx * dx + dy * dy + dz * dz) ** 0.5
+            except Exception:
+                if not silent:
+                    print("proximity - Error: Could not compute distance. Returning None.")
+                return None
+
+        for upper_bound, label in bands:
+            if sd <= upper_bound + tolerance:
+                return label
+
+        return None
+
+    @staticmethod
+    def Contains(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA contains the input topologyB. Returns False otherwise.
+
+        Containment means that topologyB lies completely within topologyA and does not intersect
+        the external boundary of topologyA.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The input containing topology.
+        topologyB : topologic_core.Topology
+            The input contained topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA contains topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        # The inverse of "within," where geometry A contains geometry B.
+        # The interior and boundary of B are completely contained within the interior of A.
+        # Boundary of B should not intersect with the boundary of A.
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Contains - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Contains - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+        eb_a = Topology.ExternalBoundary(a) or a
+        if Topology.Intersect(b,eb_a, tolerance  = tolerance, silent = silent) is not None:
+            return False 
+        return Topology.Difference(b,a, tolerance  = tolerance, silent = silent) == None
+
+    @staticmethod
+    def CoveredBy(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA is covered by the input topologyB. Returns False otherwise.
+
+        CoveredBy is the inverse of Covers.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The input covered topology.
+        topologyB : topologic_core.Topology
+            The input covering topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA is covered by topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.CoveredBy - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.CoveredBy - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+        return Topology.Covers(b, a, tolerance  = tolerance, silent = silent)
+
+    @staticmethod
+    def Covers(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA covers the input topologyB. Returns False otherwise.
+
+        Coverage means that no part of topologyB lies outside topologyA. Boundary contact is allowed.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The input covering topology.
+        topologyB : topologic_core.Topology
+            The input covered topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA covers topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Covers - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Covers - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+
+        result = Topology.Difference(b, a, tolerance=tolerance, silent=silent)
+
+        return result is None
+
+    @staticmethod
+    def Crosses(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA crosses the input topologyB. Returns False otherwise.
+
+        Crossing means that the two topologies intersect in a manner where their interiors intersect,
+        but neither topology simply contains or covers the other. For one-dimensional topologies,
+        crossing occurs when the intersection is an interior point of both topologies rather than
+        a shared segment or endpoint contact.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The first input topology.
+        topologyB : topologic_core.Topology
+            The second input topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA crosses topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Crosses - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Crosses - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+        da, db = Topology.Dimensionality(a), Topology.Dimensionality(b)
+        inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
+        if inter is None:
+            return False
+
+        # 1D–1D special case (Edges/Wires):
+        # crosses iff the intersection is a point that lies in the INTERIOR of both edges
+        if da == 1 and db == 1:
+            inter_edges = Topology.Edges(inter, silent=True) or []
+            if inter_edges:
+                # Shared segment → not crosses (this is overlaps)
+                return False
+            inter_verts = Topology.Vertices(inter, silent=True) or []
+            if not inter_verts:
+                return False
+            v = inter_verts[0]
+            # interior point of both → neither endpoint
+            return (not Topology._is_endpoint(v, a)) and (not Topology._is_endpoint(v, b))
+
+        # 1D–2D or 1D–3D: interior–interior contact and not inclusion → crosses
+        if (da == 1 and db in (2, 3)) or (db == 1 and da in (2, 3)):
+            # exclude inclusion/coverage
+            if Topology.Covers(a, b, tolerance  = tolerance, silent = silent) or Topology.Covers(b, a, tolerance  = tolerance, silent = silent):
+                return False
+            return Topology.Intersect(a,b) is not None
+
+        # Do NOT classify 0D–2D/3D as crosses (point-in-region/volume → within/coveredBy)
+        # 0D–1D interior handled by other logic (if you support vertex-on-edge crosses)
+
+        return False
+
+    @staticmethod
+    def Disjoint(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA is disjoint from the input topologyB. Returns False otherwise.
+
+        Two topologies are disjoint if they do not intersect.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The first input topology.
+        topologyB : topologic_core.Topology
+            The second input topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA is disjoint from topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Disjoint - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Disjoint - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+        return Topology.Intersect(a, b, tolerance=tolerance, silent=silent) is None
+
+    @staticmethod
+    def Equals(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA is equal to the input topologyB. Returns False otherwise.
+
+        Two topologies are considered equal if their symmetric difference is None within the
+        specified tolerance. For CellComplex inputs, the external boundary is used for comparison.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The first input topology.
+        topologyB : topologic_core.Topology
+            The second input topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA is equal to topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Equals - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Equals - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+        a_ = Topology.ExternalBoundary(a, silent=True) if (Topology.IsInstance(a, "CellComplex")) else a
+        b_ = Topology.ExternalBoundary(b, silent=True) if (Topology.IsInstance(b, "CellComplex")) else b
+        return Topology.SymmetricDifference(a_, b_, tolerance=tolerance, silent=silent) is None
+
+    @staticmethod
+    def Overlaps(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA overlaps the input topologyB. Returns False otherwise.
+
+        Overlap means that the two topologies have the same dimensionality, are not equal, and
+        their intersection produces a distinct topology of the same dimensionality. Cases where
+        one topology covers the other are not considered overlaps.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The first input topology.
+        topologyB : topologic_core.Topology
+            The second input topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA overlaps topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        # The intersection of the two geometries results in a new, distinct geometry of the same dimension.
+        # For example, two overlapping polygons produce a new polygon.
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Overlaps - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Overlaps - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+
+        if Topology.Dimensionality(a) != Topology.Dimensionality(b):
+            return False
+        if Topology.Equals(a, b, tolerance=tolerance, silent=True):
+            return False
+        inter = Topology.Intersect(a, b, tolerance=tolerance, silent=True)
+        if inter == None:
+            return False
+        if Topology.Dimensionality(inter) != Topology.Dimensionality(a):
+            return False
+        # if not _intersects(a, b):
+        #     return False
+        if Topology.Covers(a, b) or Topology.Covers(b, a):
+            return False
+        return Topology.SymmetricDifference(a, b, tolerance=tolerance, silent=silent) is not None
+
+    @staticmethod
+    def Touches(topologyA, topologyB, tolerance: float=0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA touches the input topologyB. Returns False otherwise.
+
+        Touching means that the two topologies share at least one boundary point while their
+        interiors do not intersect. Special cases are handled for zero-dimensional and
+        one-dimensional topologies.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The first input topology.
+        topologyB : topologic_core.Topology
+            The second input topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA touches topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        # Touches: The geometries share at least one point on their boundaries but their interiors do not intersect.
+        # This rule is exempted for 0D-0D, 0D-1D, and 1D-1D cases.
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Touches - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Touches - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+
+        da, db = Topology.Dimensionality(a), Topology.Dimensionality(b)
+        inter = Topology.Intersect(a, b, tolerance=tolerance, silent=silent)
+        if inter is None:
+            return False
+
+        # Special case for 0D-0D and 0D-1D (Vertices <-> Vertices, Vertices <-> Edges/Wires)
+        if da == 0:
+            if db == 0 or db == 1:
+                return True
+        if db == 0:
+            if da == 0 or da == 1:
+                return True
+
+        # Special case for 1D-1D (Edges/Wires <-> Edges/Wires)
+        # boundary contact only if the intersection is a point
+        # that is an endpoint of at least one edge.
+        if da == 1 and db == 1:
+            inter_edges = Topology.Edges(inter, silent=True) or []
+            if inter_edges:
+                # Collinear overlap → NOT touches (let overlaps handle it)
+                return False
+            inter_verts = Topology.Vertices(inter, silent=True) or []
+            if not inter_verts:
+                return False
+            v = inter_verts[0]
+            # touches iff the point is an endpoint of A or B
+            return Topology._is_endpoint(v, a) or Topology._is_endpoint(v, b)
+        
+        # Special case for 1D-1D (Edges/Wires <-> Edges/Wires)
+        # boundary contact only if the intersection is a point
+        # that is an endpoint of at least one edge.
+        if (da == 1 and db == 2) or (da == 2 and db == 1):
+            inter_edges = Topology.Edges(inter, silent=True) or []
+            if inter_edges:
+                # Collinear overlap → NOT touches (let overlaps handle it)
+                return False
+            inter_verts = Topology.Vertices(inter, silent=True) or []
+            if not inter_verts:
+                return False
+            v = inter_verts[0]
+            # touches iff the point is an endpoint of A or B
+            return Topology._is_endpoint(v, a) or Topology._is_endpoint(v, b)
+        
+        # Generic rule for other dimension pairs:
+        # boundary–boundary contact AND NO interior–interior contact
+        if Topology._interior_intersection_exists(a, b):
+            return False
+        if Topology.IsInstance(a, "shell"):
+            eb_a = a
+        else:
+            eb_a = Topology._ext_boundary_or_none(a)
+        if Topology.IsInstance(b, "shell"):
+            eb_b = b
+        else:
+            eb_b = Topology._ext_boundary_or_none(b)
+        if eb_a is None or eb_b is None:
+            return False
+        return Topology.Intersect(eb_a, eb_b, tolerance=tolerance, silent=silent) is not None
+
+    @staticmethod
+    def Within(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
+        """
+        Returns True if the input topologyA is within the input topologyB. Returns False otherwise.
+
+        Within is the inverse of Contains.
+
+        Parameters
+        ----------
+        topologyA : topologic_core.Topology
+            The input contained topology.
+        topologyB : topologic_core.Topology
+            The input containing topology.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        bool
+            True if topologyA is within topologyB. False otherwise. Returns None if either input is invalid.
+
+        """
+        a = topologyA
+        b = topologyB
+        if not Topology.IsInstance(a, "Topology"):
+            if not silent:
+                print("Topology.Within - Error: The input a parameter is not a valid topology. Returning None.")
+            return None
+
+        if not Topology.IsInstance(b, "Topology"):
+            if not silent:
+                print("Topology.Within - Error: The input b parameter is not a valid topology. Returning None.")
+            return None
+        return Topology.Contains(b, a, tolerance = tolerance, silent = silent)
 
     @staticmethod
     def Spin(topology, origin=None, triangulate: bool = True, direction: list = [0, 0, 1], angle: float = 360, sides: int = 16,
@@ -14504,7 +15161,13 @@ class Topology():
         return Topology._Boolean(topologyA=topologyA, topologyB=topologyB, operation="symdif", tranDict=tranDict, tolerance=tolerance, silent=silent)
 
     @staticmethod
-    def Taper(topology, origin=None, ratioRange: list = [0, 1], triangulate: bool = False, mantissa: int = 6, tolerance: float = 0.0001):
+    def Taper(topology,
+              origin=None,
+              ratioRange: list = [0, 1],
+              triangulate: bool = False,
+              mantissa: int = 6,
+              tolerance: float = 0.0001,
+              silent: bool = False):
         """
         Tapers the input topology. This method tapers the input geometry along its Z-axis based on the ratio range input.
 
@@ -14522,6 +15185,8 @@ class Topology():
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
             The desired tolerance. Vertices will not be moved if the calculated distance is at or less than this tolerance.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -14531,11 +15196,17 @@ class Topology():
         """
         from topologicpy.Vertex import Vertex
 
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Taper - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+
         ratioRange = [min(1,ratioRange[0]), min(1,ratioRange[1])]
         if ratioRange == [0, 0]:
             return topology
         if ratioRange == [1, 1]:
-            print("Topology.Taper - Error: Degenerate result. Returning original topology.")
+            if not silent:
+                print("Topology.Taper - Error: Degenerate result. Returning the input topology.")
             return topology
         if triangulate == True:
             topology = Topology.Triangulate(topology)
@@ -14555,18 +15226,25 @@ class Topology():
             c_b = Vertex.Coordinates(v, mantissa=mantissa)
             new_dir = [(c_a[0]-c_b[0]), (c_a[1]-c_b[1]), 0]
             if abs(new_dist) > tolerance:
-                new_v = Topology.TranslateByDirectionDistance(v, direction=new_dir, distance=new_dist)
+                new_v = Topology.TranslateByDirectionDistance(v, direction=new_dir, distance=new_dist, silent=silent)
             else:
                 new_v = v
             new_vertices.append(new_v)
-        return_topology = Topology.ReplaceVertices(topology, vertices, new_vertices)
-        return_topology = Topology.Fix(return_topology, topologyType=Topology.TypeAsString(topology))
+        return_topology = Topology.ReplaceVertices(topology, vertices, new_vertices, tolerance=tolerance, silent=silent)
+        return_topology = Topology.Fix(return_topology, topologyType=Topology.TypeAsString(topology), tolerance=tolerance, silent=silent)
         if not Topology.Type(return_topology) == Topology.Type(topology):
-            return_topology = Topology.SelfMerge(return_topology)
+            return_topology = Topology.SelfMerge(return_topology, toilerance=tolerance, silent=silent)
         return return_topology
     
     @staticmethod
-    def Twist(topology, origin=None, angleRange: list = [45, 90], triangulate: bool = False, mantissa: int = 6):
+    def Twist(topology,
+              origin=None,
+              angleRange: list = [45, 90],
+              triangulate: bool = False,
+              mantissa: int = 6,
+              angTolerance: float = 0.01,
+              tolerance: float = 0.0001,
+              silent: bool = False):
         """
         Twists the input topology. This method twists the input geometry along its Z-axis based on the degree range input.
 
@@ -14582,6 +15260,12 @@ class Topology():
             If set to true, the input topology is triangulated before tapering. Otherwise, it will not be traingulated. Default is False.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
+        angTolerance : float , optional
+            The desired angular tolerance in degrees. Default is 0.01.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -14591,7 +15275,14 @@ class Topology():
         """
         from topologicpy.Vertex import Vertex
 
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Twist - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+
         if angleRange == [0, 0]:
+            if not silent:
+                print("Topology.Twist - Warning: The input angleRange parameter is not valid. Returning the input topology.")
             return topology
         if triangulate == True:
             topology = Topology.Triangulate(topology)
@@ -14608,7 +15299,7 @@ class Topology():
             ht = (Vertex.Z(v)-z_min)/(maxZ - z_min)
             new_rot = angleRange[0] + ht*(angleRange[1] - angleRange[0])
             orig = Vertex.ByCoordinates(Vertex.X(origin, mantissa=mantissa), Vertex.Y(origin, mantissa=mantissa), Vertex.Z(v, mantissa=mantissa))
-            new_vertices.append(Topology.Rotate(v, origin=orig, axis=[0, 0, 1], angle=new_rot))
+            new_vertices.append(Topology.Rotate(v, origin=orig, axis=[0, 0, 1], angle=new_rot, angTolerance=angTolerance, tolerance=tolerance))
         return_topology = Topology.ReplaceVertices(topology, vertices, new_vertices)
         return_topology = Topology.Fix(return_topology, topologyType=Topology.TypeAsString(topology))
         return return_topology
@@ -14710,7 +15401,7 @@ class Topology():
                 print("caller name:", calframe[1][3])
             return [topology]
 
-        return Topology.SubTopologies(topology=topology, subTopologyType="vertex")
+        return Topology.SubTopologies(topology=topology, subTopologyType="vertex", silent=silent)
     
     @staticmethod
     def Wires(topology, silent: bool = False):
@@ -14750,7 +15441,7 @@ class Topology():
                 print("Topology.Wires - Warning: The input is a lower dimension than a wire. Returning an empty list.")
             return []
         
-        return Topology.SubTopologies(topology=topology, subTopologyType="wire")
+        return Topology.SubTopologies(topology=topology, subTopologyType="wire", silent=silent)
     
     @staticmethod
     def SubTopologies(topology, subTopologyType="vertex", silent: bool = False):
@@ -14776,6 +15467,7 @@ class Topology():
 
         from topologicpy.Face import Face
         from topologicpy.Graph import Graph
+        import inspect
 
         is_tgraph = False
         try:
@@ -14797,6 +15489,9 @@ class Topology():
         ]:
             if not silent:
                 print(f"Topology.SubTopologies - Error: the input subTopologyType parameter {subTopologyType} is not recognized. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print('caller name:', calframe[1][3])
             return None
 
         # Special case for TGraph
@@ -14863,7 +15558,10 @@ class Topology():
 
     
     @staticmethod
-    def SuperTopologies(topology, hostTopology, topologyType: str = None) -> list:
+    def SuperTopologies(topology,
+                        hostTopology,
+                        topologyType: str = None,
+                        silent: bool = False) -> list:
         """
         Returns the supertopologies connected to the input topology.
 
@@ -14875,7 +15573,9 @@ class Topology():
             The host to topology in which to search for their supertopologies.
         topologyType : str , optional
             The topology type to search for. This can be any of "edge", "wire", "face", "shell", "cell", "cellcomplex", "cluster". It is case insensitive. If set to None, the immediate supertopology type is searched for. Default is None.
-
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        
         Returns
         -------
         list
@@ -14883,20 +15583,28 @@ class Topology():
 
         """
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.SuperTopologies - Error: the input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.SuperTopologies - Error: the input topology parameter is not a valid topology. Returning None.")
             return None
         if not Topology.IsInstance(hostTopology, "Topology"):
-            print("Topology.SuperTopologies - Error: the input hostTopology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.SuperTopologies - Error: the input hostTopology parameter is not a valid topology. Returning None.")
             return None
 
         superTopologies = []
 
         if topologyType == None:
-            typeID = 2*Topology.TypeID(topology)
+            typeID = 2*Topology.Type(topology)
         else:
             typeID = Topology.TypeID(topologyType)
+        
+        if typeID is None:
+            if not silent:
+                print("Topology.SuperTopologies - Error: The input topologyType parameter is not recognized. Returning None.")
+            return None
         if Topology.Type(topology) >= typeID:
-            print("Topology.SuperTopologies - Error: The input topologyType parameter is not a valid type for a super topology of the input topology. Returning None.")
+            if not silent:
+                print("Topology.SuperTopologies - Error: The input topologyType parameter is not a valid type for a super topology of the input topology. Returning None.")
             return None #The user has asked for a topology type lower than the input topology
         elif typeID == Topology.TypeID("Edge"):
             # topology.Edges(hostTopology, superTopologies) # H to Core
@@ -14920,14 +15628,15 @@ class Topology():
             # topology.Cluster(hostTopology, superTopologies) # H to Core
             Core.InstanceCall(topology, 'Cluster', hostTopology, superTopologies)
         else:
-            print("Topology.SuperTopologies - Error: The input topologyType parameter is not a valid type for a super topology of the input topology. Returning None.")
+            if not silent:
+                print("Topology.SuperTopologies - Error: The input topologyType parameter is not a valid type for a super topology of the input topology. Returning None.")
             return None
         if not superTopologies:
             return [] # Make sure you return an empty list instead of None
         return superTopologies
     
     @staticmethod
-    def TransferDictionaries(sources, sinks, tolerance=0.0001, numWorkers=None):
+    def TransferDictionaries(sources, sinks, tolerance=0.0001, numWorkers=None, silent: bool = False):
         """
         Transfers the dictionaries from the list of sources to the list of sinks.
 
@@ -14941,7 +15650,9 @@ class Topology():
             The desired tolerance. Default is 0.0001.
         numWorkers : int, optional
             Number of workers run in parallel to process. Default is None which sets the number to twice the number of CPU cores.
-
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        
         Returns
         -------
         dict
@@ -14950,10 +15661,12 @@ class Topology():
         """
         from topologicpy.Dictionary import Dictionary
         if not isinstance(sources, list):
-            print("Topology.TransferDictionaries - Error: The input sources parameter is not a valid list. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionaries - Error: The input sources parameter is not a valid list. Returning None.")
             return None
         if not isinstance(sinks, list):
-            print("Topology.TransferDictionaries - Error: The input sinks parameter is not a valid list. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionaries - Error: The input sinks parameter is not a valid list. Returning None.")
             return None
         if numWorkers == None:
             import multiprocessing
@@ -14962,10 +15675,12 @@ class Topology():
         sinks = [x for x in sinks if Topology.IsInstance(x, "Topology")]
         so_dicts = [Dictionary.PythonDictionary(Topology.Dictionary(s)) for s in sources]
         if len(sources) < 1:
-            print("Topology.TransferDictionaries - Error: The input sources does not contain any valid topologies. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionaries - Error: The input sources does not contain any valid topologies. Returning None.")
             return None
         if len(sinks) < 1:
-            print("Topology.TransferDictionaries - Error: The input sinks does not contain any valid topologies. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionaries - Error: The input sinks does not contain any valid topologies. Returning None.")
             return None
 
         queue = Queue()
@@ -14990,7 +15705,15 @@ class Topology():
 
     
     @staticmethod
-    def TransferDictionariesBySelectors(topology, selectors, tranVertices=False, tranEdges=False, tranFaces=False, tranCells=False, tolerance=0.0001, numWorkers=None):
+    def TransferDictionariesBySelectors(topology,
+                                        selectors,
+                                        tranVertices=False,
+                                        tranEdges=False,
+                                        tranFaces=False,
+                                        tranCells=False,
+                                        tolerance=0.0001,
+                                        numWorkers=None,
+                                        silent: bool = False):
         """
         Transfers the dictionaries of the list of selectors to the subtopologies of the input topology based on the input parameters.
 
@@ -15027,14 +15750,17 @@ class Topology():
         from topologicpy.BVH import BVH
         
         if not Topology.IsInstance(topology, "Topology"):
-            print("Topology.TransferDictionariesBySelectors - Error: The input topology parameter is not a valid topology. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionariesBySelectors - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         if not isinstance(selectors, list):
-            print("Topology.TransferDictionariesBySelectors - Error: The input selectors parameter is not a valid list. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionariesBySelectors - Error: The input selectors parameter is not a valid list. Returning None.")
             return None
         selectors_tmp = [x for x in selectors if Topology.IsInstance(x, "Vertex")]
         if len(selectors_tmp) < 1:
-            print("Topology.TransferDictionariesBySelectors - Error: The input selectors do not contain any valid topologies. Returning None.")
+            if not silent:
+                print("Topology.TransferDictionariesBySelectors - Error: The input selectors do not contain any valid topologies. Returning None.")
             return None
         
         
@@ -15107,161 +15833,6 @@ class Topology():
         # print("bvh query done", f"{time.time() - timeStart:.4f}s")
         return topology
 
-    @staticmethod
-    def Transform_old(topology, matrix: list, angTolerance: float = 0.001, transferDictionaries: bool = True, tolerance: float = 0.0001, silent: bool = False):
-        """
-        Transforms the input topology by the input 4X4 transformation matrix.
-
-        Parameters
-        ----------
-        topology : topologic_core.Topology
-            The input topology.
-        matrix : list
-            The input 4x4 transformation matrix.
-        angTolerance : float , optional
-            The angle tolerance in degrees under which no rotation is carried out. Default is 0.001 degrees.
-        transferDictionaries : bool , optional
-            If set to True, the dictionaries are transfered from the original object to the transformed object. Default is True.
-        tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-
-        Returns
-        -------
-        topologic_core.Topology
-            The transformed topology.
-
-        """
-        from topologicpy.Vertex import Vertex
-
-        import numpy as np
-
-        kTranslationX = 0.0
-        kTranslationY = 0.0
-        kTranslationZ = 0.0
-        kRotation11 = 1.0
-        kRotation12 = 0.0
-        kRotation13 = 0.0
-        kRotation21 = 0.0
-        kRotation22 = 1.0
-        kRotation23 = 0.0
-        kRotation31 = 0.0
-        kRotation32 = 0.0
-        kRotation33 = 1.0
-
-        
-        kRotation11 = matrix[0][0]
-        kRotation12 = matrix[0][1]
-        kRotation13 = matrix[0][2]
-        kRotation21 = matrix[1][0]
-        kRotation22 = matrix[1][1]
-        kRotation23 = matrix[1][2]
-        kRotation31 = matrix[2][0]
-        kRotation32 = matrix[2][1]
-        kRotation33 = matrix[2][2]
-        kTranslationX = matrix[0][3]
-        kTranslationY = matrix[1][3]
-        kTranslationZ = matrix[2][3]
-
-        if not Topology.IsInstance(topology, "topology"):
-            if not silent:
-                print("Topology.Transform - Error: The input topology parameter is not a valid topology. Returning None.")
-            return None
-        
-        try:
-            return_topology = Core.TopologyUtility.Transform(topology, kTranslationX, kTranslationY, kTranslationZ, kRotation11, kRotation12, kRotation13, kRotation21, kRotation22, kRotation23, kRotation31, kRotation32, kRotation33)
-        except:
-            print("Topology.Transform - Warning: Core transform operation failed. Attempting a workaround.")
-            
-            # Extract translation (last column of the matrix)
-            translation = [m[3] for m in matrix[:3]]
-            x_translate, y_translate, z_translate = translation
-            
-            # Extract rotation (top-left 3x3 part of the matrix)
-            rotation_matrix = [m[:3] for m in matrix[:3]]
-            
-            # Extract scaling (diagonal of the matrix)
-            scaling_factors = [matrix[m][m] for m in [0,1,2]]  # scaling is stored in the diagonal of the rotation matrix
-            x_scale, y_scale, z_scale = scaling_factors
-            
-            # Step 1: Apply Scaling
-            # Here, origin is assumed to be (0,0,0) for simplicity
-            return_topology = Topology.Scale(topology,
-                                             origin=Vertex.ByCoordinates(0, 0, 0),
-                                             x=x_scale,
-                                             y=y_scale,
-                                             z=z_scale,
-                                             transferDictionaries=False,
-                                             silent=silent)
-            
-            # Step 2: Apply Rotation
-            # The rotation axis and angle need to be derived from the rotation matrix
-            # For simplicity, we assume the matrix represents a standard rotation (angle and axis).
-            # The angle can be computed from the matrix as the arccos of the trace.
-            
-            angle_rad = np.arccos((np.trace(rotation_matrix) - 1) / 2.0)  # Using trace to compute angle
-            axis = np.array([rotation_matrix[2, 1] - rotation_matrix[1, 2],
-                            rotation_matrix[0, 2] - rotation_matrix[2, 0],
-                            rotation_matrix[1, 0] - rotation_matrix[0, 1]])
-            axis = axis / np.linalg.norm(axis)  # Normalize the axis
-            
-            # Convert the angle from radians to degrees
-            angle_deg = np.degrees(angle_rad)
-            
-            # Apply rotation
-            return_topology = Topology.Rotate(return_topology,
-                                              origin=Vertex.ByCoordinates(0, 0, 0),
-                                              axis=axis,
-                                              angle=angle_deg,
-                                              angTolerance=angTolerance,
-                                              transferDictionaries=False,
-                                              tolerance=tolerance,
-                                              silent=silent)
-            
-            # Step 3: Apply Translation
-            return_topology = Topology.Translate(return_topology,
-                                                 x=x_translate,
-                                                 y=y_translate,
-                                                 z=z_translate,
-                                                 transferDictionaries=False,
-                                                 silent=silent)
-        
-        if transferDictionaries == True:
-            vertices = Topology.Vertices(topology, silent=True)
-            edges = Topology.Edges(topology, silent=True)
-            wires = Topology.Wires(topology, silent=True)
-            faces = Topology.Faces(topology, silent=True)
-            shells = Topology.Shells(topology, silent=True)
-            cells = Topology.Cells(topology, silent=True)
-            cellComplexes = Topology.CellComplexes(topology, silent=True)
-
-            r_vertices = Topology.Vertices(return_topology, silent=True)
-            r_edges = Topology.Edges(return_topology, silent=True)
-            r_wires = Topology.Wires(return_topology, silent=True)
-            r_faces = Topology.Faces(return_topology, silent=True)
-            r_shells = Topology.Shells(return_topology, silent=True)
-            r_cells = Topology.Cells(return_topology, silent=True)
-            r_cellComplexes = Topology.CellComplexes(return_topology, silent=True)
-
-            for i, t in enumerate(r_vertices):
-                t = Topology.SetDictionary(t, Topology.Dictionary(vertices[i]), silent=True)
-            for i, t in enumerate(r_edges):
-                t = Topology.SetDictionary(t, Topology.Dictionary(edges[i]), silent=True)
-            for i, t in enumerate(r_wires):
-                t = Topology.SetDictionary(t, Topology.Dictionary(wires[i]), silent=True)
-            for i, t in enumerate(r_faces):
-                t = Topology.SetDictionary(t, Topology.Dictionary(faces[i]), silent=True)
-            for i, t in enumerate(r_shells):
-                t = Topology.SetDictionary(t, Topology.Dictionary(shells[i]), silent=True)
-            for i, t in enumerate(r_cells):
-                t = Topology.SetDictionary(t, Topology.Dictionary(cells[i]), silent=True)
-            for i, t in enumerate(r_cellComplexes):
-                t = Topology.SetDictionary(t, Topology.Dictionary(cellComplexes[i]), silent=True)
-        
-            return_topology = Topology.SetDictionary(return_topology, Topology.Dictionary(topology), silent=True)
-        return return_topology
-    
     @staticmethod
     def Translate(topology, x=0, y=0, z=0, transferDictionaries: bool = True, silent: bool = False):
         """
@@ -15670,7 +16241,7 @@ class Topology():
             return topology
         elif t == Topology.TypeID("Cluster"):
             temp_topologies = []
-            cellComplexes = Topology.SubTopologies(topology, subTopologyType="cellcomplex") or []
+            cellComplexes = Topology.SubTopologies(topology, subTopologyType="cellcomplex", silent=silent) or []
             for cc in cellComplexes:
                 temp_topologies.append(Topology.Triangulate(cc, transferDictionaries=transferDictionaries, mode=mode, meshSize=meshSize, tolerance=tolerance, silent=silent))
             cells = Cluster.FreeCells(topology, tolerance=tolerance) or []
@@ -15725,7 +16296,7 @@ class Topology():
 
     
     @staticmethod
-    def Type(topology):
+    def Type(topology, silent: bool = False):
         """
         Returns the type of the input topology.
 
@@ -15733,6 +16304,8 @@ class Topology():
         ----------
         topology : topologic_core.Topology
             The input topology.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -15740,6 +16313,11 @@ class Topology():
             The type of the input topology.
 
         """
+        if not Topology.IsInstance(topology, "topology"):
+            if not silent:
+                print("Topology.Type - Error: The input topology parameter is not a valid topology. Returning None.")
+            return None
+        
         # return topology.Type() # H to Core
         return Core.InstanceCall(topology, 'Type')
     
@@ -15781,7 +16359,7 @@ class Topology():
         return None
     
     @staticmethod
-    def TypeID(name: str = None) -> int:
+    def TypeID(name: str = None, silent: bool = False) -> int:
         """
         Returns the type id of the input name string.
 
@@ -15805,6 +16383,8 @@ class Topology():
                 "topology"
 
             It is case insensitive. Default is None.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -15814,7 +16394,8 @@ class Topology():
         """
 
         if not isinstance(name, str):
-            print("Topology.TypeID - Error: The input topologyType parameter is not a valid string. Returning None.")
+            if not silent:
+                print("Topology.TypeID - Error: The input topologyType parameter is not a valid string. Returning None.")
             return None
 
         name = name.lower()
@@ -15858,6 +16439,8 @@ class Topology():
         elif name == "topology":
             return 4096
 
+        if not silent:
+            print("Topology.TypeID - Error: The input name parameter is not recognized. Returning None.")
         return None
     
     @staticmethod
@@ -15889,6 +16472,21 @@ class Topology():
         from topologicpy.Face import Face
         from topologicpy.Shell import Shell
         from topologicpy.Cluster import Cluster
+
+        if not Topology.IsInstance(topologyA, "topology") and not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Union - Error: The inputs topologyA and topologyB are not valid topologies. Returning None.")
+            return None
+
+        if not Topology.IsInstance(topologyA, "topology"):
+            if not silent:
+                print("Topology.Union - Warning: The topologyA input parameter is not a valid topology. Returning topologyB.")
+            return topologyB
+        
+        if not Topology.IsInstance(topologyB, "topology"):
+            if not silent:
+                print("Topology.Union - Warning: The topologyB input parameter is not a valid topology. Returning topologyA.")
+            return topologyA
 
         if Topology.IsInstance(topologyA, "Face") and Topology.IsInstance(topologyB, "Face"):
             if Face.IsCoplanar(topologyA, topologyB):
@@ -16097,7 +16695,20 @@ class Topology():
         return str(uuid.uuid5(namespace_uuid, final_str))
     
     @staticmethod
-    def View3D(*topologies, uuid = None, nameKey="name", colorKey="color", opacityKey="opacity", defaultColor=[256,256,256], defaultOpacity=0.5, transposeAxes: bool = True, mode: int = 0, meshSize: float = None, overwrite: bool = False, mantissa: int = 6, tolerance: float = 0.0001):
+    def View3D(*topologies,
+               uuid = None,
+               nameKey="name",
+               colorKey="color",
+               opacityKey="opacity",
+               defaultColor=[256,256,256],
+               defaultOpacity=0.5,
+               transposeAxes: bool = True,
+               mode: int = 0,
+               meshSize: float = None,
+               overwrite: bool = False,
+               mantissa: int = 6,
+               tolerance: float = 0.0001,
+               silent: bool = False):
         """
         Sends the input topologies to 3dviewer.net. The topologies must be 3D meshes.
 
@@ -16140,6 +16751,8 @@ class Topology():
             The desired tolerance. Default is 0.0001.
         overwrite : bool , optional
             If set to True the ouptut file will overwrite any pre-existing file. Otherwise, it won't. Default is False.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -16157,10 +16770,12 @@ class Topology():
         if isinstance(topologies, list):
             new_topologies = [d for d in topologies if Topology.IsInstance(d, "Topology")]
         if len(new_topologies) == 0:
-            print("Topology.View3D - Error: the input topologies parameter does not contain any valid topologies. Returning None.")
+            if not silent:
+                print("Topology.View3D - Error: the input topologies parameter does not contain any valid topologies. Returning None.")
             return None
         if not isinstance(new_topologies, list):
-            print("Topology.View3D - Error: The input topologies parameter is not a valid list. Returning None.")
+            if not silent:
+                print("Topology.View3D - Error: The input topologies parameter is not a valid list. Returning None.")
             return None
 
         if uuid == None:
@@ -16194,7 +16809,9 @@ class Topology():
                 opened_urls.add(url)
                 webbrowser.open(url)
         except requests.exceptions.RequestException as e:
-            print(f'Error uploading file(s): {e}')
+            if not silent:
+                print(f'Topology.View3D - Error: Could not upload file(s): {e}. Returning None.')
+            return None
         return True
     
     @staticmethod

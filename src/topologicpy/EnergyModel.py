@@ -27,17 +27,14 @@ import warnings
 
 try:
     from tqdm.auto import tqdm
-except:
-    print("EnergyModel - Installing required tqdm library.")
-    try:
-        os.system("pip install tqdm")
-    except:
-        os.system("pip install tqdm --user")
-    try:
-        from tqdm.auto import tqdm
-        print("EnergyModel - tqdm library installed correctly.")
-    except:
-        warnings.warn("EnergyModel - Error: Could not import tqdm.")
+except Exception:
+    class tqdm:  # lightweight fallback; avoids import-time installation side effects
+        def __init__(self, *args, **kwargs):
+            self.total = kwargs.get("total", None)
+        def update(self, *args, **kwargs):
+            return None
+        def close(self):
+            return None
 
 class EnergyModel:
     '''
@@ -67,52 +64,140 @@ class EnergyModel:
         else:
             osModel = osModel.get()
         return osModel
+
     '''
+
+    @staticmethod
+    def _ImportOpenStudio(methodName: str = "EnergyModel", silent: bool = False):
+        """
+        Imports OpenStudio without attempting to install it. Returns None if unavailable.
+        """
+        try:
+            import openstudio
+            try:
+                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
+            except Exception:
+                pass
+            return openstudio
+        except Exception:
+            if not silent:
+                warnings.warn(f"{methodName} - Error: Could not import openstudio. Please install openstudio manually. Returning None.")
+            return None
+
+    @staticmethod
+    def _OptionalGet(opt, default=None):
+        """
+        Safely unwraps OpenStudio optional values and option-like objects.
+        """
+        try:
+            if opt is None:
+                return default
+            if hasattr(opt, "is_initialized"):
+                return opt.get() if opt.is_initialized() else default
+            if hasattr(opt, "isNull"):
+                return default if opt.isNull() else opt.get()
+            if hasattr(opt, "get") and callable(getattr(opt, "get", None)):
+                return opt.get()
+            return opt
+        except Exception:
+            return default
+
+    @staticmethod
+    def _OSPath(path_str, openstudio):
+        """
+        Converts a string path to an OpenStudio path object when the binding exposes one.
+        """
+        if path_str is None:
+            return None
+        for candidate in (
+            lambda p: openstudio.openstudioutilitiescore.toPath(p),
+            lambda p: openstudio.toPath(p),
+            lambda p: openstudio.path(p),
+        ):
+            try:
+                return candidate(path_str)
+            except Exception:
+                pass
+        return path_str
+
+    @staticmethod
+    def _SQLFile(model):
+        """
+        Returns the initialized OpenStudio SQL file attached to the model, or None.
+        """
+        try:
+            sql_opt = model.sqlFile()
+        except Exception:
+            return None
+        return EnergyModel._OptionalGet(sql_opt, None)
+
+    @staticmethod
+    def _VectorOfString(optional_vector):
+        """
+        Safely converts an OpenStudio OptionalVectorString-like result to a list.
+        """
+        value = EnergyModel._OptionalGet(optional_vector, [])
+        try:
+            return list(value)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _ObjectName(model_object, fallback=""):
+        """
+        Safely returns an OpenStudio object's name.
+        """
+        try:
+            return EnergyModel._OptionalGet(model_object.name(), fallback)
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _RenderingColorRGB(model_object, default=None):
+        """
+        Safely returns [red, green, blue] rendering values for an OpenStudio object.
+        """
+        if default is None:
+            default = [255, 255, 255]
+        try:
+            color = EnergyModel._OptionalGet(model_object.renderingColor(), None)
+            if color is None:
+                return list(default)
+            return [
+                color.renderingRedValue(),
+                color.renderingGreenValue(),
+                color.renderingBlueValue(),
+            ]
+        except Exception:
+            return list(default)
 
     @staticmethod
     def ByOSMPath(path: str):
         """
         Creates an EnergyModel from the input OSM file path.
-        
-        Parameters
-        ----------
-        path : string
-            The path to the input .OSM file.
-
-        Returns
-        -------
-        openstudio.openstudiomodelcore.Model
-            The OSM model.
-
         """
-        try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except:
-            print("EnergyModel.ByOSMPath - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                print("EnergyModel.ByOSMPath - Information: openstudio library installed correctly.")
-            except:
-                warnings.warn("EnergyModel.ByOSMPath - Error: Could not import openstudio.Please try to install openstudio manually. Returning None.")
-                return None
-        
-        if not path:
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.ByOSMPath")
+        if openstudio is None:
+            return None
+
+        if not isinstance(path, str) or not path:
             print("EnergyModel.ByOSMPath - Error: The input path is not valid. Returning None.")
             return None
-        translator = openstudio.osversion.VersionTranslator()
-        osmPath = openstudio.openstudioutilitiescore.toPath(path)
-        osModel = translator.loadModel(osmPath)
-        if osModel.isNull():
-            print("EnergyModel.ByImportedOSM - Error: The openstudio model is null. Returning None.")
+        if not os.path.exists(path):
+            print("EnergyModel.ByOSMPath - Error: The input path does not exist. Returning None.")
             return None
-        else:
-            osModel = osModel.get()
+
+        try:
+            translator = openstudio.osversion.VersionTranslator()
+            osmPath = EnergyModel._OSPath(path, openstudio)
+            osModel_opt = translator.loadModel(osmPath)
+            osModel = EnergyModel._OptionalGet(osModel_opt, None)
+        except Exception:
+            osModel = None
+
+        if osModel is None:
+            print("EnergyModel.ByOSMPath - Error: The OpenStudio model is null or could not be loaded. Returning None.")
+            return None
         return osModel
 
     @staticmethod
@@ -300,22 +385,9 @@ class EnergyModel:
             except Exception:
                 return None
 
-        try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except Exception:
-            print("EnergyModel.ByTopology - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except Exception:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                print("EnergyModel.ByTopology - Information: openstudio library installed correctly.")
-            except Exception:
-                warnings.warn("EnergyModel.ByTopology - Error: Could not import openstudio. Please install openstudio manually. Returning None.")
-                return None
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.ByTopology")
+        if openstudio is None:
+            return None
 
         if not osModelPath:
             osModelPath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "EnergyModel", "OSMTemplate-OfficeBuilding-3.10.0.osm")
@@ -339,15 +411,15 @@ class EnergyModel:
         osmFile = os_path(osModelPath, openstudio)
         translator = openstudio.osversion.VersionTranslator()
         model_opt = translator.loadModel(osmFile)
-        if (not model_opt) or (not model_opt.is_initialized()):
+        osModel = EnergyModel._OptionalGet(model_opt, None)
+        if osModel is None:
             raise RuntimeError(f"EnergyModel.ByTopology - Could not load OSM template: {osModelPath}")
-        osModel = model_opt.get()
 
         # Load EPW safely
         epwFile = os_path(weatherFilePath, openstudio)
         epw_opt = openstudio.openstudioutilitiesfiletypes.EpwFile.load(epwFile)
-        if epw_opt.is_initialized():
-            osEPWFile = epw_opt.get()
+        osEPWFile = EnergyModel._OptionalGet(epw_opt, None)
+        if osEPWFile is not None:
             openstudio.model.WeatherFile.setWeatherFile(osModel, osEPWFile)
         else:
             raise RuntimeError(f"EnergyModel.ByTopology - Could not load EPW weather file: {weatherFilePath}")
@@ -355,8 +427,8 @@ class EnergyModel:
         # Load DDY safely
         ddyFile = os_path(designDayFilePath, openstudio)
         ddy_opt = openstudio.openstudioenergyplus.loadAndTranslateIdf(ddyFile)
-        if ddy_opt.is_initialized():
-            ddyModel = ddy_opt.get()
+        ddyModel = EnergyModel._OptionalGet(ddy_opt, None)
+        if ddyModel is not None:
             for ddy in ddyModel.getObjectsByType(openstudio.IddObjectType("OS:SizingPeriod:DesignDay")):
                 osModel.addObject(ddy.clone())
         else:
@@ -541,6 +613,8 @@ class EnergyModel:
                     osSurface.setSpace(osSpace)
 
                     faceCells = Topology.AdjacentTopologies(buildingFace, building, topologyType="cell")
+                    if not isinstance(faceCells, list):
+                        faceCells = []
                     tilt = surface_tilt_degrees(osSurface, openstudio)
                     space_name = safe_name(osSpace, f"SPACE_{spaceNumber:04d}")
 
@@ -592,6 +666,10 @@ class EnergyModel:
                                             faceGlazingRatio = Dictionary.ValueAtKey(faceDictionary, 'TOPOLOGIC_glazing_ratio')
                                     except Exception:
                                         faceGlazingRatio = None
+                                try:
+                                    faceGlazingRatio = float(faceGlazingRatio) if faceGlazingRatio is not None else None
+                                except Exception:
+                                    faceGlazingRatio = None
                                 if faceGlazingRatio is not None and faceGlazingRatio >= 0.01:
                                     try:
                                         osSurface.setWindowToWallRatio(faceGlazingRatio)
@@ -696,562 +774,353 @@ class EnergyModel:
         osModel.purgeUnusedResourceObjects()
         return osModel
 
-
     @staticmethod
     def ColumnNames(model, reportName, tableName):
         """
-            Returns the list of column names given an OSM model, report name, and table name.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        reportName : str
-            The input report name.
-        tableName : str
-            The input table name.
-
-        Returns
-        -------
-        list
-            the list of column names.
-
+        Returns the list of column names given an OSM model, report name, and table name.
         """
-        sql = model.sqlFile().get()
-        query = "SELECT ColumnName FROM tabulardatawithstrings WHERE ReportName = '"+reportName+"' AND TableName = '"+tableName+"'"
-        columnNames = sql.execAndReturnVectorOfString(query).get()
-        return list(OrderedDict( (x,1) for x in columnNames ).keys()) #Making a unique list and keeping its order
+        sql = EnergyModel._SQLFile(model)
+        if sql is None:
+            return []
+        query = "SELECT ColumnName FROM tabulardatawithstrings WHERE ReportName = '" + str(reportName) + "' AND TableName = '" + str(tableName) + "'"
+        columnNames = EnergyModel._VectorOfString(sql.execAndReturnVectorOfString(query))
+        return list(OrderedDict((x, 1) for x in columnNames).keys())
 
     @staticmethod
     def DefaultConstructionSets(model):
         """
-            Returns the default construction sets in the input OSM model.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        list
-            The default construction sets.
-
+        Returns the default construction sets in the input OSM model.
         """
-        sets = model.getDefaultConstructionSets()
-        names = []
-        for aSet in sets:
-            names.append(aSet.name().get())
+        try:
+            sets = list(model.getDefaultConstructionSets())
+        except Exception:
+            sets = []
+        names = [EnergyModel._ObjectName(aSet, "") for aSet in sets]
         return [sets, names]
     
     @staticmethod
     def DefaultScheduleSets(model):
         """
-            Returns the default schedule sets found in the input OSM model.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        list
-            The list of default schedule sets.
-
+        Returns the default schedule sets found in the input OSM model.
         """
-        sets = model.getDefaultScheduleSets()
-        names = []
-        for aSet in sets:
-            names.append(aSet.name().get())
+        try:
+            sets = list(model.getDefaultScheduleSets())
+        except Exception:
+            sets = []
+        names = [EnergyModel._ObjectName(aSet, "") for aSet in sets]
         return [sets, names]
     
     @staticmethod
     def ExportToGBXML(model, path, overwrite=False):
         """
-            Exports the input OSM model to a GBXML file.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        path : str
-            The path for saving the file.
-        overwrite : bool, optional
-            If set to True any file with the same name is over-written. Default is False.
-
-        Returns
-        -------
-        bool
-            True if the file is written successfully. False otherwise.
-
+        Exports the input OSM model to a GBXML file.
         """
-        from os.path import exists
-        try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except:
-            print("EnergyModel.ExportToGBXML - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                print("EnergyModel.ExportToGBXML - Information: openstudio library installed correctly.")
-            except:
-                warnings.warn("EnergyModel.ExportToGBXML - Error: Could not import openstudio.Please try to install openstudio manually. Returning None.")
-                return None
-        
-        # Make sure the file extension is .xml
-        ext = path[len(path)-4:len(path)]
-        if ext.lower() != ".xml":
-            path = path+".xml"
-        
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.ExportToGBXML")
+        if openstudio is None:
+            return None
+        if not isinstance(path, str) or not path:
+            print("EnergyModel.ExportToGBXML - Error: The input path is not a valid string. Returning None.")
+            return None
+        if not path.lower().endswith(".xml"):
+            path = path + ".xml"
         if not overwrite and exists(path):
             print("EnergyModel.ExportToGBXML - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
             return None
-        # DEBUGGING
-        #return openstudio.gbxml.GbXMLForwardTranslator().modelToGbXML(model, openstudio.openstudioutilitiescore.toPath(path))
-        return openstudio.gbxml.GbXMLForwardTranslator().modelToGbXML(model, path)
+        try:
+            os_path = EnergyModel._OSPath(path, openstudio)
+            try:
+                return openstudio.gbxml.GbXMLForwardTranslator().modelToGbXML(model, os_path)
+            except TypeError:
+                return openstudio.gbxml.GbXMLForwardTranslator().modelToGbXML(model, path)
+        except Exception as e:
+            warnings.warn(f"EnergyModel.ExportToGBXML - Error: Could not export GBXML ({e}). Returning None.")
+            return None
 
-    
     @staticmethod
     def ExportToOSM(model, path, overwrite=False):
         """
-            Exports the input OSM model to an OSM file.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        path : str
-            The path for saving the file.
-        overwrite : bool, optional
-            If set to True any file with the same name is over-written. Default is False.
-
-        Returns
-        -------
-        bool
-            True if the file is written successfully. False otherwise.
-
+        Exports the input OSM model to an OSM file.
         """
-        from os.path import exists
-        try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except:
-            print("EnergyModel.ExportToOSM - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                print("EnergyModel.ExportToOSM - Information: openstudio library installed correctly.")
-            except:
-                warnings.warn("EnergyModel.ExportToOSM - Error: Could not import openstudio.Please try to install openstudio manually. Returning None.")
-                return None
-        
-        # Make sure the file extension is .osm
-        ext = path[len(path)-4:len(path)]
-        if ext.lower() != ".osm":
-            path = path+".osm"
-        
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.ExportToOSM")
+        if openstudio is None:
+            return None
+        if not isinstance(path, str) or not path:
+            print("EnergyModel.ExportToOSM - Error: The input path is not a valid string. Returning None.")
+            return None
+        if not path.lower().endswith(".osm"):
+            path = path + ".osm"
         if not overwrite and exists(path):
             print("EnergyModel.ExportToOSM - Error: a file already exists at the specified path and overwrite is set to False. Returning None.")
             return None
-        osCondition = False
-        # DEBUGGING
-        #osPath = openstudio.openstudioutilitiescore.toPath(path)
-        #osCondition = model.save(osPath, overwrite)
-        osCondition = model.save(path, overwrite)
-        return osCondition
+        try:
+            os_path = EnergyModel._OSPath(path, openstudio)
+            try:
+                return model.save(os_path, overwrite)
+            except TypeError:
+                return model.save(path, overwrite)
+        except Exception as e:
+            warnings.warn(f"EnergyModel.ExportToOSM - Error: Could not export OSM ({e}). Returning None.")
+            return None
     
     @staticmethod
     def GBXMLString(model):
         """
-            Returns the GBXML string of the input OSM model.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        str
-            The gbxml string.
-
+        Returns the GBXML string of the input OSM model.
         """
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.GBXMLString")
+        if openstudio is None:
+            return None
         try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except:
-            print("EnergyModel.GBXMLString - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                print("EnergyModel.GBXMLString - Information: openstudio library installed correctly.")
-            except:
-                warnings.warn("EnergyModel.GBXMLString - Error: Could not import openstudio.Please try to install openstudio manually. Returning None.")
-                return None
-        return openstudio.gbxml.GbXMLForwardTranslator().modelToGbXMLString(model)
+            return openstudio.gbxml.GbXMLForwardTranslator().modelToGbXMLString(model)
+        except Exception as e:
+            warnings.warn(f"EnergyModel.GBXMLString - Error: Could not create GBXML string ({e}). Returning None.")
+            return None
     
     @staticmethod
     def Query(model,
-              reportName : str = "HVACSizingSummary",
-              reportForString : str = "Entire Facility",
-              tableName : str = "Zone Sensible Cooling",
-              columnName : str = "Calculated Design Load",
-              rowNames : list = [],
-              units : str = "W"):
+              reportName: str = "HVACSizingSummary",
+              reportForString: str = "Entire Facility",
+              tableName: str = "Zone Sensible Cooling",
+              columnName: str = "Calculated Design Load",
+              rowNames: list = None,
+              units: str = "W"):
         """
-            Queries the model for values.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        reportName : str , optional
-            The input report name. Default is "HVACSizingSummary".
-        reportForString : str, optional
-            The input report for string. Default is "Entire Facility".
-        tableName : str , optional
-            The input table name. Default is "Zone Sensible Cooling".
-        columnName : str , optional
-            The input column name. Default is "Calculated Design Load".
-        rowNames : list , optional
-            The input list of row names. Default is [].
-        units : str , optional
-            The input units. Default is "W".
-
-        Returns
-        -------
-        list
-            The list of values.
-
+        Queries the model for values.
         """
-        
-        def doubleValueFromQuery(sqlFile, reportName, reportForString,
-                                 tableName, columnName, rowName,
-                                 units):
-            query = "SELECT Value FROM tabulardatawithstrings WHERE ReportName='" + reportName + "' AND ReportForString='" + reportForString + "' AND TableName = '" + tableName + "' AND RowName = '" + rowName + "' AND ColumnName= '" + columnName + "' AND Units='" + units + "'";
-            osOptionalDoubleValue = sqlFile.execAndReturnFirstDouble(query)
-            if (osOptionalDoubleValue.is_initialized()):
-                return osOptionalDoubleValue.get()
-            else:
-                return None
-        
-        sqlFile = model.sqlFile().get()
-        returnValues = []
-        for rowName in rowNames:
-            returnValues.append(doubleValueFromQuery(sqlFile, reportName, reportForString, tableName, columnName, rowName, units))
-        return returnValues
+        if rowNames is None:
+            rowNames = []
+        elif not isinstance(rowNames, list):
+            rowNames = [rowNames]
+
+        sqlFile = EnergyModel._SQLFile(model)
+        if sqlFile is None:
+            return []
+
+        def doubleValueFromQuery(sqlFile, reportName, reportForString, tableName, columnName, rowName, units):
+            query = (
+                "SELECT Value FROM tabulardatawithstrings WHERE "
+                "ReportName='" + str(reportName) + "' AND "
+                "ReportForString='" + str(reportForString) + "' AND "
+                "TableName = '" + str(tableName) + "' AND "
+                "RowName = '" + str(rowName) + "' AND "
+                "ColumnName= '" + str(columnName) + "' AND "
+                "Units='" + str(units) + "'"
+            )
+            try:
+                osOptionalDoubleValue = sqlFile.execAndReturnFirstDouble(query)
+                if osOptionalDoubleValue.is_initialized():
+                    return osOptionalDoubleValue.get()
+            except Exception:
+                pass
+            return None
+
+        return [doubleValueFromQuery(sqlFile, reportName, reportForString, tableName, columnName, rowName, units) for rowName in rowNames]
     
     @staticmethod
     def ReportNames(model):
         """
-            Returns the report names found in the input OSM model.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        list
-            The list of report names found in the input OSM model.
-
+        Returns the report names found in the input OSM model.
         """
-        sql = model.sqlFile().get()
-        reportNames = sql.execAndReturnVectorOfString("SELECT ReportName FROM tabulardatawithstrings").get()
-        return list(OrderedDict( (x,1) for x in reportNames ).keys()) #Making a unique list and keeping its order
+        sql = EnergyModel._SQLFile(model)
+        if sql is None:
+            return []
+        reportNames = EnergyModel._VectorOfString(sql.execAndReturnVectorOfString("SELECT ReportName FROM tabulardatawithstrings"))
+        return list(OrderedDict((x, 1) for x in reportNames).keys())
 
     @staticmethod
     def RowNames(model, reportName, tableName):
         """
-            Returns the list of row names given an OSM model, report name, and table name.
-
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        reportName : str
-            The input name of the report.
-        tableName : str
-            The input name of the table.
-
-        Returns
-        -------
-        list
-            The list of row names.
-
+        Returns the list of row names given an OSM model, report name, and table name.
         """
-        sql = model.sqlFile().get()
-        query = "SELECT RowName FROM tabulardatawithstrings WHERE ReportName = '"+reportName+"' AND TableName = '"+tableName+"'"
-        columnNames = sql.execAndReturnVectorOfString(query).get()
-        return list(OrderedDict( (x,1) for x in columnNames ).keys()) #Making a unique list and keeping its order
+        sql = EnergyModel._SQLFile(model)
+        if sql is None:
+            return []
+        query = "SELECT RowName FROM tabulardatawithstrings WHERE ReportName = '" + str(reportName) + "' AND TableName = '" + str(tableName) + "'"
+        rowNames = EnergyModel._VectorOfString(sql.execAndReturnVectorOfString(query))
+        return list(OrderedDict((x, 1) for x in rowNames).keys())
 
     @staticmethod
-    def Run(model, weatherFilePath: str = None, osBinaryPath : str = None, outputFolder : str = None, removeFiles : bool = False):
+    def Run(model, weatherFilePath: str = None, osBinaryPath: str = None, outputFolder: str = None, removeFiles: bool = False):
         """
-            Runs an energy simulation.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        weatherFilePath : str
-            The path to the epw weather file.
-        osBinaryPath : str
-            The path to the openstudio binary.
-        outputFolder : str
-            The path to the output folder.
-        removeFiles : bool , optional
-            If set to True, the working files are removed at the end of the process. Default is False.
-
-        Returns
-        -------
-        model : openstudio.openstudiomodelcore.Model
-            The simulated OSM model.
-
+        Runs an energy simulation.
         """
-        import os
+        import subprocess
         import time
-        try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except:
-            print("EnergyModel.Run - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                print("EnergyModel.Run - Information: openstudio library installed correctly.")
-            except:
-                warnings.warn("EnergyModel.Run - Error: Could not import openstudio.Please try to install openstudio manually. Returning None.")
-                return None
+
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.Run")
+        if openstudio is None:
+            return None
+        if model is None:
+            warnings.warn("EnergyModel.Run - Error: The input model is None. Returning None.")
+            return None
+
         def deleteOldFiles(path):
-            onemonth = (time.time()) - 30 * 86400
+            if not path or not os.path.isdir(path):
+                return None
+            onemonth = time.time() - 30 * 86400
             try:
                 for filename in os.listdir(path):
-                    if os.path.getmtime(os.path.join(path, filename)) < onemonth:
-                        if os.path.isfile(os.path.join(path, filename)):
-                            os.remove(os.path.join(path, filename))
-                        elif os.path.isdir(os.path.join(path, filename)):
-                            shutil.rmtree((os.path.join(path, filename)))
-            except:
+                    full_path = os.path.join(path, filename)
+                    if os.path.getmtime(full_path) < onemonth:
+                        if os.path.isfile(full_path):
+                            os.remove(full_path)
+                        elif os.path.isdir(full_path):
+                            shutil.rmtree(full_path)
+            except Exception:
                 pass
+
         if not weatherFilePath:
             weatherFilePath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "EnergyModel", "GBR_London.Gatwick.037760_IWEC.epw")
-        if removeFiles:
-            deleteOldFiles(outputFolder)
-        pbar = tqdm(desc='Running Simulation', total=100, leave=False)
+        if not os.path.exists(weatherFilePath):
+            warnings.warn(f"EnergyModel.Run - Error: Weather file not found: {weatherFilePath}. Returning None.")
+            return None
+
+        if not osBinaryPath:
+            osBinaryPath = shutil.which("openstudio")
+        if not osBinaryPath:
+            warnings.warn("EnergyModel.Run - Error: Could not find the OpenStudio executable. Returning None.")
+            return None
+
         utcnow = datetime.now(timezone.utc)
         timestamp = utcnow.strftime("UTC-%Y-%m-%d-%H-%M-%S")
         if not outputFolder:
-            home = os.path.expanduser('~')
-            outputFolder = os.path.join(home, "EnergyModels", timestamp)
-        else:
-            outputFolder = os.path.join(outputFolder, timestamp)
-        os.mkdir(outputFolder)
-        pbar.update(10)
-        osmPath = os.path.join(outputFolder, model.getBuilding().name().get() + ".osm")
-        # DEBUGGING
-        #model.save(openstudio.openstudioutilitiescore.toPath(osmPath), True)
-        model.save(osmPath, True)
-        oswPath = os.path.join(outputFolder, model.getBuilding().name().get() + ".osw")
-        pbar.update(20)
-        workflow = model.workflowJSON()
-        # DEBUGGING
-        #workflow.setSeedFile(openstudio.openstudioutilitiescore.toPath(osmPath))
-        workflow.setSeedFile(osmPath)
-        pbar.update(30)
-        # DEBUGGING
-        #workflow.setWeatherFile(openstudio.openstudioutilitiescore.toPath(weatherFilePath))
-        workflow.setWeatherFile(weatherFilePath)
-        pbar.update(40)
-        # DEBUGGING
-        #workflow.saveAs(openstudio.openstudioutilitiescore.toPath(oswPath))
-        workflow.saveAs(oswPath)
-        pbar.update(50)
-        cmd = osBinaryPath+" run -w " + "\"" + oswPath + "\""
-        pbar.update(60)
-        os.system(cmd)
-        sqlPath = os.path.join(os.path.join(outputFolder,"run"), "eplusout.sql")
-        pbar.update(100)
-        # DEBUGGING
-        #osSqlFile = openstudio.SqlFile(openstudio.openstudioutilitiescore.toPath(sqlPath))
-        osSqlFile = openstudio.SqlFile(sqlPath)
-        model.setSqlFile(osSqlFile)
-        pbar.close()
-        return model
+            outputFolder = os.path.join(os.path.expanduser("~"), "EnergyModels")
+
+        if removeFiles:
+            deleteOldFiles(outputFolder)
+
+        outputFolder = os.path.join(outputFolder, timestamp)
+        os.makedirs(outputFolder, exist_ok=True)
+
+        pbar = tqdm(desc="Running Simulation", total=100, leave=False)
+        try:
+            try:
+                building_name = model.getBuilding().name().get()
+            except Exception:
+                building_name = "TopologicBuilding"
+
+            osmPath = os.path.join(outputFolder, building_name + ".osm")
+            oswPath = os.path.join(outputFolder, building_name + ".osw")
+
+            pbar.update(10)
+            try:
+                model.save(EnergyModel._OSPath(osmPath, openstudio), True)
+            except TypeError:
+                model.save(osmPath, True)
+
+            pbar.update(20)
+            workflow = model.workflowJSON()
+            try:
+                workflow.setSeedFile(EnergyModel._OSPath(osmPath, openstudio))
+            except TypeError:
+                workflow.setSeedFile(osmPath)
+
+            pbar.update(30)
+            try:
+                workflow.setWeatherFile(EnergyModel._OSPath(weatherFilePath, openstudio))
+            except TypeError:
+                workflow.setWeatherFile(weatherFilePath)
+
+            pbar.update(40)
+            try:
+                workflow.saveAs(EnergyModel._OSPath(oswPath, openstudio))
+            except TypeError:
+                workflow.saveAs(oswPath)
+
+            pbar.update(50)
+            cmd = [osBinaryPath, "run", "-w", oswPath]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            pbar.update(60)
+            if result.returncode != 0:
+                warnings.warn("EnergyModel.Run - Error: OpenStudio simulation failed. Returning None.")
+                return None
+
+            sqlPath = os.path.join(outputFolder, "run", "eplusout.sql")
+            pbar.update(100)
+            if not os.path.exists(sqlPath):
+                warnings.warn("EnergyModel.Run - Error: Simulation SQL file was not created. Returning None.")
+                return None
+
+            try:
+                osSqlFile = openstudio.SqlFile(EnergyModel._OSPath(sqlPath, openstudio))
+            except TypeError:
+                osSqlFile = openstudio.SqlFile(sqlPath)
+            model.setSqlFile(osSqlFile)
+            return model
+        finally:
+            pbar.close()
     
     @staticmethod
     def SpaceDictionaries(model):
         """
-            Return the space dictionaries found in the input OSM model.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        dict
-            The dictionary of space types, names, and colors found in the input OSM model. The dictionary has the following keys:
-            - "types"
-            - "names"
-            - "colors"
-
+        Return the space dictionaries found in the input OSM model.
         """
-        types = model.getSpaceTypes()
+        try:
+            types = list(model.getSpaceTypes())
+        except Exception:
+            types = []
         names = []
         colors = []
         for aType in types:
-            names.append(aType.name().get())
-            red = aType.renderingColor().get().renderingRedValue()
-            green = aType.renderingColor().get().renderingGreenValue()
-            blue = aType.renderingColor().get().renderingBlueValue()
-            colors.append([red,green,blue])
-        return {'types': types, 'names': names, 'colors': colors}
+            names.append(EnergyModel._ObjectName(aType, ""))
+            colors.append(EnergyModel._RenderingColorRGB(aType))
+        return {"types": types, "names": names, "colors": colors}
     
     @staticmethod
     def SpaceTypes(model):
         """
-            Return the space types found in the input OSM model.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        list
-            The list of space types
-
+        Return the space types found in the input OSM model.
         """
-        return model.getSpaceTypes()
+        try:
+            return list(model.getSpaceTypes())
+        except Exception:
+            return []
     
     @staticmethod
     def SpaceTypeNames(model):
         """
-            Return the space type names found in the input OSM model.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        list
-            The list of space type names
-
+        Return the space type names found in the input OSM model.
         """
-        types = model.getSpaceTypes()
-        names = []
-        colors = []
-        for aType in types:
-            names.append(aType.name().get())
-        return names
+        try:
+            types = list(model.getSpaceTypes())
+        except Exception:
+            types = []
+        return [EnergyModel._ObjectName(aType, "") for aType in types]
     
     @staticmethod
     def SpaceColors(model):
         """
-            Return the space colors found in the input OSM model.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        list
-            The list of space colors. Each item is a three-item list representing the red, green, and blue values of the color.
-
+        Return the space colors found in the input OSM model.
         """
-        types = model.getSpaceTypes()
-        colors = []
-        for aType in types:
-            red = aType.renderingColor().get().renderingRedValue()
-            green = aType.renderingColor().get().renderingGreenValue()
-            blue = aType.renderingColor().get().renderingBlueValue()
-            colors.append([red,green,blue])
-        return colors
+        try:
+            types = list(model.getSpaceTypes())
+        except Exception:
+            types = []
+        return [EnergyModel._RenderingColorRGB(aType) for aType in types]
     
     @staticmethod
     def SqlFile(model):
         """
-            Returns the SQL file found in the input OSM model.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-
-        Returns
-        -------
-        SQL file
-            The SQL file found in the input OSM model.
-
+        Returns the SQL file found in the input OSM model.
         """
-        return model.sqlFile().get()
+        return EnergyModel._SQLFile(model)
     
     @staticmethod
     def TableNames(model, reportName):
         """
-            Returns the table names found in the input OSM model and report name.
-        
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        reportName : str
-            The input report name.
-
-        Returns
-        -------
-        list
-            The list of table names found in the input OSM model and report name.
-
+        Returns the table names found in the input OSM model and report name.
         """
-        sql = model.sqlFile().get()
-        tableNames = sql.execAndReturnVectorOfString("SELECT TableName FROM tabulardatawithstrings WHERE ReportName='"+reportName+"'").get()
-        return list(OrderedDict( (x,1) for x in tableNames ).keys()) #Making a unique list and keeping its order
+        sql = EnergyModel._SQLFile(model)
+        if sql is None:
+            return []
+        query = "SELECT TableName FROM tabulardatawithstrings WHERE ReportName='" + str(reportName) + "'"
+        tableNames = EnergyModel._VectorOfString(sql.execAndReturnVectorOfString(query))
+        return list(OrderedDict((x, 1) for x in tableNames).keys())
 
     @staticmethod
     def Topologies(model, tolerance=0.0001):
         """
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
-
-        Returns
-        -------
-        dict
-            The dictionary of topologies found in the input OSM model. The keys of the dictionary are:
-            - "cells"
-            - "apertures"
-            - "shadingFaces"
-
+        Returns the topologies found in the input OSM model.
         """
         from topologicpy.Vertex import Vertex
         from topologicpy.Edge import Edge
@@ -1265,216 +1134,230 @@ class EnergyModel:
         from topologicpy.Context import Context
         from topologicpy.Topology import Topology
 
+        def point_xyz(point):
+            values = []
+            for name in ("x", "y", "z"):
+                attr = getattr(point, name, None)
+                if callable(attr):
+                    values.append(attr())
+                elif attr is not None:
+                    values.append(attr)
+                else:
+                    values.append(None)
+            if all(v is not None for v in values):
+                return values
+            try:
+                return [point[0], point[1], point[2]]
+            except Exception:
+                return [None, None, None]
+
+        def transform_topology(topology, osTransformation):
+            if topology is None:
+                return None
+            try:
+                osTranslation = osTransformation.translation()
+                osMatrix = osTransformation.rotationMatrix()
+                return Core.TopologyUtility.Transform(
+                    topology,
+                    osTranslation.x(), osTranslation.y(), osTranslation.z(),
+                    osMatrix[0, 0], osMatrix[0, 1], osMatrix[0, 2],
+                    osMatrix[1, 0], osMatrix[1, 1], osMatrix[1, 2],
+                    osMatrix[2, 0], osMatrix[2, 1], osMatrix[2, 2],
+                )
+            except Exception:
+                return topology
+
         def surfaceToFace(surface):
+            try:
+                surfaceVertices = list(surface.vertices())
+            except Exception:
+                return None
+            if not surfaceVertices or len(surfaceVertices) < 3:
+                return None
+
             surfaceEdges = []
-            surfaceVertices = surface.vertices()
-            for i in range(len(surfaceVertices)-1):
-                sv = Vertex.ByCoordinates(Vertex.X(surfaceVertices[i]), Vertex.Y(surfaceVertices[i]), Vertex.Z(surfaceVertices[i]))
-                ev = Vertex.ByCoordinates(Vertex.X(surfaceVertices[i+1]), Vertex.Y(surfaceVertices[i+1]), Vertex.Z(surfaceVertices[i+1]))
-                edge = Edge.ByStartVertexEndVertex(sv, ev, tolerance=tolerance, silent=False)
-                if not edge:
+            n = len(surfaceVertices)
+            for i in range(n):
+                j = (i + 1) % n
+                sx, sy, sz = point_xyz(surfaceVertices[i])
+                ex, ey, ez = point_xyz(surfaceVertices[j])
+                if None in [sx, sy, sz, ex, ey, ez]:
                     continue
-                surfaceEdges.append(edge)
-            sv = Vertex.ByCoordinates(Vertex.X(surfaceVertices[len(surfaceVertices)-1]), Vertex.Y(surfaceVertices[len(surfaceVertices)-1]), Vertex.Z(surfaceVertices[len(surfaceVertices)-1]))
-            ev = Vertex.ByCoordinates(Vertex.X(surfaceVertices[0]), Vertex.Y(surfaceVertices[0]), Vertex.Z(surfaceVertices[0]))
-            edge = Edge.ByStartVertexEndVertex(sv, ev, tolerance=tolerance, silent=False)
-            surfaceEdges.append(edge)
+                sv = Vertex.ByCoordinates(sx, sy, sz)
+                ev = Vertex.ByCoordinates(ex, ey, ez)
+                edge = Edge.ByStartVertexEndVertex(sv, ev, tolerance=tolerance, silent=True)
+                if edge:
+                    surfaceEdges.append(edge)
+
+            if len(surfaceEdges) < 3:
+                return None
             surfaceWire = Wire.ByEdges(surfaceEdges, tolerance=tolerance)
-            internalBoundaries = []
-            surfaceFace = Face.ByWires(surfaceWire, internalBoundaries, tolerance=tolerance)
-            return surfaceFace
-        
-        def addApertures(face, apertures):
-            usedFaces = []
-            for aperture in apertures:
+            if surfaceWire is None:
+                return None
+            return Face.ByWires(surfaceWire, [], tolerance=tolerance)
+
+        def addApertures(face, face_apertures):
+            if face is None or not isinstance(face_apertures, list):
+                return face
+            for aperture in face_apertures:
+                if aperture is None:
+                    continue
                 cen = Topology.CenterOfMass(aperture)
                 try:
                     params = Face.ParametersAtVertex(face, cen)
                     u = params[0]
                     v = params[1]
                     w = 0.5
-                except:
+                except Exception:
                     u = 0.5
                     v = 0.5
                     w = 0.5
                 context = Context.ByTopologyParameters(face, u, v, w)
-                _ = Aperture.ByTopologyContext(aperture, context)
+                if context is not None:
+                    _ = Aperture.ByTopologyContext(aperture, context)
             return face
-        spaces = list(model.getSpaces())
-        
+
+        if model is None:
+            return {"cells": [], "apertures": [], "shadingFaces": []}
+
+        try:
+            spaces = list(model.getSpaces())
+        except Exception:
+            spaces = []
+        try:
+            shadingSurfaces = list(model.getShadingSurfaces())
+        except Exception:
+            shadingSurfaces = []
+
         cells = []
         apertures = []
         shadingFaces = []
-        shadingSurfaces = list(model.getShadingSurfaces())
-        
+
         for aShadingSurface in shadingSurfaces:
             shadingFace = surfaceToFace(aShadingSurface)
-            if aShadingSurface.shadingSurfaceGroup().is_initialized():
-                shadingGroup = aShadingSurface.shadingSurfaceGroup().get()
-                if shadingGroup.space().is_initialized():
-                    space = shadingGroup.space().get()
-                    osTransformation = space.transformation()
-                    osTranslation = osTransformation.translation()
-                    osMatrix = osTransformation.rotationMatrix()
-                    rotation11 = osMatrix[0, 0]
-                    rotation12 = osMatrix[0, 1]
-                    rotation13 = osMatrix[0, 2]
-                    rotation21 = osMatrix[1, 0]
-                    rotation22 = osMatrix[1, 1]
-                    rotation23 = osMatrix[1, 2]
-                    rotation31 = osMatrix[2, 0]
-                    rotation32 = osMatrix[2, 1]
-                    rotation33 = osMatrix[2, 2]
-                    shadingFace = Core.TopologyUtility.Transform(shadingFace, osTranslation.x(), osTranslation.y(), osTranslation.z(), rotation11, rotation12, rotation13, rotation21, rotation22, rotation23, rotation31, rotation32, rotation33)
-            shadingFaces.append(shadingFace)
-        
-        for count, aSpace in enumerate(spaces):
-            osTransformation = aSpace.transformation()
-            osTranslation = osTransformation.translation()
-            osMatrix = osTransformation.rotationMatrix()
-            rotation11 = osMatrix[0, 0]
-            rotation12 = osMatrix[0, 1]
-            rotation13 = osMatrix[0, 2]
-            rotation21 = osMatrix[1, 0]
-            rotation22 = osMatrix[1, 1]
-            rotation23 = osMatrix[1, 2]
-            rotation31 = osMatrix[2, 0]
-            rotation32 = osMatrix[2, 1]
-            rotation33 = osMatrix[2, 2]
-            spaceFaces = []
-            surfaces = aSpace.surfaces()
+            if shadingFace is None:
+                continue
+            try:
+                group = EnergyModel._OptionalGet(aShadingSurface.shadingSurfaceGroup(), None)
+                if group is not None:
+                    space = EnergyModel._OptionalGet(group.space(), None)
+                    if space is not None:
+                        shadingFace = transform_topology(shadingFace, space.transformation())
+            except Exception:
+                pass
+            if shadingFace is not None:
+                shadingFaces.append(shadingFace)
 
+        for count, aSpace in enumerate(spaces):
+            try:
+                osTransformation = aSpace.transformation()
+            except Exception:
+                osTransformation = None
+            try:
+                surfaces = list(aSpace.surfaces())
+            except Exception:
+                surfaces = []
+
+            spaceFaces = []
             for aSurface in surfaces:
                 aFace = surfaceToFace(aSurface)
-                aFace = Core.TopologyUtility.Transform(aFace, osTranslation.x(), osTranslation.y(), osTranslation.z(), rotation11, rotation12, rotation13, rotation21, rotation22, rotation23, rotation31, rotation32, rotation33)
-                subSurfaces = aSurface.subSurfaces()
+                if aFace is None:
+                    continue
+                if osTransformation is not None:
+                    aFace = transform_topology(aFace, osTransformation)
+                if aFace is None:
+                    continue
+
+                surface_apertures = []
+                try:
+                    subSurfaces = list(aSurface.subSurfaces())
+                except Exception:
+                    subSurfaces = []
+
                 for aSubSurface in subSurfaces:
                     aperture = surfaceToFace(aSubSurface)
-                    aperture = Core.TopologyUtility.Transform(aperture, osTranslation.x(), osTranslation.y(), osTranslation.z(), rotation11, rotation12, rotation13, rotation21, rotation22, rotation23, rotation31, rotation32, rotation33)
+                    if aperture is None:
+                        continue
+                    if osTransformation is not None:
+                        aperture = transform_topology(aperture, osTransformation)
+                    if aperture is None:
+                        continue
                     apertures.append(aperture)
-                addApertures(aFace, apertures)
+                    surface_apertures.append(aperture)
+
+                addApertures(aFace, surface_apertures)
                 spaceFaces.append(aFace)
+
             spaceFaces = [x for x in spaceFaces if Topology.IsInstance(x, "Face")]
+            if len(spaceFaces) == 0:
+                continue
             spaceCell = Cell.ByFaces(spaceFaces, tolerance=tolerance)
             if not spaceCell:
                 spaceCell = Shell.ByFaces(spaceFaces, tolerance=tolerance)
             if not Topology.IsInstance(spaceCell, "Cell"):
                 spaceCell = Cluster.ByTopologies(spaceFaces)
-            if Topology.IsInstance(spaceCell, "Topology"): #debugging
-                # Set Dictionary for Cell
-                keys = []
-                values = []
 
-                keys.append("TOPOLOGIC_id")
-                keys.append("TOPOLOGIC_name")
-                keys.append("TOPOLOGIC_type")
-                keys.append("TOPOLOGIC_color")
-                spaceID = str(aSpace.handle()).replace('{','').replace('}','')
-                values.append(spaceID)
-                values.append(aSpace.name().get())
+            if Topology.IsInstance(spaceCell, "Topology"):
+                keys = ["TOPOLOGIC_id", "TOPOLOGIC_name", "TOPOLOGIC_type", "TOPOLOGIC_color"]
+                try:
+                    spaceID = str(aSpace.handle()).replace("{", "").replace("}", "")
+                except Exception:
+                    spaceID = str(count)
+                spaceName = EnergyModel._ObjectName(aSpace, "SPACE_" + str(count))
                 spaceTypeName = "Unknown"
-                red = 255
-                green = 255
-                blue = 255
-                
-                if (aSpace.spaceType().is_initialized()):
-                    if(aSpace.spaceType().get().name().is_initialized()):
-                        spaceTypeName = aSpace.spaceType().get().name().get()
-                    if(aSpace.spaceType().get().renderingColor().is_initialized()):
-                        red = aSpace.spaceType().get().renderingColor().get().renderingRedValue()
-                        green = aSpace.spaceType().get().renderingColor().get().renderingGreenValue()
-                        blue = aSpace.spaceType().get().renderingColor().get().renderingBlueValue()
-                values.append(spaceTypeName)
-                values.append([red, green, blue])
+                color = [255, 255, 255]
+
+                try:
+                    spaceType = EnergyModel._OptionalGet(aSpace.spaceType(), None)
+                    if spaceType is not None:
+                        spaceTypeName = EnergyModel._ObjectName(spaceType, "Unknown")
+                        color = EnergyModel._RenderingColorRGB(spaceType)
+                except Exception:
+                    pass
+
+                values = [spaceID, spaceName, spaceTypeName, color]
                 d = Dictionary.ByKeysValues(keys, values)
                 spaceCell = Topology.SetDictionary(spaceCell, d)
                 cells.append(spaceCell)
-        return {'cells':cells, 'apertures':apertures, 'shadingFaces': shadingFaces}
+
+        return {"cells": cells, "apertures": apertures, "shadingFaces": shadingFaces}
 
     @staticmethod
     def Units(model, reportName, tableName, columnName):
         """
-        Parameters
-        ----------
-        model : openstudio.openstudiomodelcore.Model
-            The input OSM model.
-        reportName : str
-            The input report name.
-        tableName : str
-            The input table name.
-        columnName : str
-            The input column name.
-
-        Returns
-        -------
-        str
-            The units string found in the input OSM model, report name, table name, and column name.
-
+        Returns the units string found in the input OSM model, report name, table name, and column name.
         """
-        # model = item[0]
-        # reportName = item[1]
-        # tableName = item[2]
-        # columnName = item[3]
-        sql = model.sqlFile().get()
-        query = "SELECT Units FROM tabulardatawithstrings WHERE ReportName = '"+reportName+"' AND TableName = '"+tableName+"' AND ColumnName = '"+columnName+"'"
-        units = sql.execAndReturnFirstString(query)
-        if (units.is_initialized()):
-            units = units.get()
-        else:
-            print("EnergyModel.Units - Error: Could not retrieve the units. Returning None.")
+        sql = EnergyModel._SQLFile(model)
+        if sql is None:
             return None
-        return units
+        query = "SELECT Units FROM tabulardatawithstrings WHERE ReportName = '" + str(reportName) + "' AND TableName = '" + str(tableName) + "' AND ColumnName = '" + str(columnName) + "'"
+        try:
+            units = sql.execAndReturnFirstString(query)
+            if units.is_initialized():
+                return units.get()
+        except Exception:
+            pass
+        print("EnergyModel.Units - Error: Could not retrieve the units. Returning None.")
+        return None
     
     @staticmethod
     def Version(check: bool = True, silent: bool = False):
         """
         Returns the OpenStudio SDK version number.
-
-        Parameters
-        ----------
-        check : bool , optional
-            if set to True, the version number is checked with the latest version on PyPi. Default is True.
-        
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        str
-            The OpenStudio SDK version number.
-
         """
         from topologicpy.Helper import Helper
-        try:
-            import openstudio
-            openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-        except:
-            if not silent:
-                print("EnergyModel.Version - Information: Installing required openstudio library.")
-            try:
-                os.system("pip install openstudio")
-            except:
-                os.system("pip install openstudio --user")
-            try:
-                import openstudio
-                openstudio.Logger.instance().standardOutLogger().setLogLevel(openstudio.Fatal)
-                if not silent:
-                    print("EnergyModel.Version - Information: openstudio library installed correctly.")
-            except:
-                if not silent:
-                    print("EnergyModel.Version - Error: Could not import openstudio.Please try to install openstudio manually. Returning None.")
-                return None
-        import requests
-        from packaging import version
+        openstudio = EnergyModel._ImportOpenStudio("EnergyModel.Version", silent=silent)
+        if openstudio is None:
+            return None
 
         result = getattr(openstudio, "openStudioVersion", None)
         if callable(result):
             result = result()
         else:
             if not silent:
-                print("EnergyModel.Version - Error: Could not retrieve the openstudio SDK version number. Returning None.")
+                print("EnergyModel.Version - Error: Could not retrieve the OpenStudio SDK version number. Returning None.")
             return None
-        if check == True:
+        if check is True:
             result = Helper.CheckVersion("openstudio", result, silent=silent)
         return result
         

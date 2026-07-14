@@ -83,9 +83,9 @@ class Edge(Topology):
     @staticmethod
     def ByOcctShape(shape, dictionary=None, contents=None, contexts=None, apertures=None):
         try:
-            from OCC.Core.TopExp import topexp_FirstVertex, topexp_LastVertex
-            v1 = topexp_FirstVertex(shape)
-            v2 = topexp_LastVertex(shape)
+            from OCC.Core.TopExp import topexp
+            v1 = topexp.FirstVertex(shape)
+            v2 = topexp.LastVertex(shape)
             start = Vertex.ByOcctShape(v1)
             end = Vertex.ByOcctShape(v2)
         except Exception:

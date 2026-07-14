@@ -25,6 +25,16 @@ import ifcopenshell.api
 
 
 class IFCSemanticsWriter:
+    INTERNAL_EXPORT_KEYS = {
+        "active", "directed", "src", "dst", "dictionary", "representation",
+        "dictionary_mode", "dictionaryMode", "import_mode", "importMode",
+        "color", "colour",
+        "ontology_predicate", "ontologyPredicate",
+        "inverse_predicate", "inversePredicate",
+        "ifc_relationship", "ifcRelationship",
+        "relationship_predicate", "relationshipPredicate",
+    }
+
     def __init__(self, cfg):
         self.cfg = cfg
 
@@ -59,12 +69,16 @@ class IFCSemanticsWriter:
             if k is None:
                 continue
             key = str(k)
-            # Skip complex objects; keep RV-friendly values only
+            if key.startswith("_") or key in self.INTERNAL_EXPORT_KEYS:
+                continue
+            # Skip complex objects; keep RV-friendly values only.
             if isinstance(v, (str, int, float, bool)) or v is None:
                 props[key] = v
             else:
-                # if you want, you can stringify, but for now skip non-scalars
                 props[key] = str(v)
+
+        if not props:
+            return
 
         # IMPORTANT: properties must be a dict (NOT "{...}" which is a set)
         self._run_usecase(

@@ -77,13 +77,13 @@ class Face(Topology):
     @staticmethod
     def ByOcctShape(shape, dictionary=None, contents=None, contexts=None, apertures=None):
         try:
-            from OCC.Core.BRepTools import breptools_OuterWire
+            from OCC.Core.BRepTools import breptools
             from OCC.Core.TopAbs import TopAbs_WIRE
             from OCC.Core.TopExp import TopExp_Explorer
             from OCC.Core.TopoDS import topods
 
             occ_face = topods.Face(shape)
-            outer_occ_wire = breptools_OuterWire(occ_face)
+            outer_occ_wire = breptools.OuterWire(occ_face)
 
             external = None
             internals = []

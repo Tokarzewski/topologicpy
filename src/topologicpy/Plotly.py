@@ -23,20 +23,31 @@ try:
     import plotly
     import plotly.graph_objects as go
     import plotly.offline as ofl
-except:
-    print("Plotly - Installing required plotly library.")
-    try:
-        os.system("pip install plotly")
-    except:
-        os.system("pip install plotly --user")
-    try:
-        import plotly
-        import plotly.graph_objects as go
-        import plotly.offline as ofl
-    except:
-        warnings.warn("Plotly - Error: Could not import plotly.")
+except Exception:
+    warnings.warn("Plotly - Error: Could not import plotly. Please install plotly manually.")
+    plotly = None
+    go = None
+    ofl = None
 
 class Plotly:
+    @staticmethod
+    def _plotly_available(silent: bool = True):
+        """Returns True if Plotly was imported successfully."""
+        if plotly is not None and go is not None:
+            return True
+        if not silent:
+            print("Plotly - Error: Plotly is not available. Please install plotly manually. Returning None.")
+        return False
+
+    @staticmethod
+    def _color_to_hex(value, default="rgba(0,0,0,0)"):
+        """Converts a TopologicPy colour input to a Plotly-compatible colour string."""
+        try:
+            from topologicpy.Color import Color
+            return Color.AnyToHex(value)
+        except Exception:
+            return value if isinstance(value, str) and value else default
+
     @staticmethod
     def AddColorBar(figure, values=None, nTicks=5, xPosition=-0.15, width=15,
                     outlineWidth=0, title="", subTitle="", units="",
@@ -69,10 +80,16 @@ class Plotly:
 
         Returns
         -------
-        plotly.graph_objs._figure.Figure or None
+        plotly.graph_objects.Figure or None
             The updated figure, or None if the input is not a Plotly figure.
         """
-        if not isinstance(figure, plotly.graph_objs._figure.Figure):
+        if not Plotly._plotly_available(silent=True):
+            return None
+        try:
+            figure_class = go.Figure
+        except Exception:
+            return None
+        if not isinstance(figure, figure_class):
             return None
 
         if values is None:
@@ -394,6 +411,8 @@ class Plotly:
             The vertex and edge data list.
 
         """
+        if graph is None:
+            return None
         from topologicpy.Vertex import Vertex
         from topologicpy.Edge import Edge
         from topologicpy.Wire import Wire
@@ -567,9 +586,15 @@ class Plotly:
         """
         import math
         import plotly.graph_objs as go
-        from topologicpy.TGraph import TGraph
+        try:
+            from topologicpy.TGraph import TGraph
+        except Exception:
+            try:
+                from TGraph import TGraph
+            except Exception:
+                TGraph = None
 
-        if not isinstance(graph, TGraph):
+        if TGraph is None or not isinstance(graph, TGraph):
             if not silent:
                 print("Plotly.DataByTGraph - Error: The input graph is not a valid TGraph. Returning None.")
             return None
@@ -578,10 +603,60 @@ class Plotly:
         edgeGroups = list(edgeGroups) if edgeGroups is not None else []
         data = []
 
+        # _005 semantic-key compatibility. These aliases are for visual lookup only;
+        # RDF serialization remains the responsibility of Ontology/TGraph.
+        _KEY_ALIASES = {
+            "hasX": "x", "hasY": "y", "hasZ": "z",
+            "hasLength": "length", "hasArea": "area", "hasVolume": "volume",
+            "hasMantissa": "mantissa", "hasUnit": "unit", "hasWeight": "weight",
+            "hasFeature": "feature", "hasFeatureVector": "feature_vector",
+            "src": "srcId", "dst": "dstId",
+            "IFC_global_id": "ifc_guid", "IFC_id": "ifc_step_id",
+            "IFC_key": "ifc_step_key", "IFC_name": "ifc_name", "IFC_type": "ifc_type",
+            "ifcGUID": "ifc_guid", "ifcClass": "ifc_class", "ifcName": "ifc_name",
+            "ifcType": "ifc_type", "ifcStepId": "ifc_step_id", "ifcStepKey": "ifc_step_key",
+            "ontologyClass": "ontology_class", "ontologyURI": "ontology_uri",
+            "generatedBy": "generated_by", "generatedByMethod": "generated_by",
+            "derivedFrom": "derived_from", "createdAt": "created_at", "modifiedAt": "modified_at",
+        }
+        _INTERNAL_KEYS = {
+            "active", "directed", "color", "colour", "dictionary_mode", "dictionaryMode",
+            "import_mode", "importMode", "ontology_predicate", "ontologyPredicate",
+            "inverse_predicate", "inversePredicate", "ifc_relationship", "ifcRelationship",
+            "relationship_predicate", "relationshipPredicate",
+        }
+
         def _value(d, key, default=None):
             if key is None or not isinstance(d, dict):
                 return default
-            return d.get(key, default)
+            if key in d:
+                return d.get(key, default)
+            alias = _KEY_ALIASES.get(str(key))
+            if alias is not None and alias in d:
+                return d.get(alias, default)
+            # Common snake/camel fallback for IFC/ontology keys.
+            alt = str(key).replace("IFC_", "ifc_")
+            if alt in d:
+                return d.get(alt, default)
+            return default
+
+        def _format_hover_dict(d, fallback=""):
+            if not isinstance(d, dict) or not d:
+                return str(fallback)
+            parts = []
+            for k in sorted(d.keys(), key=lambda x: str(x)):
+                if str(k) in _INTERNAL_KEYS:
+                    continue
+                try:
+                    v = d[k]
+                    if isinstance(v, dict):
+                        v = "; ".join(f"{kk}: {vv}" for kk, vv in v.items())
+                    elif isinstance(v, (list, tuple, set)):
+                        v = ", ".join(str(x) for x in v)
+                    parts.append(f"{k}: {v}")
+                except Exception:
+                    pass
+            return "<br>".join(parts) if parts else str(fallback)
 
         def _number(value, default):
             try:
@@ -605,7 +680,7 @@ class Plotly:
         def _label(d, key, default=""):
             if key is None or not isinstance(d, dict):
                 return default
-            value = d.get(key, default)
+            value = _value(d, key, default)
             return "" if value is None else str(value)
 
         def _unit(vector, default=None):
@@ -810,7 +885,8 @@ class Plotly:
                     x, y, z = _solid_xyz(points)
                 bucket["x"].extend(x); bucket["y"].extend(y); bucket["z"].extend(z)
                 edge_label = _label(d, edgeLabelKey, "")
-                bucket["text"].extend([edge_label] * len(x))
+                edge_hover = edge_label if edge_label else _format_hover_dict(d, fallback=f"edge {record.get('index', '')}")
+                bucket["text"].extend([edge_hover] * len(x))
                 if showEdgeLabel and edgeLabelKey is not None and edge_label:
                     mp = points[len(points)//2]
                     label_x.append(mp[0]); label_y.append(mp[1]); label_z.append(mp[2]); label_text.append(edge_label); label_color.append(this_color)
@@ -860,7 +936,7 @@ class Plotly:
                 vertex_items.append({
                     "x": c[0], "y": c[1], "z": c[2],
                     "label": _label(d, vertexLabelKey, str(idx) if vertexLabelKey is None else ""),
-                    "hover": "<br>".join([f"{k}: {v}" for k, v in d.items()]) if d else str(idx),
+                    "hover": _format_hover_dict(d, fallback=str(idx)),
                     "color": this_color,
                     "size": _number(_value(d, vertexSizeKey, None), vertexSize),
                     "symbol": _plotly_symbol(_value(d, vertexShapeKey, vertexShape)),
@@ -1025,15 +1101,33 @@ class Plotly:
                 except Exception:
                     Reasoner = None
             if Reasoner is not None and hasattr(Reasoner, "ProofGraphData"):
-                call_variants = [
-                    dict(graph=graph, result=result, triple=triple, layout=layout),
-                    dict(result=result, triple=triple, layout=layout),
-                    dict(result=result, triple=triple),
-                    dict(triple=triple),
-                ]
-                for kwargs in call_variants:
+                # Reasoner_005 uses resultOrGraph as the first argument. Older
+                # drafts accepted result= as a loose keyword, but that keyword was
+                # ignored by the plotting-neutral proof-data function and could
+                # silently produce an empty/not-found proof graph.
+                call_variants = []
+                if result is not None:
+                    call_variants.extend([
+                        (result, dict(triple=triple, layout=layout)),
+                        (result, dict(triple=triple)),
+                    ])
+                if graph is not None:
+                    call_variants.extend([
+                        (graph, dict(triple=triple, layout=layout)),
+                        (graph, dict(triple=triple)),
+                    ])
+                call_variants.extend([
+                    (None, dict(triple=triple, layout=layout)),
+                    (None, dict(triple=triple)),
+                ])
+                for first_arg, kwargs in call_variants:
                     try:
-                        return Reasoner.ProofGraphData(**kwargs)
+                        if first_arg is None:
+                            candidate = Reasoner.ProofGraphData(**kwargs)
+                        else:
+                            candidate = Reasoner.ProofGraphData(first_arg, **kwargs)
+                        if isinstance(candidate, dict):
+                            return candidate
                     except TypeError:
                         continue
                     except Exception:
@@ -1124,14 +1218,14 @@ class Plotly:
                 if isinstance(edge, (list, tuple)) and len(edge) >= 2:
                     return str(edge[0])
                 return None
-            return edge.get("source", edge.get("src", edge.get("from", edge.get("subject", edge.get("s")))))
+            return edge.get("source", edge.get("src", edge.get("srcId", edge.get("from", edge.get("subject", edge.get("s"))))))
 
         def _edge_target(edge):
             if not isinstance(edge, dict):
                 if isinstance(edge, (list, tuple)) and len(edge) >= 2:
                     return str(edge[1])
                 return None
-            return edge.get("target", edge.get("dst", edge.get("to", edge.get("object", edge.get("o")))))
+            return edge.get("target", edge.get("dst", edge.get("dstId", edge.get("to", edge.get("object", edge.get("o"))))))
 
         edges = []
         for i, item in enumerate(raw_edges):
@@ -1181,11 +1275,20 @@ class Plotly:
                 value = fallback
             return str(value)
 
+        _INTERNAL_PROOF_KEYS = {
+            "active", "directed", "color", "colour", "dictionary_mode", "dictionaryMode",
+            "import_mode", "importMode", "ontology_predicate", "ontologyPredicate",
+            "inverse_predicate", "inversePredicate", "ifc_relationship", "ifcRelationship",
+            "relationship_predicate", "relationshipPredicate",
+        }
+
         def _hover(d):
             if not hover:
                 return ""
             parts = []
-            for k in sorted(d.keys()):
+            for k in sorted(d.keys(), key=lambda x: str(x)):
+                if str(k) in _INTERNAL_PROOF_KEYS:
+                    continue
                 try:
                     v = d[k]
                     if isinstance(v, (list, tuple, set)):
@@ -1572,7 +1675,7 @@ class Plotly:
 
         Returns
         -------
-        plotly.graph_objs._figure.Figure or None
+        plotly.graph_objects.Figure or None
             The resulting figure.
         """
         try:
@@ -3962,16 +4065,8 @@ class Plotly:
         try:
             import numpy as np
         except Exception:
-            print("Plotly.FigureByMatrix - Installing required numpy library.")
-            try:
-                os.system("pip install numpy")
-            except Exception:
-                os.system("pip install numpy --user")
-            try:
-                import numpy as np
-            except Exception:
-                warnings.warn("Plotly.FigureByMatrix - Error: Could not import numpy. Please install numpy manually. Returning None.")
-                return None
+            warnings.warn("Plotly.FigureByMatrix - Error: Could not import numpy. Please install numpy manually. Returning None.")
+            return None
 
         try:
             Plotly  # noqa: B018
@@ -4558,29 +4653,36 @@ class Plotly:
             The created plotly figure.
 
         """
-        from topologicpy.Vertex import Vertex
-        from topologicpy.Edge import Edge
-        from topologicpy.Color import Color
+        if not Plotly._plotly_available(silent=True):
+            return None
         if not isinstance(data, list):
             return None
 
-        v0 = Vertex.ByCoordinates(0, 0, 0)
-        v1 = Vertex.ByCoordinates(axisSize,0,0)
-        v2 = Vertex.ByCoordinates(0,axisSize,0)
-        v3 = Vertex.ByCoordinates(0,0,axisSize)
+        if xAxis or yAxis or zAxis:
+            try:
+                from topologicpy.Vertex import Vertex
+                from topologicpy.Edge import Edge
+            except Exception:
+                Vertex = None
+                Edge = None
+            if Vertex is not None and Edge is not None:
+                v0 = Vertex.ByCoordinates(0, 0, 0)
+                v1 = Vertex.ByCoordinates(axisSize,0,0)
+                v2 = Vertex.ByCoordinates(0,axisSize,0)
+                v3 = Vertex.ByCoordinates(0,0,axisSize)
 
-        if xAxis:
-            xEdge = Edge.ByVertices([v0,v1], tolerance=tolerance)
-            xData = Plotly.DataByTopology(xEdge, edgeColor="red", edgeWidth=6, showFaces=False, showEdges=True, showVertices=False, edgeLegendLabel="X-Axis")
-            data = data + xData
-        if yAxis:
-            yEdge = Edge.ByVertices([v0,v2], tolerance=tolerance)
-            yData = Plotly.DataByTopology(yEdge, edgeColor="green", edgeWidth=6, showFaces=False, showEdges=True, showVertices=False, edgeLegendLabel="Y-Axis")
-            data = data + yData
-        if zAxis:
-            zEdge = Edge.ByVertices([v0,v3], tolerance=tolerance)
-            zData = Plotly.DataByTopology(zEdge, edgeColor="blue", edgeWidth=6, showFaces=False, showEdges=True, showVertices=False, edgeLegendLabel="Z-Axis")
-            data = data + zData
+                if xAxis:
+                    xEdge = Edge.ByVertices([v0,v1], tolerance=tolerance)
+                    xData = Plotly.DataByTopology(xEdge, edgeColor="red", edgeWidth=6, showFaces=False, showEdges=True, showVertices=False, edgeLegendLabel="X-Axis") or []
+                    data = data + xData
+                if yAxis:
+                    yEdge = Edge.ByVertices([v0,v2], tolerance=tolerance)
+                    yData = Plotly.DataByTopology(yEdge, edgeColor="green", edgeWidth=6, showFaces=False, showEdges=True, showVertices=False, edgeLegendLabel="Y-Axis") or []
+                    data = data + yData
+                if zAxis:
+                    zEdge = Edge.ByVertices([v0,v3], tolerance=tolerance)
+                    zData = Plotly.DataByTopology(zEdge, edgeColor="blue", edgeWidth=6, showFaces=False, showEdges=True, showVertices=False, edgeLegendLabel="Z-Axis") or []
+                    data = data + zData
 
         figure = go.Figure(data=data)
         figure.update_layout(
@@ -4593,8 +4695,8 @@ class Plotly:
                 zaxis =dict(visible=False),
                 ),
             scene_aspectmode='data',
-            paper_bgcolor= Color.AnyToHex(backgroundColor),
-            plot_bgcolor= Color.AnyToHex(backgroundColor),
+            paper_bgcolor=Plotly._color_to_hex(backgroundColor),
+            plot_bgcolor=Plotly._color_to_hex(backgroundColor),
             margin=dict(l=marginLeft, r=marginRight, t=marginTop, b=marginBottom),
             )
         figure.update_xaxes(showgrid=False, zeroline=False, visible=False)
@@ -4668,22 +4770,26 @@ class Plotly:
 
         try:
             import pandas as pd
-        except:
-            print("Plotly.FigureByPieChart - Installing required pandas library.")
-            try:
-                os.system("pip install pandas")
-            except:
-                os.system("pip install pandas --user")
-            try:
-                import pandas as pd
-            except:
-                warnings.warn("Plotly.FigureByPieChart - Error: Could not import pandas. Please install the pandas library manually. Returning None")
-                return None
-            
-        dlist = list(map(list, zip(*data)))
-        df = pd.DataFrame(dlist, columns=data['names'])
-        fig = px.pie(df, values=values, names=names)
-        return fig
+        except Exception:
+            warnings.warn("Plotly.FigureByPieChart - Error: Could not import pandas. Please install pandas manually. Returning None.")
+            return None
+
+        try:
+            if hasattr(data, "columns"):
+                df = data
+            elif isinstance(data, dict):
+                df = pd.DataFrame(data)
+            elif isinstance(data, list):
+                df = pd.DataFrame(data)
+            else:
+                if not data:
+                    return None
+                df = pd.DataFrame(data)
+            fig = px.pie(df, values=values, names=names)
+            return fig
+        except Exception as exc:
+            warnings.warn(f"Plotly.FigureByPieChart - Error: {exc}. Returning None.")
+            return None
     
     @staticmethod
     def FigureByTopology(topology,
@@ -4952,14 +5058,28 @@ class Plotly:
         except:
            print("Plotly.FigureExportToJSON - Error: Could not create a new file at the following location: "+path+". Returning None.")
            return None
-        if (f):
-            plotly.io.write_json(figure, f, validate=True, pretty=False, remove_uids=True, engine=None)
-            f.close()    
-            return True
+        try:
+            if f:
+                plotly.io.write_json(figure, f, validate=True, pretty=False, remove_uids=True, engine=None)
+                f.close()
+                return True
+        except Exception as exc:
+            if f:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+            if not overwrite and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+            print(f"Plotly.FigureExportToJSON - Error: {exc}. Returning None.")
+            return None
         if f:
             try:
                 f.close()
-            except:
+            except Exception:
                 pass
         return False
 
@@ -5003,8 +5123,12 @@ class Plotly:
             print("Plotly.FigureExportToPDF - Error: A file already exists at this location and overwrite is set to False. Returning None.")
             return None
 
-        plotly.io.write_image(figure, path, format='pdf', scale=1, width=width, height=height, validate=True, engine='auto')  
-        return True
+        try:
+            plotly.io.write_image(figure, path, format='pdf', scale=1, width=width, height=height, validate=True, engine='auto')
+            return True
+        except Exception as exc:
+            print(f"Plotly.FigureExportToPDF - Error: {exc}. Returning None.")
+            return None
     
     @staticmethod
     def FigureExportToPNG(figure, path, width=1920, height=1200, overwrite=False):
@@ -5046,8 +5170,12 @@ class Plotly:
             print("Plotly.FigureExportToPNG - Error: A file already exists at this location and overwrite is set to False. Returning None.")
             return None
 
-        plotly.io.write_image(figure, path, format='png', scale=1, width=width, height=height, validate=True, engine='auto')  
-        return True
+        try:
+            plotly.io.write_image(figure, path, format='png', scale=1, width=width, height=height, validate=True, engine='auto')
+            return True
+        except Exception as exc:
+            print(f"Plotly.FigureExportToPNG - Error: {exc}. Returning None.")
+            return None
     
     @staticmethod
     def FigureExportToSVG(figure, path, width=1920, height=1200, overwrite=False):
@@ -5089,8 +5217,12 @@ class Plotly:
             print("Plotly.FigureExportToSVG - Error: A file already exists at this location and overwrite is set to False. Returning None.")
             return None
 
-        plotly.io.write_image(figure, path, format='svg', scale=1, width=width, height=height, validate=True, engine='auto')  
-        return True
+        try:
+            plotly.io.write_image(figure, path, format='svg', scale=1, width=width, height=height, validate=True, engine='auto')
+            return True
+        except Exception as exc:
+            print(f"Plotly.FigureExportToSVG - Error: {exc}. Returning None.")
+            return None
     
     @staticmethod
     def SetCamera(figure, camera=None, center=None, up=None, projection="perspective"):
@@ -5116,14 +5248,18 @@ class Plotly:
             The updated figure
 
         """
-        if not isinstance(camera, list):
+        if not Plotly._plotly_available(silent=True):
+            return None
+        if not isinstance(figure, plotly.graph_objs._figure.Figure):
+            return None
+        if not isinstance(camera, list) or len(camera) < 3:
             camera = [-1.25, -1.25, 1.25]
-        if not isinstance(center, list):
+        if not isinstance(center, list) or len(center) < 3:
             center = [0, 0, 0]
-        if not isinstance(up, list):
+        if not isinstance(up, list) or len(up) < 3:
             up = [0, 0, 1]
-        projection = projection.lower()
-        if projection in "orthographic":
+        projection = str(projection or "perspective").lower()
+        if "ortho" in projection:
             projection = "orthographic"
         else:
             projection = "perspective"
@@ -5163,21 +5299,23 @@ class Plotly:
             
         """
 
+        if not Plotly._plotly_available(silent=False):
+            return None
         if figure == None:
             print("Plotly.Show - Error: The input is NULL. Returning None.")
             return None
-        if not isinstance(camera, list):
+        if not isinstance(camera, list) or len(camera) < 3:
             camera = [-1.25, -1.25, 1.25]
-        if not isinstance(center, list):
+        if not isinstance(center, list) or len(center) < 3:
             center = [0, 0, 0]
-        if not isinstance(up, list):
+        if not isinstance(up, list) or len(up) < 3:
             up = [0, 0, 1]
         if not isinstance(figure, plotly.graph_objs._figure.Figure):
             print("Plotly.Show - Error: The input is not a figure. Returning None.")
             return None
         if renderer == None:
             renderer = Plotly.Renderer()
-        if not renderer.lower() in Plotly.Renderers():
+        if not isinstance(renderer, str) or not renderer.lower() in Plotly.Renderers():
             print("Plotly.Show - Error: The input renderer is not in the approved list of renderers. Returning None.")
             return None
         # Set up camera projection

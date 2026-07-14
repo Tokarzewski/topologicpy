@@ -38,7 +38,7 @@ Call = Tuple[str, str, list]
 
 
 
-@dataclass(slots=True)
+@dataclass
 class IFCFastEntity:
     id: int
     type: str
@@ -344,13 +344,13 @@ class IFCFastTopology:
                          excludeTypes: list = [],
                          dictionaryMode: str = "basic",
                          clean: bool = False,
+                         scale: float = 1.0,
+                         topologyType: str = None,
+                         circleSides: int = 24,
+                         ontology: bool = True,
                          epsilon: float = 0.01,
                          angTolerance: float = 0.1,
                          tolerance: float = 0.0001,
-                         circleSides: int = 24,
-                         topologyType: str = None,
-                         scale: float = 1.0,
-                         ontology: bool = True,
                          silent: bool = False) -> list:
         """
         Imports IFC product geometry from a file path into TopologicPy topologies.
@@ -369,22 +369,22 @@ class IFCFastTopology:
             Default is "basic".
         clean : bool , optional
             If set to True, the imported topologies are cleaned. Default is False.
+        scale : float , optional
+            The scale factor applied to imported coordinates. Default is 1.0.
+        topologyType : str , optional
+            The desired output topology type. If set to None, the method returns the
+            most appropriate topology type for each imported product. Default is None.
+        circleSides : int , optional
+            The number of sides used to approximate circular geometry. Default is 24.
+        ontology : bool , optional
+            If set to True, ontology metadata and semantic class annotations are added
+            to the imported topologies. Default is True.
         epsilon : float , optional
             The geometric epsilon used during import. Default is 0.01.
         angTolerance : float , optional
             The angular tolerance used during import. Default is 0.1.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
-        circleSides : int , optional
-            The number of sides used to approximate circular geometry. Default is 24.
-        topologyType : str , optional
-            The desired output topology type. If set to None, the method returns the
-            most appropriate topology type for each imported product. Default is None.
-        scale : float , optional
-            The scale factor applied to imported coordinates. Default is 1.0.
-        ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the imported topologies. Default is True.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -422,13 +422,13 @@ class IFCFastTopology:
                          excludeTypes: list = [],
                          dictionaryMode: str = "basic",
                          clean: bool = False,
+                         scale: float = 1.0,
+                         topologyType: str = None,
+                         circleSides: int = 24,
+                         ontology: bool = True,
                          epsilon: float = 0.01,
                          angTolerance: float = 0.1,
                          tolerance: float = 0.0001,
-                         circleSides: int = 24,
-                         topologyType: str = None,
-                         scale: float = 1.0,
-                         ontology: bool = True,
                          silent: bool = False) -> list:
 
 
@@ -450,22 +450,22 @@ class IFCFastTopology:
             Default is "basic".
         clean : bool , optional
             If set to True, the imported topologies are cleaned. Default is False.
+        scale : float , optional
+            The scale factor applied to imported coordinates. Default is 1.0.
+        topologyType : str , optional
+            The desired output topology type. If set to None, the method returns the
+            most appropriate topology type for each imported product. Default is None.
+        circleSides : int , optional
+            The number of sides used to approximate circular geometry. Default is 24.
+        ontology : bool , optional
+            If set to True, ontology metadata and semantic class annotations are added
+            to the imported topologies. Default is True.
         epsilon : float , optional
             The geometric epsilon used during import. Default is 0.01.
         angTolerance : float , optional
             The angular tolerance used during import. Default is 0.1.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
-        circleSides : int , optional
-            The number of sides used to approximate circular geometry. Default is 24.
-        topologyType : str , optional
-            The desired output topology type. If set to None, the method returns the
-            most appropriate topology type for each imported product. Default is None.
-        scale : float , optional
-            The scale factor applied to imported coordinates. Default is 1.0.
-        ontology : bool , optional
-            If set to True, ontology metadata and semantic class annotations are added
-            to the imported topologies. Default is True.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -542,9 +542,9 @@ class IFCFastTopology:
                              ontology: bool = True,
                              source: str = None,
                              silent: bool = False) -> list:
+        
         from topologicpy.Topology import Topology
 
-        start = time.time()
         products = IFCFastTopology.ProductsByEntities(entities, includeTypes, excludeTypes)
         metadata_cache = IFCFastTopology._entity_metadata_cache(entities, dictionaryMode=dictionaryMode)
         topologies = []
@@ -614,12 +614,6 @@ class IFCFastTopology:
 
             topologies.append(topology)
             converted += 1
-
-        if not silent:
-            print(
-                f"IFCFastTopology.TopologiesByEntities - Created {converted} topologies; "
-                f"skipped {skipped} products in {time.time() - start:.3f}s."
-            )
         return topologies
 
     @staticmethod
@@ -657,12 +651,9 @@ class IFCFastTopology:
 
     @staticmethod
     def Parse(path: str, silent: bool = False) -> Dict[int, IFCFastEntity]:
-        start = time.time()
         with open(path, "rb") as f:
             data = f.read()
         entities = IFCFastTopology.ParseBytes(data, silent=True)
-        if not silent:
-            print(f"IFCFastTopology.Parse - Parsed {len(entities)} entities in {time.time() - start:.3f}s.")
         return entities
 
     @staticmethod
@@ -1291,16 +1282,108 @@ class IFCFastTopology:
     @staticmethod
     def _ifc_display_class(ifcType):
         """
-        Returns a canonical IFC class name such as IfcSpace from a parsed IFC
-        entity type such as IFCSPACE.
+        Returns a canonical IFC class name such as IfcBuildingStorey.
+
+        Python's title-casing cannot recover internal IFC camel case
+        (for example IFCOPENINGELEMENT -> IfcOpeningelement), so this
+        method uses a curated table for common IFC classes and falls back
+        conservatively for uncommon entities.
         """
         if ifcType is None:
             return None
         s = str(ifcType).strip()
         if not s:
             return None
-        if s.upper().startswith("IFC"):
-            return "Ifc" + s[3:].lower().title().replace("_", "")
+        key = s.replace("_", "").upper()
+        canonical = {
+            "IFCPROJECT": "IfcProject",
+            "IFCSITE": "IfcSite",
+            "IFCBUILDING": "IfcBuilding",
+            "IFCBUILDINGSTOREY": "IfcBuildingStorey",
+            "IFCSPACE": "IfcSpace",
+            "IFCZONE": "IfcZone",
+            "IFCSYSTEM": "IfcSystem",
+            "IFCWALL": "IfcWall",
+            "IFCWALLSTANDARDCASE": "IfcWallStandardCase",
+            "IFCWALLELEMENTEDCASE": "IfcWallElementedCase",
+            "IFCCURTAINWALL": "IfcCurtainWall",
+            "IFCDOOR": "IfcDoor",
+            "IFCDOORSTANDARDCASE": "IfcDoorStandardCase",
+            "IFCWINDOW": "IfcWindow",
+            "IFCWINDOWSTANDARDCASE": "IfcWindowStandardCase",
+            "IFCSLAB": "IfcSlab",
+            "IFCSLABSTANDARDCASE": "IfcSlabStandardCase",
+            "IFCSLABELEMENTEDCASE": "IfcSlabElementedCase",
+            "IFCROOF": "IfcRoof",
+            "IFCCOLUMN": "IfcColumn",
+            "IFCCOLUMNSTANDARDCASE": "IfcColumnStandardCase",
+            "IFCBEAM": "IfcBeam",
+            "IFCBEAMSTANDARDCASE": "IfcBeamStandardCase",
+            "IFCMEMBER": "IfcMember",
+            "IFCSTAIR": "IfcStair",
+            "IFCSTAIRFLIGHT": "IfcStairFlight",
+            "IFCRAILING": "IfcRailing",
+            "IFCOPENINGELEMENT": "IfcOpeningElement",
+            "IFCBUILDINGELEMENTPROXY": "IfcBuildingElementProxy",
+            "IFCFURNISHINGELEMENT": "IfcFurnishingElement",
+            "IFCFURNITURE": "IfcFurniture",
+            "IFCDISTRIBUTIONPORT": "IfcDistributionPort",
+            "IFCDISTRIBUTIONELEMENT": "IfcDistributionElement",
+            "IFCDISTRIBUTIONFLOWELEMENT": "IfcDistributionFlowElement",
+            "IFCDISTRIBUTIONCONTROLELEMENT": "IfcDistributionControlElement",
+            "IFCENERGYCONVERSIONDEVICE": "IfcEnergyConversionDevice",
+            "IFCFLOWTERMINAL": "IfcFlowTerminal",
+            "IFCFLOWSEGMENT": "IfcFlowSegment",
+            "IFCFLOWFITTING": "IfcFlowFitting",
+            "IFCFLOWCONTROLLER": "IfcFlowController",
+            "IFCFLOWMOVINGDEVICE": "IfcFlowMovingDevice",
+            "IFCFLOWSTORAGEDEVICE": "IfcFlowStorageDevice",
+            "IFCFLOWTREATMENTDEVICE": "IfcFlowTreatmentDevice",
+            "IFCDUCTSEGMENT": "IfcDuctSegment",
+            "IFCDUCTFITTING": "IfcDuctFitting",
+            "IFCPIPESEGMENT": "IfcPipeSegment",
+            "IFCPIPEFITTING": "IfcPipeFitting",
+            "IFCPUMP": "IfcPump",
+            "IFCFAN": "IfcFan",
+            "IFCVALVE": "IfcValve",
+            "IFCDAMPER": "IfcDamper",
+            "IFCBOILER": "IfcBoiler",
+            "IFCCHILLER": "IfcChiller",
+            "IFCSENSOR": "IfcSensor",
+            "IFCLIGHTFIXTURE": "IfcLightFixture",
+            "IFCMATERIAL": "IfcMaterial",
+            "IFCMATERIALLIST": "IfcMaterialList",
+            "IFCMATERIALLAYERSET": "IfcMaterialLayerSet",
+            "IFCMATERIALCONSTITUENTSET": "IfcMaterialConstituentSet",
+            "IFCPROPERTYSET": "IfcPropertySet",
+            "IFCELEMENTQUANTITY": "IfcElementQuantity",
+            "IFCCLASSIFICATIONREFERENCE": "IfcClassificationReference",
+            "IFCRELCONTAINEDINSPATIALSTRUCTURE": "IfcRelContainedInSpatialStructure",
+            "IFCRELAGGREGATES": "IfcRelAggregates",
+            "IFCRELNESTS": "IfcRelNests",
+            "IFCRELASSIGNSTOGROUP": "IfcRelAssignsToGroup",
+            "IFCRELDEFINESBYPROPERTIES": "IfcRelDefinesByProperties",
+            "IFCRELDEFINESBYTYPE": "IfcRelDefinesByType",
+            "IFCRELASSOCIATESMATERIAL": "IfcRelAssociatesMaterial",
+            "IFCRELASSOCIATESCLASSIFICATION": "IfcRelAssociatesClassification",
+            "IFCRELASSOCIATESDOCUMENT": "IfcRelAssociatesDocument",
+            "IFCRELASSOCIATESAPPROVAL": "IfcRelAssociatesApproval",
+            "IFCRELASSOCIATESCONSTRAINT": "IfcRelAssociatesConstraint",
+            "IFCRELVOIDSELEMENT": "IfcRelVoidsElement",
+            "IFCRELFILLSELEMENT": "IfcRelFillsElement",
+            "IFCRELSPACEBOUNDARY": "IfcRelSpaceBoundary",
+            "IFCRELSPACEBOUNDARY1STLEVEL": "IfcRelSpaceBoundary1stLevel",
+            "IFCRELSPACEBOUNDARY2NDLEVEL": "IfcRelSpaceBoundary2ndLevel",
+            "IFCRELCONNECTSELEMENTS": "IfcRelConnectsElements",
+            "IFCRELCONNECTSPATHELEMENTS": "IfcRelConnectsPathElements",
+            "IFCRELCONNECTSPORTS": "IfcRelConnectsPorts",
+            "IFCRELCONNECTSPORTTOELEMENT": "IfcRelConnectsPortToElement",
+            "IFCRELSERVICESBUILDINGS": "IfcRelServicesBuildings",
+        }
+        if key in canonical:
+            return canonical[key]
+        if key.startswith("IFC"):
+            return "Ifc" + key[3:].lower().title().replace("_", "")
         return s
 
     @staticmethod
@@ -1602,8 +1685,8 @@ class IFCFastTopology:
             # MEP connectivity/service relationships.
             "IFCRELCONNECTSPORTS": {
                 "relationship": "connects_ports",
-                "ontology_predicate": "brick:feeds",
-                "inverse_predicate": "brick:isFedBy",
+                "ontology_predicate": "top:connectsPort",
+                "inverse_predicate": "top:isConnectedPortOf",
             },
             "IFCRELCONNECTSPORTTOELEMENT": {
                 "relationship": "connects_port_to_element",
@@ -1635,7 +1718,8 @@ class IFCFastTopology:
             local = re.sub(r"[^a-z0-9]+", "_", local).strip("_") or "relationship"
             return {
                 "relationship": local,
-                "ontology_predicate": f"top:{local}",
+                "ontology_predicate": "top:connectsTo",
+                "ifc_relationship": IFCFastTopology._ifc_display_class(ifcClass),
             }
 
         return {"ontology_predicate": defaultValue} if defaultValue is not None else {}
@@ -1763,6 +1847,23 @@ class IFCFastTopology:
         key = str(ifcClass).strip()
         key_upper = key.upper()
 
+        # Ontology.py is the canonical vocabulary authority in the _005 stack.
+        # The local mapping below is kept only as a fallback for partial
+        # installations and tests where Ontology.py is unavailable.
+        try:
+            from topologicpy.Ontology import Ontology
+            result = Ontology.ClassByIFCClass(ifcClass, defaultValue=None)
+            if result not in [None, ""]:
+                return result
+        except Exception:
+            try:
+                from Ontology import Ontology
+                result = Ontology.ClassByIFCClass(ifcClass, defaultValue=None)
+                if result not in [None, ""]:
+                    return result
+            except Exception:
+                pass
+
         mapping = {
             "IFCPROJECT": "top:Project",
             "IFCSITE": "top:Site",
@@ -1871,14 +1972,6 @@ class IFCFastTopology:
 
         if key_upper in mapping:
             return mapping[key_upper]
-
-        try:
-            from topologicpy.Ontology import Ontology
-            result = Ontology.ClassByIFCClass(ifcClass, defaultValue=None)
-            if result not in [None, ""]:
-                return result
-        except Exception:
-            pass
 
         if key_upper.startswith("IFCREL"):
             return "top:Relationship"
@@ -2487,23 +2580,34 @@ class IFCFastTopology:
                 metadata = {}
         brick_class = IFCFastTopology._brick_class_by_ifc_class(ifc_class, predefinedType=predefined_type, objectType=object_type, metadata=metadata, defaultValue=None) if ontology else None
         brick_uri = IFCFastTopology._brick_uri(brick_class) if brick_class else ""
+        # Keep ontology_class in the TopologicPy namespace. External schema
+        # alignments such as Brick are stored separately as brick_class/brick_uri
+        # and can be emitted as additional rdf:type triples downstream.
         if brick_class:
-            ontology_class = brick_class
-            ontology_uri = brick_uri
             ontology_category = "equipment"
 
         keys = []
         values = []
 
-        _add(keys, values, "IFC_id", getattr(entity, "id", ""))
-        _add(keys, values, "IFC_key", f"#{getattr(entity, 'id', '')}")
+        step_id = getattr(entity, "id", "")
+        step_key = f"#{step_id}" if step_id not in [None, ""] else ""
+        gid = IFCFastTopology._root_attr(entity, 0)
+        name = IFCFastTopology._root_attr(entity, 2)
+
+        # Preserve legacy IFC_* keys for backward compatibility, but also
+        # write canonical lower-case keys that Ontology_005 maps to declared
+        # top:ifc* datatype properties.
+        _add(keys, values, "IFC_id", step_id)
+        _add(keys, values, "IFC_key", step_key)
         _add(keys, values, "IFC_type", ifc_class or ifc_type_lower)
         _add(keys, values, "IFC_type_upper", ifc_type)
-        _add(keys, values, "IFC_global_id", IFCFastTopology._root_attr(entity, 0))
-        _add(keys, values, "IFC_name", IFCFastTopology._root_attr(entity, 2))
+        _add(keys, values, "IFC_global_id", gid)
+        _add(keys, values, "IFC_name", name)
+        _add(keys, values, "ifc_step_id", step_id)
+        _add(keys, values, "ifc_step_key", step_key)
+        _add(keys, values, "ifc_type", ifc_class or ifc_type_lower)
 
-        name = IFCFastTopology._root_attr(entity, 2)
-        gid = IFCFastTopology._root_attr(entity, 0)
+        
         label = name if name not in [None, "", "*"] else gid
         if label in [None, "", "*"]:
             label = f"{ifc_type_lower}_{getattr(entity, 'id', '')}"
@@ -3016,6 +3120,7 @@ class IFC:
                   includeTypes: list = [],
                   excludeTypes: list = [],
                   dictionaryMode: str = "basic",
+                  circleSides: int = 24,
                   clean: bool = False,
                   ontology: bool = True,
                   epsilon: float = 0.0001,
@@ -3037,6 +3142,8 @@ class IFC:
         dictionaryMode : str , optional
             The dictionary import mode. Options are "none", "basic", and "full".
             Default is "basic".
+        circleSides : int , optional
+            The number of sides used to approximate circular geometry. Default is 24.
         clean : bool , optional
             If set to True, the imported topologies are cleaned. Default is False.
         ontology : bool , optional
@@ -3064,7 +3171,7 @@ class IFC:
             return None
         return IFCFastTopology.TopologiesByPath(
             path, includeTypes=includeTypes, excludeTypes=excludeTypes, dictionaryMode=dictionaryMode,
-            clean=clean, epsilon=epsilon, angTolerance=angTolerance, tolerance=tolerance, ontology=ontology, silent=silent)
+            clean=clean, circleSides=circleSides, epsilon=epsilon, angTolerance=angTolerance, tolerance=tolerance, ontology=ontology, silent=silent)
 
     @staticmethod
     def FileByPath(path: str, silent: bool = False):
@@ -3499,12 +3606,7 @@ class IFC:
             return set([_normalise_type(v) for v in values if _normalise_type(v)])
 
         def _display_type(ifc_type):
-            if ifc_type is None:
-                return None
-            ifc_type = str(ifc_type).strip()
-            if ifc_type.upper().startswith("IFC"):
-                return "Ifc" + ifc_type[3:].lower().title().replace("_", "")
-            return ifc_type
+            return IFCFastTopology._ifc_display_class(ifc_type)
 
         def _entity_id(entity, key="global_id"):
             if entity is None:
@@ -3611,16 +3713,16 @@ class IFC:
             "IFCRELCONTAINEDINSPATIALSTRUCTURE": (5, 4),        # RelatingStructure -> RelatedElements
             "IFCRELASSIGNSTOGROUP": (5, 4),                     # RelatingGroup -> RelatedObjects
 
-            "IFCRELDEFINESBYPROPERTIES": (5, 4),                # RelatingPropertyDefinition -> RelatedObjects
-            "IFCRELDEFINESBYTYPE": (5, 4),                      # RelatingType -> RelatedObjects
+            "IFCRELDEFINESBYPROPERTIES": (4, 5),                # RelatedObjects -> RelatingPropertyDefinition
+            "IFCRELDEFINESBYTYPE": (4, 5),                      # RelatedObjects -> RelatingType
 
-            "IFCRELASSOCIATESMATERIAL": (5, 4),                 # RelatingMaterial -> RelatedObjects
-            "IFCRELASSOCIATESCLASSIFICATION": (5, 4),           # RelatingClassification -> RelatedObjects
-            "IFCRELASSOCIATESDOCUMENT": (5, 4),                 # RelatingDocument -> RelatedObjects
-            "IFCRELASSOCIATESAPPROVAL": (5, 4),                 # RelatingApproval -> RelatedObjects
-            "IFCRELASSOCIATESCONSTRAINT": (5, 4),               # RelatingConstraint -> RelatedObjects
+            "IFCRELASSOCIATESMATERIAL": (4, 5),                 # RelatedObjects -> RelatingMaterial
+            "IFCRELASSOCIATESCLASSIFICATION": (4, 5),           # RelatedObjects -> RelatingClassification
+            "IFCRELASSOCIATESDOCUMENT": (4, 5),                 # RelatedObjects -> RelatingDocument
+            "IFCRELASSOCIATESAPPROVAL": (4, 5),                 # RelatedObjects -> RelatingApproval
+            "IFCRELASSOCIATESCONSTRAINT": (4, 5),               # RelatedObjects -> RelatingConstraint
 
-            "IFCRELVOIDSELEMENT": (5, 4),                       # RelatedOpeningElement -> RelatingBuildingElement
+            "IFCRELVOIDSELEMENT": (4, 5),                       # RelatingBuildingElement -> RelatedOpeningElement
             "IFCRELFILLSELEMENT": (5, 4),                       # RelatedBuildingElement -> RelatingOpeningElement
 
             "IFCRELSPACEBOUNDARY": (4, 5),                      # RelatingSpace -> RelatedBuildingElement
@@ -3628,7 +3730,7 @@ class IFC:
             "IFCRELSPACEBOUNDARY2NDLEVEL": (4, 5),
 
             "IFCRELCONNECTSELEMENTS": (4, 5),                   # RelatingElement -> RelatedElement
-            "IFCRELCONNECTSPATH ELEMENTS": (4, 5),
+            # "IFCRELCONNECTSPATH ELEMENTS" removed: typo; correct key added below.
             "IFCRELCONNECTSPORTTOELEMENT": (4, 5),              # RelatingPort -> RelatedElement
             "IFCRELCONNECTSPORTS": (4, 5),                      # RelatingPort -> RelatedPort
             "IFCRELCONNECTSSTRUCTURALMEMBER": (4, 5),           # RelatingStructuralMember -> RelatedStructuralConnection
@@ -3702,7 +3804,114 @@ class IFC:
                 if triple is not None:
                     triples.append(triple)
 
+
         return triples
+
+    @staticmethod
+    def _safe_resource_token(value: Any, prefix: str = "inst") -> Optional[str]:
+        """
+        Returns a compact resource token for IFC-derived identifiers.
+
+        GlobalIds, STEP ids, and STEP keys are normalised into instance QNames.
+        Existing QNames and absolute URIs are preserved.
+        """
+        if value is None:
+            return None
+        text = str(value).strip()
+        if text == "":
+            return None
+        if text.startswith("<") and text.endswith(">"):
+            return text
+        if text.startswith("http://") or text.startswith("https://"):
+            return "<" + text + ">"
+        if ":" in text and not text.startswith("#"):
+            return text
+        safe = re.sub(r"[^A-Za-z0-9_\-]+", "_", text).strip("_")
+        if safe == "":
+            safe = "item"
+        if safe[0].isdigit():
+            safe = "id_" + safe
+        return f"{prefix}:{safe}"
+
+    @staticmethod
+    def RDFTriples(file,
+                   includeRels: list = None,
+                   excludeRels: list = None,
+                   subjectKey: str = "global_id",
+                   objectKey: str = "global_id",
+                   includeInverse: bool = False,
+                   namespacePrefix: str = "inst",
+                   silent: bool = False) -> Optional[List[Tuple[str, str, str]]]:
+        """
+        Returns RDF-style triples from IFC relationships.
+
+        Unlike IFC.Triples(), which returns metadata-rich relationship records,
+        this method returns compact triples suitable for KnowledgeGraph.ByTriples
+        and Reasoner.RDFGraphByTriples.
+        """
+        records = IFC.Triples(
+            file,
+            includeRels=includeRels,
+            excludeRels=excludeRels,
+            subjectKey=subjectKey,
+            objectKey=objectKey,
+            includeMetadata=True,
+            silent=silent,
+        )
+        if records is None:
+            return None
+
+        triples = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            s = IFC._safe_resource_token(record.get("subject"), prefix=namespacePrefix)
+            p = record.get("predicate") or record.get("ontology_predicate")
+            o = IFC._safe_resource_token(record.get("object"), prefix=namespacePrefix)
+            if s is None or p is None or o is None:
+                continue
+            triples.append((s, str(p), o))
+            if includeInverse:
+                inv = record.get("inverse_predicate")
+                if inv not in [None, ""]:
+                    triples.append((o, str(inv), s))
+        return triples
+
+    @staticmethod
+    def KnowledgeGraphByFile(file,
+                             includeRels: list = None,
+                             excludeRels: list = None,
+                             subjectKey: str = "global_id",
+                             objectKey: str = "global_id",
+                             includeInverse: bool = False,
+                             namespacePrefix: str = "inst",
+                             useRDFLib: bool = True,
+                             silent: bool = False):
+        """
+        Returns a KnowledgeGraph built from IFC relationship RDF triples.
+        """
+        try:
+            from topologicpy.KnowledgeGraph import KnowledgeGraph
+        except Exception:
+            try:
+                from KnowledgeGraph import KnowledgeGraph
+            except Exception:
+                if not silent:
+                    print("IFC.KnowledgeGraphByFile - Error: KnowledgeGraph.py is unavailable. Returning None.")
+                return None
+        triples = IFC.RDFTriples(
+            file,
+            includeRels=includeRels,
+            excludeRels=excludeRels,
+            subjectKey=subjectKey,
+            objectKey=objectKey,
+            includeInverse=includeInverse,
+            namespacePrefix=namespacePrefix,
+            silent=silent,
+        )
+        if triples is None:
+            return None
+        return KnowledgeGraph.ByTriples(triples, useRDFLib=useRDFLib, silent=silent)
 
     @staticmethod
     def Properties(file,
@@ -3770,12 +3979,7 @@ class IFC:
             return set([_normalise_type(v) for v in values if _normalise_type(v)])
 
         def _display_type(ifc_type):
-            if ifc_type is None:
-                return None
-            ifc_type = str(ifc_type).strip()
-            if ifc_type.upper().startswith("IFC"):
-                return "Ifc" + ifc_type[3:].lower().title().replace("_", "")
-            return ifc_type
+            return IFCFastTopology._ifc_display_class(ifc_type)
 
         def _root_attr(entity, index):
             try:
@@ -4523,12 +4727,7 @@ class IFC:
             return set([_normalise_type(v) for v in values if _normalise_type(v)])
 
         def _display_type(ifc_type):
-            if ifc_type is None:
-                return None
-            ifc_type = str(ifc_type).strip()
-            if ifc_type.upper().startswith("IFC"):
-                return "Ifc" + ifc_type[3:].lower().title().replace("_", "")
-            return ifc_type
+            return IFCFastTopology._ifc_display_class(ifc_type)
 
         def _root_attr(entity, index):
             try:
@@ -4770,8 +4969,8 @@ class IFC:
                 1.0,
             ]
             if ontology:
-                keys.extend(["ontology_class", "category", "generated_by"])
-                values.extend(["top:Relationship", "relationship", "IFC.AccessGraph"])
+                keys.extend(["ontology_class", "category", "generated_by", "ontology_predicate", "inverse_predicate"])
+                values.extend(["top:Relationship", "relationship", "IFC.AccessGraph", "top:adjacentTo", "top:adjacentTo"])
             return _safe_dictionary_by_keys_values(keys, values)
 
         def _routed_edge_dictionary(src_index,
@@ -4833,8 +5032,8 @@ class IFC:
                 1.0,
             ]
             if ontology:
-                keys.extend(["ontology_class", "category", "generated_by"])
-                values.extend(["top:Relationship", "relationship", "IFC.AccessGraph"])
+                keys.extend(["ontology_class", "category", "generated_by", "ontology_predicate", "inverse_predicate"])
+                values.extend(["top:Relationship", "relationship", "IFC.AccessGraph", "top:connectsTo", "top:isConnectedTo"])
             return _safe_dictionary_by_keys_values(keys, values)
 
         def _bbox_centre_by_fast_mesh(entity):
@@ -5741,12 +5940,7 @@ class IFC:
             return set([_normalise_type(v) for v in values if _normalise_type(v)])
 
         def _display_type(ifc_type):
-            if ifc_type is None:
-                return None
-            ifc_type = str(ifc_type).strip()
-            if ifc_type.upper().startswith("IFC"):
-                return "Ifc" + ifc_type[3:].lower().title().replace("_", "")
-            return ifc_type
+            return IFCFastTopology._ifc_display_class(ifc_type)
 
         def _root_attr(entity, index):
             try:
@@ -6227,6 +6421,7 @@ class IFC:
         storeBREP: bool = False,
         useInternalVertex: bool = False,
         includeTypes: list = None,
+        strictIncludeTypes: bool = True,
         excludeTypes: list = None,
         includeRels: list = None,
         excludeRels: list = None,
@@ -6272,6 +6467,7 @@ class IFC:
             storeBREP=storeBREP,
             useInternalVertex=useInternalVertex,
             includeTypes=includeTypes,
+            strictIncludeTypes=strictIncludeTypes,
             excludeTypes=excludeTypes,
             includeRels=includeRels,
             excludeRels=excludeRels,
@@ -6362,11 +6558,7 @@ class IFC:
 
     @staticmethod
     def _display_type(entity_type: str) -> str:
-        s = str(entity_type or "").upper()
-        if not s.startswith("IFC"):
-            return s
-        # Keep conventional IFC spelling for the prefix, while preserving the rest of the token as supplied.
-        return "Ifc" + s[3:]
+        return IFCFastTopology._ifc_display_class(entity_type) or str(entity_type or "")
 
     @staticmethod
     def _value_contains_ref(value, ref) -> bool:

@@ -48,9 +48,16 @@ class Cell():
 
     @staticmethod
     def Box(origin = None,
-            width: float = 1, length: float = 1, height: float = 1,
-            uSides: int = 1, vSides: int = 1, wSides: int = 1,
-            direction: list = [0, 0, 1], placement: str ="center", tolerance: float = 0.0001):
+            width: float = 1,
+            length: float = 1,
+            height: float = 1,
+            uSides: int = 1,
+            vSides: int = 1,
+            wSides: int = 1,
+            direction: list = [0, 0, 1],
+            placement: str ="center",
+            tolerance: float = 0.0001,
+            silent: bool = False):
         """
         Creates a box.
 
@@ -76,6 +83,8 @@ class Cell():
             The description of the placement of the origin of the box. This can be "bottom", "center", or "lowerleft". It is case insensitive. Default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -85,7 +94,7 @@ class Cell():
         """
         return Cell.Prism(origin=origin, width=width, length=length, height=height,
                           uSides=uSides, vSides=vSides, wSides=wSides,
-                          direction=direction, placement=placement, tolerance=tolerance)
+                          direction=direction, placement=placement, tolerance=tolerance, silent=silent)
 
     @staticmethod
     def ByFaces(faces: list,
@@ -462,8 +471,13 @@ class Cell():
 
 
     @staticmethod
-    def ByThickenedFace(face, thickness: float = 1.0, bothSides: bool = True, wSides: int = 1,
-                        reverse: bool = False, tolerance: float = 0.0001, silent: bool = False):
+    def ByThickenedFace(face,
+                        thickness: float = 1.0,
+                        bothSides: bool = True,
+                        wSides: int = 1,
+                        reverse: bool = False,
+                        tolerance: float = 0.0001,
+                        silent: bool = False):
         """
         Creates a cell by thickening the input face.
 
@@ -1263,8 +1277,15 @@ class Cell():
         if origin == None:
             origin = Vertex.Origin()
         bottom_face = Face.CHS(origin = Vertex.Origin(),radius=radius, thickness=thickness, sides=sides, direction=[0,0,1], placement="center", tolerance=tolerance, silent=silent)
-        return_cell = Cell.ByThickenedFace(bottom_face, thickness=height, bothSides=True, reverse=False,
-                            planarize = False, tolerance=tolerance, silent=silent)
+        if not Topology.IsInstance(bottom_face, "face"):
+            if not silent:
+                print("Cell.CSH - Error: Could not create the base face. Returning None.")
+            return None
+        return_cell = Cell.ByThickenedFace(bottom_face, thickness=height, bothSides=True, reverse=False, tolerance=tolerance, silent=silent)
+        if not Topology.IsInstance(return_cell, "cell"):
+            if not silent:
+                print("Cell.CSH - Error: Could not create the cell. Returning None.")
+            return None
         xOffset = 0
         yOffset = 0
         zOffset = 0
@@ -2094,8 +2115,12 @@ class Cell():
         return d
 
     @staticmethod
-    def Dodecahedron(origin= None, radius: float = 0.5,
-                  direction: list = [0, 0, 1], placement: str ="center", tolerance: float = 0.0001):
+    def Dodecahedron(origin= None,
+                     radius: float = 0.5,
+                     direction: list = [0, 0, 1],
+                     placement: str ="center",
+                     tolerance: float = 0.0001,
+                     silent: bool = False):
         """
         Creates a dodecahedron. See https://en.wikipedia.org/wiki/Dodecahedron.
 
@@ -2111,6 +2136,8 @@ class Cell():
             The description of the placement of the origin of the dodecahedron. This can be "bottom", "center", or "lowerleft". It is case insensitive. Default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -2127,7 +2154,8 @@ class Cell():
         if not Topology.IsInstance(origin, "Vertex"):
             origin = Vertex.ByCoordinates(0, 0, 0)
         if not Topology.IsInstance(origin, "Vertex"):
-            print("Cell.Dodecahedron - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
+            if not silent:
+                print("Cell.Dodecahedron - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
             return None
         pen = Face.Circle(sides=5, radius=0.5)
         pentagons = [pen]
@@ -2149,6 +2177,10 @@ class Cell():
         cluster2 = Topology.Translate(cluster2, 0, 0, total_height+zoffset)
         pentagons += Topology.Faces(cluster2)
         dodecahedron = Cell.ByFaces(pentagons, tolerance=tolerance)
+        if not Topology.IsInstance(dodecahedron, "cell"):
+            if not silent:
+                print("Cell.Dodecahedron - Error: Could not create the cell. Returning None.")
+            return None
         centroid = Topology.Centroid(dodecahedron)
         dodecahedron = Topology.Translate(dodecahedron, -Vertex.X(centroid), -Vertex.Y(centroid), -Vertex.Z(centroid))
         vertices = Topology.Vertices(dodecahedron)
@@ -2324,7 +2356,7 @@ class Cell():
         return closed_shells[-1]
     
     @staticmethod
-    def Faces(cell) -> list:
+    def Faces(cell, silent: bool = False) -> list:
         """
         Returns the faces of the input cell.
 
@@ -2332,6 +2364,8 @@ class Cell():
         ----------
         cell : topologic_core.Cell
             The input cell.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -2342,14 +2376,24 @@ class Cell():
         from topologicpy.Topology import Topology
 
         if not Topology.IsInstance(cell, "Cell"):
-            print("Cell.Faces - Error: The input cell parameter is not a valid topologic cell. Returning None.")
+            if not silent:
+                print("Cell.Faces - Error: The input cell parameter is not a valid topologic cell. Returning None.")
             return None
         faces = Topology.Faces(cell)
         return faces
 
     @staticmethod
-    def Hyperboloid(origin = None, baseRadius: float = 0.5, topRadius: float = 0.5, height: float = 1, sides: int = 24, direction: list = [0, 0, 1],
-                        twist: float = 60, placement: str = "center", mantissa: int = 6, tolerance: float = 0.0001):
+    def Hyperboloid(origin = None,
+                    baseRadius: float = 0.5,
+                    topRadius: float = 0.5,
+                    height: float = 1,
+                    sides: int = 24,
+                    direction: list = [0, 0, 1],
+                    twist: float = 60,
+                    placement: str = "center",
+                    mantissa: int = 6,
+                    tolerance: float = 0.0001,
+                    silent: bool = False):
         """
         Creates a hyperboloid.
 
@@ -2375,6 +2419,8 @@ class Cell():
             The desired length of the mantissa. Default is 6
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -2416,7 +2462,8 @@ class Cell():
         if not Topology.IsInstance(origin, "Vertex"):
             origin = Vertex.ByCoordinates(0, 0, 0)
         if not Topology.IsInstance(origin, "Vertex"):
-            print("Cell.Hyperboloid - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
+            if not silent:
+                print("Cell.Hyperboloid - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
             return None
         w_origin = Vertex.Origin()
         baseV = []
@@ -2445,7 +2492,8 @@ class Cell():
 
         hyperboloid = createHyperboloid(baseV, topV, tolerance=tolerance)
         if hyperboloid == None:
-            print("Cell.Hyperboloid - Error: Could not create a hyperboloid. Returning None.")
+            if not silent:
+                print("Cell.Hyperboloid - Error: Could not create the cell. Returning None.")
             return None
         
         hyperboloid = Topology.Orient(hyperboloid, origin=Vertex.Origin(), dirA=[0, 0, 1], dirB=direction, tolerance=tolerance)
@@ -2453,8 +2501,12 @@ class Cell():
         return hyperboloid
     
     @staticmethod
-    def Icosahedron(origin= None, radius: float = 0.5,
-                  direction: list = [0, 0, 1], placement: str ="center", tolerance: float = 0.0001):
+    def Icosahedron(origin= None,
+                    radius: float = 0.5,
+                    direction: list = [0, 0, 1],
+                    placement: str ="center",
+                    tolerance: float = 0.0001,
+                    silent: bool = True):
         """
         Creates an icosahedron. See https://en.wikipedia.org/wiki/Icosahedron.
 
@@ -2470,6 +2522,8 @@ class Cell():
             The description of the placement of the origin of the icosahedron. This can be "bottom", "center", or "lowerleft". It is case insensitive. Default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool, optional
+            If set to True, suppresses warning and error messages. Default is False.
         
         Returns
         -------
@@ -2486,7 +2540,8 @@ class Cell():
         if not Topology.IsInstance(origin, "Vertex"):
             origin = Vertex.ByCoordinates(0, 0, 0)
         if not Topology.IsInstance(origin, "Vertex"):
-            print("Cell.Dodecahedron - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
+            if not silent:
+                print("Cell.Icosahedron - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
             return None
         rect1 = Wire.Rectangle(width=(1+math.sqrt(5))/2, length=1)
         rect2 = Wire.Rectangle(width=1, length=(1+math.sqrt(5))/2)
@@ -2522,6 +2577,10 @@ class Cell():
 
         icosahedron = Cell.ByFaces([f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,
                         f11,f12,f13,f14,f15,f16,f17,f18,f19,f20], tolerance=tolerance)
+        if not Topology.IsInstance(icosahedron, "cell"):
+            if not silent:
+                print("Cell.Icosahedron - Error: Could not create the cell. Returning None.")
+            return None
         sf = 1.051*0.5 # To inscribe it in a sphere of radius 0.5
         icosahedron = Topology.Scale(icosahedron, origin=Vertex.Origin(), x=sf, y=sf, z=sf)
         sf = radius/0.5
@@ -3097,8 +3156,12 @@ class Cell():
         return hull
 
     @staticmethod
-    def Octahedron(origin= None, radius: float = 0.5,
-                  direction: list = [0, 0, 1], placement: str ="center", tolerance: float = 0.0001):
+    def Octahedron(origin= None,
+                   radius: float = 0.5,
+                  direction: list = [0, 0, 1],
+                  placement: str ="center",
+                  tolerance: float = 0.0001,
+                  silent: bool = False):
         """
         Creates an octahedron. See https://en.wikipedia.org/wiki/Octahedron.
 
@@ -3114,6 +3177,8 @@ class Cell():
             The description of the placement of the origin of the octahedron. This can be "bottom", "center", or "lowerleft". It is case insensitive. Default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool, optional
+            If set to True, suppresses warning and error messages. Default is False.
         
         Returns
         -------
@@ -3148,7 +3213,11 @@ class Cell():
         f7 = Face.ByVertices([bottom, vb3, vb4])
         f8 = Face.ByVertices([bottom, vb4, vb1])
 
-        octahedron = Cell.ByFaces([f1, f2, f3, f4, f5, f6, f7, f8], tolerance=tolerance)
+        octahedron = Cell.ByFaces([f1, f2, f3, f4, f5, f6, f7, f8], tolerance=tolerance, silent=silent)
+        if not Topology.IsInstance(octahedron, "cell"):
+            if not silent:
+                print("Cell.Octahedron - Error: Could not create the cell. Returning None.")
+            return None
         octahedron = Topology.Scale(octahedron, origin=Vertex.Origin(), x=radius/0.5, y=radius/0.5, z=radius/0.5)
         if placement == "bottom":
             octahedron = Topology.Translate(octahedron, 0, 0, radius)
@@ -3189,7 +3258,7 @@ class Cell():
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
         silent : bool , optional
-        If set to True, error and warning messages are suppressed. Default is False.
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -3416,8 +3485,18 @@ class Cell():
         return {'pipe': pipe, 'endcapA': endcapA, 'endcapB': endcapB}
     
     @staticmethod
-    def Prism(origin= None, width: float = 1, length: float = 1, height: float = 1, uSides: int = 1, vSides: int = 1, wSides: int = 1,
-                  direction: list = [0, 0, 1], placement: str ="center", mantissa: int = 6, tolerance: float = 0.0001):
+    def Prism(origin= None,
+              width: float = 1,
+              length: float = 1,
+              height: float = 1,
+              uSides: int = 1,
+              vSides: int = 1,
+              wSides: int = 1,
+              direction: list = [0, 0, 1],
+              placement: str ="center",
+              mantissa: int = 6,
+              tolerance: float = 0.0001,
+              silent: bool = False):
         """
         Creates a prism.
 
@@ -3445,6 +3524,8 @@ class Cell():
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
         
         Returns
         -------
@@ -3483,7 +3564,8 @@ class Cell():
         if not Topology.IsInstance(origin, "Vertex"):
             origin = Vertex.ByCoordinates(0, 0, 0)
         if not Topology.IsInstance(origin, "Vertex"):
-            print("Cell.Prism - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
+            if not silent:
+                print("Cell.Prism - Error: The input origin parameter is not a valid topologic vertex. Returning None.")
             return None
         xOffset = 0
         yOffset = 0
@@ -3503,9 +3585,17 @@ class Cell():
         baseFace = Face.ByWire(baseWire, tolerance=tolerance)
 
         prism = Cell.ByThickenedFace(baseFace, thickness=height, bothSides = False, reverse=True)
+        if not Topology.IsInstance(prism, "Cell"):
+            if not silent:
+                print("Cell.Prism - Error: Could not create the cell. Returning None.")
+            return None
 
         if uSides > 1 or vSides > 1 or wSides > 1:
             prism = sliceCell(prism, width, length, height, uSides, vSides, wSides)
+            if not Topology.IsInstance(prism, "Cell"):
+                if not silent:
+                    print("Cell.Prism - Error: Could not slice the cell. Returning None.")
+                return None
         prism = Topology.Orient(prism, origin=origin, dirA=[0, 0, 1], dirB=direction, tolerance=tolerance)
         return prism
 

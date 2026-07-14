@@ -526,6 +526,12 @@ if _PYG_IMPORT_ERROR is None:
 
             self._num_outputs: int = 1
 
+            # Encoders for categorical labels. CrossEntropyLoss requires labels
+            # to be contiguous integers in [0, num_classes-1], while CSV labels
+            # may be strings or arbitrary integer codes.
+            self._label_encoders: Dict[str, Dict[object, int]] = {"graph": {}, "node": {}, "edge": {}}
+            self._label_decoders: Dict[str, Dict[int, object]] = {"graph": {}, "node": {}, "edge": {}}
+
             # Saved training schema (used to keep feature dimensions consistent during inference)
             self._in_dim: Optional[int] = None
             self._feature_schema: Optional[Dict[str, List[str]]] = None
@@ -940,9 +946,51 @@ if _PYG_IMPORT_ERROR is None:
                     df[c] = 0.0
             return df
         @staticmethod
+        def _label_key(value):
+            """Return a stable, hashable key for a CSV label value or node id."""
+            try:
+                if pd.isna(value):
+                    return None
+            except Exception:
+                pass
+            if isinstance(value, np.generic):
+                value = value.item()
+            try:
+                hash(value)
+                return value
+            except Exception:
+                return str(value)
+
+        @staticmethod
+        def _sorted_label_keys(values) -> List[object]:
+            keys = []
+            for value in values:
+                key = PyG._label_key(value)
+                if key is not None and key not in keys:
+                    keys.append(key)
+            return sorted(keys, key=lambda x: (str(type(x)), str(x)))
+
+        @staticmethod
         def _infer_num_classes(values: np.ndarray) -> int:
-            uniq = np.unique(values[~pd.isna(values)])
-            return int(len(uniq))
+            return int(len(PyG._sorted_label_keys(values)))
+
+        def _fit_label_encoder(self, entity: str, values) -> Dict[object, int]:
+            """Fit a stable categorical label encoder for graph/node/edge labels."""
+            keys = self._sorted_label_keys(values)
+            encoder = {key: i for i, key in enumerate(keys)}
+            self._label_encoders[entity] = encoder
+            self._label_decoders[entity] = {i: key for key, i in encoder.items()}
+            return encoder
+
+        def _encode_label_value(self, entity: str, value) -> int:
+            key = self._label_key(value)
+            encoder = self._label_encoders.get(entity, {})
+            if key not in encoder:
+                raise ValueError(f"PyG - Error: Unknown {entity} categorical label {value!r}.")
+            return int(encoder[key])
+
+        def _encode_label_values(self, entity: str, values) -> np.ndarray:
+            return np.array([self._encode_label_value(entity, v) for v in values], dtype=np.int64)
 
         def _build_data_list(self):
             assert self.graph_df is not None and self.nodes_df is not None and self.edges_df is not None
@@ -986,16 +1034,53 @@ if _PYG_IMPORT_ERROR is None:
                     f"Expected columns starting with '{cfg.node_features_header}_'."
                 )
 
+            # Fit categorical encoders once per dataset. This fixes string labels
+            # and arbitrary integer label codes such as {10, 20}; PyTorch
+            # CrossEntropyLoss requires contiguous zero-based targets.
+            if cfg.graph_label_type == "categorical" and cfg.graph_label_header in gdf.columns:
+                self._fit_label_encoder("graph", gdf[cfg.graph_label_header].values)
+            if cfg.node_label_type == "categorical" and cfg.node_label_header in ndf.columns:
+                self._fit_label_encoder("node", ndf[cfg.node_label_header].values)
+            if cfg.edge_label_type == "categorical" and cfg.edge_label_header in edf.columns:
+                self._fit_label_encoder("edge", edf[cfg.edge_label_header].values)
+
             for graph_index, gid in enumerate(gdf[cfg.graph_id_header].unique()):
                 g_row = gdf[gdf[cfg.graph_id_header] == gid]
                 g_nodes = ndf[ndf[cfg.graph_id_header] == gid].sort_values(cfg.node_id_header)
                 g_edges = edf[edf[cfg.graph_id_header] == gid]
 
+                if len(g_nodes) == 0:
+                    raise ValueError(f"PyG - Error: Graph {gid!r} has no nodes.")
+
                 x = torch.tensor(g_nodes[node_feat_cols].values, dtype=torch.float32)
-                edge_index = torch.tensor(
-                    g_edges[[cfg.edge_src_header, cfg.edge_dst_header]].values.T,
-                    dtype=torch.long
-                )
+
+                # PyG edge_index is local and zero-based. TopologicPy CSVs may
+                # contain node ids that are strings, GUIDs, or non-contiguous
+                # integer ids, so always remap src_id/dst_id to local row indices.
+                node_ids = list(g_nodes[cfg.node_id_header].values)
+                node_id_to_local = {}
+                for local_i, node_id in enumerate(node_ids):
+                    key = self._label_key(node_id)
+                    if key in node_id_to_local:
+                        raise ValueError(f"PyG - Error: Duplicate node_id {node_id!r} in graph {gid!r}.")
+                    node_id_to_local[key] = int(local_i)
+
+                edge_pairs = []
+                for row_i, row in g_edges.iterrows():
+                    src_key = self._label_key(row[cfg.edge_src_header])
+                    dst_key = self._label_key(row[cfg.edge_dst_header])
+                    if src_key not in node_id_to_local or dst_key not in node_id_to_local:
+                        raise ValueError(
+                            "PyG - Error: Edge references a node_id that is not present in nodes.csv "
+                            f"for graph {gid!r} at edges.csv row {row_i!r}: "
+                            f"{row[cfg.edge_src_header]!r} -> {row[cfg.edge_dst_header]!r}."
+                        )
+                    edge_pairs.append([node_id_to_local[src_key], node_id_to_local[dst_key]])
+
+                if edge_pairs:
+                    edge_index = torch.tensor(edge_pairs, dtype=torch.long).t().contiguous()
+                else:
+                    edge_index = torch.empty((2, 0), dtype=torch.long)
 
                 data = Data(x=x, edge_index=edge_index)
 
@@ -1017,13 +1102,16 @@ if _PYG_IMPORT_ERROR is None:
                     self.ontology_metadata["edges"][int(graph_index)] = edge_meta
 
                 if len(edge_feat_cols) > 0:
-                    data.edge_attr = torch.tensor(g_edges[edge_feat_cols].values, dtype=torch.float32)
+                    if len(g_edges) > 0:
+                        data.edge_attr = torch.tensor(g_edges[edge_feat_cols].values, dtype=torch.float32)
+                    else:
+                        data.edge_attr = torch.empty((0, len(edge_feat_cols)), dtype=torch.float32)
 
                 # graph-level
                 if cfg.level == "graph":
                     y_val = g_row[cfg.graph_label_header].values[0]
                     if cfg.graph_label_type == "categorical":
-                        data.y = torch.tensor([int(y_val)], dtype=torch.long)
+                        data.y = torch.tensor([self._encode_label_value("graph", y_val)], dtype=torch.long)
                     else:
                         data.y = torch.tensor([float(y_val)], dtype=torch.float32)
 
@@ -1034,7 +1122,7 @@ if _PYG_IMPORT_ERROR is None:
                 if cfg.level == "node":
                     y_vals = g_nodes[cfg.node_label_header].values
                     if cfg.node_label_type == "categorical":
-                        data.y = torch.tensor(y_vals.astype(int), dtype=torch.long)
+                        data.y = torch.tensor(self._encode_label_values("node", y_vals), dtype=torch.long)
                     else:
                         data.y = torch.tensor(y_vals.astype(float), dtype=torch.float32)
                     data.train_mask, data.val_mask, data.test_mask = self._get_or_make_node_masks(g_nodes)
@@ -1043,7 +1131,7 @@ if _PYG_IMPORT_ERROR is None:
                 if cfg.level == "edge":
                     y_vals = g_edges[cfg.edge_label_header].values
                     if cfg.edge_label_type == "categorical":
-                        data.edge_y = torch.tensor(y_vals.astype(int), dtype=torch.long)
+                        data.edge_y = torch.tensor(self._encode_label_values("edge", y_vals), dtype=torch.long)
                     else:
                         data.edge_y = torch.tensor(y_vals.astype(float), dtype=torch.float32)
                     data.edge_train_mask, data.edge_val_mask, data.edge_test_mask = self._get_or_make_edge_masks(g_edges)
@@ -1063,8 +1151,6 @@ if _PYG_IMPORT_ERROR is None:
                 else:
                     raise ValueError("Unsupported level.")
 
-            # Cache input dimension for convenience (used when saving checkpoints)
-            self._in_dim = int(self.data_list[0].x.shape[1]) if self.data_list else self._in_dim
             # Cache input dimension for convenience (used when saving checkpoints)
             self._in_dim = int(self.data_list[0].x.shape[1]) if self.data_list else self._in_dim
 
@@ -1688,14 +1774,19 @@ if _PYG_IMPORT_ERROR is None:
             # Graph-level predictions
             # ----------------------------
             if cfg.level == "graph":
+                id_to_index = {id(d): i for i, d in enumerate(self.data_list)}
                 if split == "train":
-                    data_src = self.train_set
+                    data_src = list(self.train_set or [])
+                    selected_indices = [id_to_index.get(id(d), -1) for d in data_src]
                 elif split in ("val", "valid", "validation"):
-                    data_src = self.val_set
+                    data_src = list(self.val_set or [])
+                    selected_indices = [id_to_index.get(id(d), -1) for d in data_src]
                 elif split == "test":
-                    data_src = self.test_set
+                    data_src = list(self.test_set or [])
+                    selected_indices = [id_to_index.get(id(d), -1) for d in data_src]
                 elif split == "all":
-                    data_src = self.data_list
+                    data_src = list(self.data_list)
+                    selected_indices = list(range(len(data_src)))
                 else:
                     raise ValueError("PyG - Error: split must be one of {'train','val','test','all'} for graph-level.")
 
@@ -1703,10 +1794,6 @@ if _PYG_IMPORT_ERROR is None:
 
                 self.model.eval()
                 all_logits, all_probs, all_pred, all_true, all_idx, all_emb = [], [], [], [], [], []
-
-                # Build a stable index mapping back to self.data_list order
-                # For train/val/test subsets, we map by object identity.
-                id_to_index = {id(d): i for i, d in enumerate(self.data_list)}
 
                 with torch.no_grad():
                     for batch in loader:
@@ -1743,8 +1830,8 @@ if _PYG_IMPORT_ERROR is None:
                             # by tracking running count.
                             pass
 
-                # Index for graph-level: sequential for chosen subset.
-                all_idx = list(range(len(all_pred)))
+                # Index for graph-level: original self.data_list indices for the chosen subset.
+                all_idx = selected_indices[:len(all_pred)]
 
                 out = {
                     "pred": np.array(all_pred),
@@ -1754,10 +1841,7 @@ if _PYG_IMPORT_ERROR is None:
                     md = getattr(self, "ontology_metadata", {}) or {}
                     graph_md = md.get("graphs", {}) or {}
                     selected_metadata = []
-                    if split == "all":
-                        selected_metadata = [copy.deepcopy(graph_md.get(i, {})) for i in range(len(all_pred))]
-                    else:
-                        selected_metadata = [copy.deepcopy(graph_md.get(i, {})) for i in all_idx]
+                    selected_metadata = [copy.deepcopy(graph_md.get(i, {})) for i in all_idx]
                     out["metadata"] = selected_metadata
                 if len(all_true) > 0:
                     out["y_true"] = np.array(all_true)
@@ -2262,7 +2346,11 @@ if _PYG_IMPORT_ERROR is None:
 
         @staticmethod
         def _classification_metrics(y_true: np.ndarray, y_pred: np.ndarray, prefix: str = "") -> Dict[str, float]:
-            acc = float(accuracy_score(y_true, y_pred)) if len(y_true) else 0.0
+            if accuracy_score is None or precision_recall_fscore_support is None:
+                raise ImportError("scikit-learn is required for classification metrics.") from _SKLEARN_IMPORT_ERROR
+            if len(y_true) == 0:
+                return {f"{prefix}accuracy": 0.0, f"{prefix}precision": 0.0, f"{prefix}recall": 0.0, f"{prefix}f1": 0.0}
+            acc = float(accuracy_score(y_true, y_pred))
             prec, rec, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="weighted", zero_division=0)
             return {
                 f"{prefix}accuracy": float(acc),
@@ -2273,11 +2361,13 @@ if _PYG_IMPORT_ERROR is None:
 
         @staticmethod
         def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, prefix: str = "") -> Dict[str, float]:
+            if mean_absolute_error is None or mean_squared_error is None or r2_score is None:
+                raise ImportError("scikit-learn is required for regression metrics.") from _SKLEARN_IMPORT_ERROR
             if len(y_true) == 0:
                 return {f"{prefix}mae": 0.0, f"{prefix}rmse": 0.0, f"{prefix}r2": 0.0}
             mae = float(mean_absolute_error(y_true, y_pred))
             rmse = float(math.sqrt(mean_squared_error(y_true, y_pred)))
-            r2 = float(r2_score(y_true, y_pred))
+            r2 = float(r2_score(y_true, y_pred)) if len(y_true) >= 2 else 0.0
             return {f"{prefix}mae": mae, f"{prefix}rmse": rmse, f"{prefix}r2": r2}
 
         # -----------------
@@ -2712,6 +2802,8 @@ if _PYG_IMPORT_ERROR is None:
                     "num_outputs": int(self._num_outputs),
                     "feature_schema": self._current_feature_schema() if (self.graph_df is not None and self.nodes_df is not None and self.edges_df is not None) else None,
                     "ontology_metadata": copy.deepcopy(getattr(self, "ontology_metadata", {}) or {}),
+                    "label_encoders": copy.deepcopy(getattr(self, "_label_encoders", {}) or {}),
+                    "label_decoders": copy.deepcopy(getattr(self, "_label_decoders", {}) or {}),
                 }
                 torch.save(payload, path)
             else:
@@ -2751,6 +2843,13 @@ if _PYG_IMPORT_ERROR is None:
             except TypeError:
                 # Older PyTorch version (no weights_only argument)
                 obj = torch.load(path, map_location=self.device)
+            except Exception:
+                # Full checkpoints may contain non-tensor metadata. Fall back to
+                # normal loading after the safe loader rejects those objects.
+                try:
+                    obj = torch.load(path, map_location=self.device, weights_only=False)
+                except TypeError:
+                    obj = torch.load(path, map_location=self.device)
 
 
             # New format: dict checkpoint
@@ -2782,6 +2881,10 @@ if _PYG_IMPORT_ERROR is None:
                         self._feature_schema = obj.get("feature_schema")
                     if "ontology_metadata" in obj and isinstance(obj.get("ontology_metadata"), dict):
                         self.ontology_metadata = copy.deepcopy(obj.get("ontology_metadata") or {})
+                    if "label_encoders" in obj and isinstance(obj.get("label_encoders"), dict):
+                        self._label_encoders = copy.deepcopy(obj.get("label_encoders") or {})
+                    if "label_decoders" in obj and isinstance(obj.get("label_decoders"), dict):
+                        self._label_decoders = copy.deepcopy(obj.get("label_decoders") or {})
 
                     # If we already have CSVs loaded (common when doing: ByCSVPath(unseen) -> LoadModel()),
                     # rebuild data_list using the saved schema so tensors match the trained model.
@@ -2815,7 +2918,8 @@ if _PYG_IMPORT_ERROR is None:
                     self.data_list = []
                     self._build_data_list()
                     self._split_holdout()
-# Finally load weights
+
+            # Finally load weights
             self.model.load_state_dict(state, strict=strict)
             self.model.to(self.device)
             self.model.eval()

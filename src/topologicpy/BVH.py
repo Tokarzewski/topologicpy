@@ -15,18 +15,19 @@
 # this program. If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Callable, Any, Iterable
+from typing import Any, Iterable, List, Optional, Tuple
 import math
 
-# TopologicPy imports (used defensively to keep this file standalone-friendly)
+# TopologicPy imports are intentionally defensive so that this module remains
+# importable for static analysis even when topologic_core is unavailable.
 try:
     from topologicpy.Vertex import Vertex
     from topologicpy.Edge import Edge
     from topologicpy.Face import Face
     from topologicpy.Topology import Topology
 except Exception:
-    # If TopologicPy isn't present in the current environment, we still allow type checking.
     Vertex = Edge = Face = Topology = object  # type: ignore
 
 
@@ -35,74 +36,140 @@ except Exception:
 # ----------------------------
 @dataclass
 class AABB:
-    """Axis-aligned bounding box: [minx,miny,minz]..[maxx,maxy,maxz]."""
-    minx: float; miny: float; minz: float
-    maxx: float; maxy: float; maxz: float
+    """Axis-aligned bounding box: [minx, miny, minz] .. [maxx, maxy, maxz]."""
+
+    minx: float
+    miny: float
+    minz: float
+    maxx: float
+    maxy: float
+    maxz: float
 
     @staticmethod
     def from_points(pts: Iterable[Tuple[float, float, float]], pad: float = 0.0) -> "AABB":
+        """
+        Creates an AABB from an iterable of 3D points.
+
+        Empty input returns a degenerate AABB at the origin.
+        """
         it = iter(pts)
         try:
             x, y, z = next(it)
         except StopIteration:
-            # Empty: return a degenerate box at origin
             return AABB(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
         minx = maxx = float(x)
         miny = maxy = float(y)
         minz = maxz = float(z)
+
         for x, y, z in it:
-            if x < minx: minx = x
-            if x > maxx: maxx = x
-            if y < miny: miny = y
-            if y > maxy: maxy = y
-            if z < minz: minz = z
-            if z > maxz: maxz = z
+            x = float(x)
+            y = float(y)
+            z = float(z)
+            if x < minx:
+                minx = x
+            if x > maxx:
+                maxx = x
+            if y < miny:
+                miny = y
+            if y > maxy:
+                maxy = y
+            if z < minz:
+                minz = z
+            if z > maxz:
+                maxz = z
+
         if pad:
-            minx -= pad; miny -= pad; minz -= pad
-            maxx += pad; maxy += pad; maxz += pad
+            pad = float(pad)
+            minx -= pad
+            miny -= pad
+            minz -= pad
+            maxx += pad
+            maxy += pad
+            maxz += pad
+
         return AABB(minx, miny, minz, maxx, maxy, maxz)
 
     @staticmethod
     def union(a: "AABB", b: "AABB") -> "AABB":
+        """Returns the smallest AABB containing both input AABBs."""
         return AABB(
-            min(a.minx, b.minx), min(a.miny, b.miny), min(a.minz, b.minz),
-            max(a.maxx, b.maxx), max(a.maxy, b.maxy), max(a.maxz, b.maxz),
+            min(a.minx, b.minx),
+            min(a.miny, b.miny),
+            min(a.minz, b.minz),
+            max(a.maxx, b.maxx),
+            max(a.maxy, b.maxy),
+            max(a.maxz, b.maxz),
         )
 
     def extent(self) -> Tuple[float, float, float]:
+        """Returns the X, Y, and Z extents of this AABB."""
         return (self.maxx - self.minx, self.maxy - self.miny, self.maxz - self.minz)
 
     def center(self) -> Tuple[float, float, float]:
-        return ((self.minx + self.maxx) * 0.5, (self.miny + self.maxy) * 0.5, (self.minz + self.maxz) * 0.5)
+        """Returns the centroid of this AABB."""
+        return (
+            (self.minx + self.maxx) * 0.5,
+            (self.miny + self.maxy) * 0.5,
+            (self.minz + self.maxz) * 0.5,
+        )
 
     def overlaps(self, other: "AABB") -> bool:
-        return not (self.maxx < other.minx or self.minx > other.maxx or
-                    self.maxy < other.miny or self.miny > other.maxy or
-                    self.maxz < other.minz or self.minz > other.maxz)
+        """Returns True if this AABB overlaps the input AABB."""
+        if not isinstance(other, AABB):
+            return False
+        return not (
+            self.maxx < other.minx
+            or self.minx > other.maxx
+            or self.maxy < other.miny
+            or self.miny > other.maxy
+            or self.maxz < other.minz
+            or self.minz > other.maxz
+        )
 
     def contains_point(self, p: Tuple[float, float, float]) -> bool:
-        x, y, z = p
-        return (self.minx <= x <= self.maxx and
-                self.miny <= y <= self.maxy and
-                self.minz <= z <= self.maxz)
+        """Returns True if this AABB contains the input point."""
+        try:
+            x, y, z = p
+        except Exception:
+            return False
+        return (
+            self.minx <= x <= self.maxx
+            and self.miny <= y <= self.maxy
+            and self.minz <= z <= self.maxz
+        )
 
-    def ray_intersect(self, ro: Tuple[float, float, float], rd: Tuple[float, float, float]) -> Tuple[bool, float, float]:
-        """Ray-box intersection using the 'slab' method.
-        Returns (hit, tmin, tmax) in ray param t, where point = ro + t*rd."""
-        (ox, oy, oz) = ro
-        (dx, dy, dz) = rd
+    def ray_intersect(
+        self,
+        ro: Tuple[float, float, float],
+        rd: Tuple[float, float, float],
+    ) -> Tuple[bool, float, float]:
+        """
+        Tests ray-box intersection using the slab method.
+
+        Returns
+        -------
+        tuple
+            (hit, tmin, tmax), where point = ro + t*rd.
+        """
+        try:
+            ox, oy, oz = ro
+            dx, dy, dz = rd
+        except Exception:
+            return False, -math.inf, math.inf
+
         tmin = -math.inf
         tmax = math.inf
 
         def axis(o, d, mn, mx, tmin, tmax):
             if abs(d) < 1e-15:
-                # Ray parallel to slab: reject if origin not within slab
                 if o < mn or o > mx:
                     return False, tmin, tmax
                 return True, tmin, tmax
-            invD = 1.0 / d
-            t0 = (mn - o) * invD
-            t1 = (mx - o) * invD
+
+            inv_d = 1.0 / d
+            t0 = (mn - o) * inv_d
+            t1 = (mx - o) * inv_d
             if t0 > t1:
                 t0, t1 = t1, t0
             tmin = max(tmin, t0)
@@ -112,11 +179,14 @@ class AABB:
             return True, tmin, tmax
 
         ok, tmin, tmax = axis(ox, dx, self.minx, self.maxx, tmin, tmax)
-        if not ok: return (False, tmin, tmax)
+        if not ok:
+            return False, tmin, tmax
         ok, tmin, tmax = axis(oy, dy, self.miny, self.maxy, tmin, tmax)
-        if not ok: return (False, tmin, tmax)
+        if not ok:
+            return False, tmin, tmax
         ok, tmin, tmax = axis(oz, dz, self.minz, self.maxz, tmin, tmax)
-        if not ok: return (False, tmin, tmax)
+        if not ok:
+            return False, tmin, tmax
         return True, tmin, tmax
 
 
@@ -126,10 +196,10 @@ class AABB:
 @dataclass
 class _BVHNode:
     bbox: AABB
-    left: Optional[int]   # index into nodes list
-    right: Optional[int]  # index into nodes list
-    start: int            # start index into items array (for leaves)
-    count: int            # number of items (for leaves). If count>0, node is leaf.
+    left: Optional[int]
+    right: Optional[int]
+    start: int
+    count: int
 
     def is_leaf(self) -> bool:
         return self.count > 0
@@ -142,29 +212,23 @@ class BVH:
     """
     Basic Bounding Volume Hierarchy over TopologicPy topologies.
 
-    Usage:
-        # 1) Prepare your primitives (Faces, Edges, Cells, etc.)
-        faces = Topology.Faces(some_topology)  # or any list of topologies
+    Usage
+    -----
+    faces = Topology.Faces(some_topology)
+    bvh = BVH.ByTopologies(faces, maxLeafSize=4, tolerance=0.0001, silent=False)
 
-        # 2) Build the BVH
-        bvh = BVH.FromTopologies(faces, max_leaf_size=4, pad=0.0, silent=False)
-
-        # 3) AABB query
-        hits = bvh.QueryAABB(AABB(minx, miny, minz, maxx, maxy, maxz))
-
-        # 4) Raycast (rough): returns candidate primitive indices
-        cand = bvh.Raycast((ox,oy,oz), (dx,dy,dz))
-
-        # 5) Nearest by centroid (coarse)
-        idx, dist = bvh.Nearest((x,y,z))
-        primitive = bvh.items[idx]
+    hits = BVH.QueryAABB(bvh, AABB(minx, miny, minz, maxx, maxy, maxz))
+    candidates = BVH.Raycast(bvh, origin_vertex, [dx, dy, dz])
+    nearest = BVH.Nearest(bvh, query_vertex)
     """
 
     def __init__(self):
         self.nodes: List[_BVHNode] = []
-        self.items: List[Any] = []       # original topologies
-        self.bboxes: List[AABB] = []     # per item bbox
-        self.centroids: List[Tuple[float, float, float]] = []  # per item centroid
+        self.items: List[Any] = []
+        self.bboxes: List[AABB] = []
+        self.centroids: List[Tuple[float, float, float]] = []
+        self.aabbs: List[Tuple[float, float, float, float, float, float]] = []
+        self._leaf_items: List[int] = []
         self._root: Optional[int] = None
 
     # ---------- Public API ----------
@@ -174,19 +238,19 @@ class BVH:
         *topologies,
         maxLeafSize: int = 4,
         tolerance: float = 0.0001,
-        silent: bool = False
-    ) -> "BVH":
+        silent: bool = False,
+    ) -> Optional["BVH"]:
         """
-        Creates a BVH Tree from the input list of topologies.
+        Creates a BVH tree from the input topologies.
 
         Parameters
         ----------
-        *topologies: tuple
-            One or more TopologicPy topologies to include in the BVH.
-        maxLeafSize: int , optional
+        *topologies : topologic_core.Topology
+            One or more topologies, or nested lists of topologies, to include in the BVH.
+        maxLeafSize : int , optional
             The maximum number of primitives stored in a leaf node. Default is 4.
         tolerance : float , optional
-            The desired tolerance used as padding around each AABB. Default is 0.0001.
+            Padding around each AABB. Default is 0.0001.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -194,30 +258,33 @@ class BVH:
         -------
         BVH
             The created BVH tree.
-
         """
         from topologicpy.Vertex import Vertex
         from topologicpy.Topology import Topology
         from topologicpy.Helper import Helper
 
-        topologyList = Helper.Flatten(list(topologies))
-        topologyList = [t for t in topologyList if Topology.IsInstance(t, "Topology")]
+        if isinstance(maxLeafSize, bool) or not isinstance(maxLeafSize, int) or maxLeafSize < 1:
+            if not silent:
+                print("BVH.ByTopologies - Error: The input maxLeafSize parameter must be a positive integer. Returning None.")
+            return None
 
-        if len(topologyList) == 0:
+        try:
+            tolerance = abs(float(tolerance))
+        except Exception:
+            if not silent:
+                print("BVH.ByTopologies - Error: The input tolerance parameter is not numeric. Returning None.")
+            return None
+
+        topology_list = Helper.Flatten(list(topologies))
+        topology_list = [t for t in topology_list if Topology.IsInstance(t, "Topology")]
+
+        if len(topology_list) == 0:
             if not silent:
                 print("BVH.ByTopologies - Error: The input parameters do not contain any valid topologies. Returning None.")
             return None
 
         bvh = BVH()
-
-        # Private, non-persistent cache. This deliberately does NOT write "aabb"
-        # into any topology dictionary.
         aabb_cache = {}
-
-        bvh.items = []
-        bvh.bboxes = []
-        bvh.centroids = []
-        bvh.aabbs = []
 
         def _topology_aabb(topo):
             tid = id(topo)
@@ -228,10 +295,10 @@ class BVH:
             xmax = ymax = zmax = float("-inf")
 
             try:
-                verts = Topology.Vertices(topo)
+                verts = Topology.Vertices(topo, silent=True)
             except TypeError:
                 try:
-                    verts = Topology.Vertices(topo, silent=True)
+                    verts = Topology.Vertices(topo)
                 except Exception:
                     verts = []
             except Exception:
@@ -243,6 +310,9 @@ class BVH:
             for v in verts:
                 try:
                     x, y, z = Vertex.Coordinates(v)
+                    x = float(x)
+                    y = float(y)
+                    z = float(z)
                 except Exception:
                     continue
 
@@ -254,8 +324,12 @@ class BVH:
                 zmax = max(zmax, z)
 
             if (
-                xmin == float("inf") or ymin == float("inf") or zmin == float("inf") or
-                xmax == float("-inf") or ymax == float("-inf") or zmax == float("-inf")
+                xmin == float("inf")
+                or ymin == float("inf")
+                or zmin == float("inf")
+                or xmax == float("-inf")
+                or ymax == float("-inf")
+                or zmax == float("-inf")
             ):
                 return None
 
@@ -263,165 +337,212 @@ class BVH:
             aabb_cache[tid] = aabb
             return aabb
 
-        for topo in topologyList:
+        for topo in topology_list:
             aabb = _topology_aabb(topo)
 
             if aabb is None:
                 if not silent:
-                    print("BVH.ByTopologies - Error: Invalid topology with no vertices. Skipping.")
+                    print("BVH.ByTopologies - Warning: Invalid topology with no vertices. Skipping.")
                 continue
 
             xmin, ymin, zmin, xmax, ymax, zmax = aabb
-            pts = [(xmin, ymin, zmin), (xmax, ymax, zmax)]
-
-            box = AABB.from_points(pts, pad=tolerance)
-            c = box.center()
+            box = AABB.from_points([(xmin, ymin, zmin), (xmax, ymax, zmax)], pad=tolerance)
 
             bvh.items.append(topo)
             bvh.bboxes.append(box)
-            bvh.centroids.append(c)
+            bvh.centroids.append(box.center())
             bvh.aabbs.append(aabb)
 
         indices = list(range(len(bvh.items)))
         if not indices:
             if not silent:
-                print("BVH.ByTopologies - Warning: no items to build.")
+                print("BVH.ByTopologies - Warning: no items to build. Returning an empty BVH.")
             return bvh
 
         bvh.nodes = []
+        bvh._leaf_items = []
         bvh._root = bvh._build_recursive(indices, maxLeafSize)
 
         if not silent:
-            depth = bvh.Depth(bvh)
+            depth = BVH.Depth(bvh)
             print(f"BVH.ByTopologies - Information: Built with {len(bvh.items)} items, {len(bvh.nodes)} nodes, depth ~{depth}.")
 
         return bvh
 
     @staticmethod
-    def Depth(bvh) -> int:
+    def Depth(bvh) -> Optional[int]:
         """
-        Returns an approximate depth of the BVH.
-        
+        Returns the depth of the BVH tree.
+
         Parameters
         ----------
         bvh : BVH
-            The bvh tree.
-        
+            The BVH tree.
+
         Returns
         -------
         int
-            The approximate depth of the input bvh tree.
-
+            The depth of the BVH tree.
         """
+        if not isinstance(bvh, BVH):
+            return None
+
+        if bvh._root is None:
+            return 0
+
         def _depth(i: int) -> int:
-            n = bvh.nodes[i]
-            if n.is_leaf(): return 1
-            return 1 + max(_depth(n.left), _depth(n.right))  # type: ignore
-        if bvh._root is None: return 0
+            node = bvh.nodes[i]
+            if node.is_leaf():
+                return 1
+            return 1 + max(_depth(node.left), _depth(node.right))  # type: ignore[arg-type]
+
         return _depth(bvh._root)
 
     @staticmethod
     def QueryAABB(bvh, query_box: AABB):
-        """Return indices of items whose AABBs overlap query_box."""
+        """
+        Returns item indices whose AABBs overlap the input query AABB.
+
+        Invalid input returns None. A valid but empty BVH returns an empty list.
+        """
+        if not isinstance(bvh, BVH):
+            return None
+        if not isinstance(query_box, AABB):
+            return None
+
         out: List[int] = []
-        if bvh._root is None: return out
+        if bvh._root is None:
+            return out
+
         stack = [bvh._root]
         while stack:
             ni = stack.pop()
             node = bvh.nodes[ni]
             if not node.bbox.overlaps(query_box):
                 continue
+
             if node.is_leaf():
                 for k in range(node.start, node.start + node.count):
                     idx = bvh._leaf_items[k]
                     if bvh.bboxes[idx].overlaps(query_box):
                         out.append(idx)
             else:
-                stack.append(node.left)   # type: ignore
-                stack.append(node.right)  # type: ignore
-        return out
-    
-    @staticmethod
-    def Clashes(bvh, *topologies, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
-        """
-        Returns candidate primitives (topologies) overlapping the BVH (AABB-level) of the input topologies list.
-        You can follow up with precise TopologicPy geometry intersection if needed.
-        
-        Parameters
-        ----------
-        bvh : BVH
-            The bvh tree.
-        *topologies: (tuple of Topologic topologies)
-            One or more TopologicPy topologies to include in the BVH.
-            Each topology is automatically analyzed to extract its vertices and compute an axis-aligned bounding box (AABB)
-            for hierarchical spatial indexing.
-        mantissa : int , optional
-            The desired length of the mantissa. Default is 6.
-        tolerance : float , optional
-            The desired tolerance. Default is 0.0001. Tolerance is used for an optional margin added to all sides of each topology's axis-aligned bounding box (AABB).
-            This helps account for numerical precision errors or slight geometric inaccuracies.
-            A small positive value ensures that closely adjacent or nearly touching primitives are
-            properly enclosed within their bounding boxes. Default is 0.0001.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        list
-            The list of topologies that broadly interest the input list of topologies.
+                if node.left is not None:
+                    stack.append(node.left)
+                if node.right is not None:
+                    stack.append(node.right)
 
+        return out
+
+    @staticmethod
+    def Clashes(
+        bvh,
+        *topologies,
+        mantissa: int = 6,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ):
+        """
+        Returns BVH items whose AABBs overlap the AABBs of the input topologies.
+
+        This is an AABB-level broad-phase query. Use precise geometric predicates or
+        Boolean operations afterwards when exact intersection classification is required.
         """
         from topologicpy.Vertex import Vertex
-        from topologicpy.Cell import Cell
         from topologicpy.Topology import Topology
         from topologicpy.Helper import Helper
 
-        topologyList = Helper.Flatten(list(topologies))
-        topologyList = [t for t in topologyList if Topology.IsInstance(t, "Topology")]
+        if not isinstance(bvh, BVH):
+            if not silent:
+                print("BVH.Clashes - Error: The input bvh parameter is not a valid BVH tree. Returning None.")
+            return None
 
-        if len(topologyList) == 0:
+        try:
+            tolerance = abs(float(tolerance))
+        except Exception:
+            if not silent:
+                print("BVH.Clashes - Error: The input tolerance parameter is not numeric. Returning None.")
+            return None
+
+        topology_list = Helper.Flatten(list(topologies))
+        topology_list = [t for t in topology_list if Topology.IsInstance(t, "Topology")]
+
+        if len(topology_list) == 0:
             if not silent:
                 print("BVH.Clashes - Error: The input parameters do not contain any valid topologies. Returning None.")
             return None
-        
+
         return_topologies = []
-        for topology in topologyList:
-            if Topology.IsInstance(topology, "vertex"):
-                x,y,z = Vertex.Coordinates(topology, mantissa=mantissa)
-                # points = [[x-tolerance, y-tolerance, z-tolerance], [x+tolerance, y+tolerance, z+tolerance]]
-                aabb_box = AABB(x-tolerance, y-tolerance, z-tolerance, x+tolerance, y+tolerance, z+tolerance)
+
+        for topology in topology_list:
+            if Topology.IsInstance(topology, "Vertex"):
+                try:
+                    x, y, z = Vertex.Coordinates(topology, mantissa=mantissa)
+                except Exception:
+                    continue
+                aabb_box = AABB(
+                    x - tolerance,
+                    y - tolerance,
+                    z - tolerance,
+                    x + tolerance,
+                    y + tolerance,
+                    z + tolerance,
+                )
             else:
-                points = [Vertex.Coordinates(v, mantissa=mantissa) for v in Topology.Vertices(topology)]
-                aabb_box = AABB.from_points(points, pad = tolerance)
-            return_topologies.extend([bvh.items[i] for i in BVH.QueryAABB(bvh, aabb_box)])
+                try:
+                    vertices = Topology.Vertices(topology, silent=True)
+                except TypeError:
+                    vertices = Topology.Vertices(topology)
+                except Exception:
+                    vertices = []
+
+                points = []
+                for v in vertices:
+                    try:
+                        points.append(Vertex.Coordinates(v, mantissa=mantissa))
+                    except Exception:
+                        continue
+
+                if len(points) == 0:
+                    continue
+
+                aabb_box = AABB.from_points(points, pad=tolerance)
+
+            hit_indices = BVH.QueryAABB(bvh, aabb_box)
+            if isinstance(hit_indices, list):
+                return_topologies.extend([bvh.items[i] for i in hit_indices])
+
         return return_topologies
 
     @staticmethod
-    def Raycast(bvh, origin, direction: Tuple[float, float, float], mantissa: int = 6, silent: bool = False) -> List[int]:
+    def Raycast(
+        bvh,
+        origin,
+        direction: Tuple[float, float, float],
+        mantissa: int = 6,
+        silent: bool = False,
+    ) -> Optional[List[int]]:
         """
-        Returns candidate primitives intersecting the BVH (AABB-level).
-        You can follow up with precise TopologicPy geometry intersection if needed.
-        
+        Returns candidate item indices whose AABBs are intersected by the input ray.
+
         Parameters
         ----------
         bvh : BVH
-            The bvh tree.
+            The BVH tree.
         origin : topologic_core.Vertex
-            The origin of the ray vector
-        direction : topologic_core.Vector
-            The direction of the raycast vector.
+            The origin of the ray.
+        direction : list or tuple
+            A three-component direction vector.
         mantissa : int , optional
             The desired length of the mantissa. Default is 6.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
-        
+
         Returns
         -------
         list
-            The list of the indices of the possible candidates interesecting the input ray vector.
-
+            Candidate item indices.
         """
-
         from topologicpy.Vertex import Vertex
         from topologicpy.Topology import Topology
 
@@ -429,72 +550,72 @@ class BVH:
             if not silent:
                 print("BVH.Raycast - Error: The input bvh parameter is not a valid BVH tree. Returning None.")
             return None
-        if not Topology.IsInstance(origin, "vertex"):
+
+        if not Topology.IsInstance(origin, "Vertex"):
             if not silent:
                 print("BVH.Raycast - Error: The input origin parameter is not a valid topologic Vertex. Returning None.")
             return None
-        if not isinstance(direction, list):
+
+        if not isinstance(direction, (list, tuple)) or len(direction) != 3:
             if not silent:
                 print("BVH.Raycast - Error: The input direction parameter is not a valid vector. Returning None.")
             return None
-        if not len(direction) < 3:
+
+        try:
+            dx, dy, dz = [float(v) for v in direction]
+        except Exception:
             if not silent:
-                print("BVH.Raycast - Error: The input direction parameter is not a valid vector. Returning None.")
+                print("BVH.Raycast - Error: The input direction parameter contains non-numeric values. Returning None.")
             return None
-        o_coords = Vertex.Coordinates(origin, mantissa=mantissa)
+
+        mag = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if mag <= 0:
+            if not silent:
+                print("BVH.Raycast - Error: The input direction parameter is a zero vector. Returning None.")
+            return None
+
+        direction_tuple = (dx / mag, dy / mag, dz / mag)
+
+        try:
+            o_coords = tuple(Vertex.Coordinates(origin, mantissa=mantissa))
+        except Exception:
+            if not silent:
+                print("BVH.Raycast - Error: Could not read the input origin coordinates. Returning None.")
+            return None
+
         out: List[int] = []
         if bvh._root is None:
             if not silent:
                 print("BVH.Raycast - Warning: The input bvh parameter is empty. Returning an empty list.")
             return out
 
-        # Normalize direction if possible (not strictly required)
-        dx, dy, dz = direction
-        mag = math.sqrt(dx*dx + dy*dy + dz*dz)
-        if mag > 0:
-            direction = (dx/mag, dy/mag, dz/mag)
-
         stack = [bvh._root]
         while stack:
             ni = stack.pop()
             node = bvh.nodes[ni]
-            hit, tmin, tmax = node.bbox.ray_intersect(o_coords, direction)
+            hit, _tmin, tmax = node.bbox.ray_intersect(o_coords, direction_tuple)
             if not hit or tmax < 0:
                 continue
+
             if node.is_leaf():
                 for k in range(node.start, node.start + node.count):
                     idx = bvh._leaf_items[k]
-                    h2, _, _ = bvh.bboxes[idx].ray_intersect(o_coords, direction)
-                    if h2:
+                    h2, _tmin2, tmax2 = bvh.bboxes[idx].ray_intersect(o_coords, direction_tuple)
+                    if h2 and tmax2 >= 0:
                         out.append(idx)
             else:
-                stack.append(node.left)   # type: ignore
-                stack.append(node.right)  # type: ignore
+                if node.left is not None:
+                    stack.append(node.left)
+                if node.right is not None:
+                    stack.append(node.right)
+
         return out
 
     @staticmethod
     def Nearest(bvh, vertex, mantissa: int = 6, silent: bool = False):
         """
-        Returns the topology with centroid nearest to the input vertex.
-        Uses AABB distance lower-bounds to prune search.
-
-        Parameters
-        ----------
-        bvh : BVH
-            The bvh tree.
-        vertex : topologic_core.Vertex
-            The input vertex.
-        mantissa : int , optional
-            The desired length of the mantissa. Default is 6.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        topologic_core.Topology
-            The topology with centroid nearest to the input vertex.
+        Returns the BVH item whose AABB centroid is nearest to the input vertex.
         """
-
         from topologicpy.Vertex import Vertex
         from topologicpy.Topology import Topology
 
@@ -502,13 +623,22 @@ class BVH:
             if not silent:
                 print("BVH.Nearest - Error: The input bvh parameter is not a valid BVH tree. Returning None.")
             return None
-        if not Topology.IsInstance(vertex, "vertex"):
+
+        if not Topology.IsInstance(vertex, "Vertex"):
             if not silent:
                 print("BVH.Nearest - Error: The input vertex parameter is not a valid topologic Vertex. Returning None.")
             return None
+
         if bvh._root is None or not bvh.items:
             if not silent:
                 print("BVH.Nearest - Warning: The input BVH tree is empty. Returning None.")
+            return None
+
+        try:
+            point = tuple(Vertex.Coordinates(vertex, mantissa=mantissa))
+        except Exception:
+            if not silent:
+                print("BVH.Nearest - Error: Could not read the input vertex coordinates. Returning None.")
             return None
 
         best_idx = -1
@@ -517,76 +647,102 @@ class BVH:
         def d2_point_aabb(p: Tuple[float, float, float], b: AABB) -> float:
             px, py, pz = p
             dx = 0.0
-            if px < b.minx: dx = b.minx - px
-            elif px > b.maxx: dx = px - b.maxx
+            if px < b.minx:
+                dx = b.minx - px
+            elif px > b.maxx:
+                dx = px - b.maxx
+
             dy = 0.0
-            if py < b.miny: dy = b.miny - py
-            elif py > b.maxy: dy = py - b.maxy
+            if py < b.miny:
+                dy = b.miny - py
+            elif py > b.maxy:
+                dy = py - b.maxy
+
             dz = 0.0
-            if pz < b.minz: dz = b.minz - pz
-            elif pz > b.maxz: dz = pz - b.maxz
-            return dx*dx + dy*dy + dz*dz
+            if pz < b.minz:
+                dz = b.minz - pz
+            elif pz > b.maxz:
+                dz = pz - b.maxz
+
+            return dx * dx + dy * dy + dz * dz
 
         stack = [bvh._root]
-        point = Vertex.Coordinates(vertex, mantissa=mantissa)
         while stack:
             ni = stack.pop()
             node = bvh.nodes[ni]
             if d2_point_aabb(point, node.bbox) >= best_d2:
                 continue
+
             if node.is_leaf():
                 for k in range(node.start, node.start + node.count):
                     idx = bvh._leaf_items[k]
                     cx, cy, cz = bvh.centroids[idx]
-                    dx = cx - point[0]; dy = cy - point[1]; dz = cz - point[2]
-                    d2 = dx*dx + dy*dy + dz*dz
+                    dx = cx - point[0]
+                    dy = cy - point[1]
+                    dz = cz - point[2]
+                    d2 = dx * dx + dy * dy + dz * dz
                     if d2 < best_d2:
                         best_d2 = d2
                         best_idx = idx
             else:
-                # Visit child likely nearer first to improve pruning
-                l = bvh.nodes[node.left]  # type: ignore
-                r = bvh.nodes[node.right] # type: ignore
-                dl = d2_point_aabb(point, l.bbox)
-                dr = d2_point_aabb(point, r.bbox)
+                if node.left is None or node.right is None:
+                    continue
+
+                left = bvh.nodes[node.left]
+                right = bvh.nodes[node.right]
+                dl = d2_point_aabb(point, left.bbox)
+                dr = d2_point_aabb(point, right.bbox)
+
                 if dl < dr:
-                    stack.append(node.right) # type: ignore
-                    stack.append(node.left)  # type: ignore
+                    stack.append(node.right)
+                    stack.append(node.left)
                 else:
-                    stack.append(node.left)  # type: ignore
-                    stack.append(node.right) # type: ignore
+                    stack.append(node.left)
+                    stack.append(node.right)
+
+        if best_idx < 0:
+            return None
 
         return bvh.items[best_idx]
 
     # ---------- Internal build ----------
 
     def _build_recursive(self, indices: List[int], max_leaf_size: int) -> int:
-        """Builds a subtree for 'indices' and returns node index."""
-        # Compute node bbox and centroid bbox
+        """Builds a subtree for indices and returns its node index."""
+        if len(indices) == 0:
+            raise ValueError("BVH._build_recursive - indices cannot be empty.")
+
+        if max_leaf_size < 1:
+            raise ValueError("BVH._build_recursive - max_leaf_size must be >= 1.")
+
         node_bbox = self.bboxes[indices[0]]
         cx_min = cx_max = self.centroids[indices[0]][0]
         cy_min = cy_max = self.centroids[indices[0]][1]
         cz_min = cz_max = self.centroids[indices[0]][2]
+
         for i in indices[1:]:
             node_bbox = AABB.union(node_bbox, self.bboxes[i])
             cx, cy, cz = self.centroids[i]
-            if cx < cx_min: cx_min = cx
-            if cx > cx_max: cx_max = cx
-            if cy < cy_min: cy_min = cy
-            if cy > cy_max: cy_max = cy
-            if cz < cz_min: cz_min = cz
-            if cz > cz_max: cz_max = cz
+            if cx < cx_min:
+                cx_min = cx
+            if cx > cx_max:
+                cx_max = cx
+            if cy < cy_min:
+                cy_min = cy
+            if cy > cy_max:
+                cy_max = cy
+            if cz < cz_min:
+                cz_min = cz
+            if cz > cz_max:
+                cz_max = cz
 
         if len(indices) <= max_leaf_size:
-            start = len(getattr(self, "_leaf_items", []))
-            if not hasattr(self, "_leaf_items"):
-                self._leaf_items: List[int] = []
+            start = len(self._leaf_items)
             self._leaf_items.extend(indices)
             node = _BVHNode(node_bbox, None, None, start, len(indices))
             self.nodes.append(node)
             return len(self.nodes) - 1
 
-        # Choose split axis (longest centroid axis)
         ex = cx_max - cx_min
         ey = cy_max - cy_min
         ez = cz_max - cz_min
@@ -597,19 +753,26 @@ class BVH:
         else:
             axis = 2
 
-        # Median split by centroid along chosen axis
-        mid = len(indices) // 2
         indices.sort(key=lambda i: self.centroids[i][axis])
-        left_idx = indices[:mid]
-        right_idx = indices[mid:]
+        mid = len(indices) // 2
+        left_indices = indices[:mid]
+        right_indices = indices[mid:]
 
-        # Handle pathological case (all centroids equal) by forcing a split
-        if not left_idx or not right_idx:
-            left_idx = indices[:len(indices)//2]
-            right_idx = indices[len(indices)//2:]
+        if not left_indices or not right_indices:
+            left_indices = indices[: len(indices) // 2]
+            right_indices = indices[len(indices) // 2 :]
 
-        left_node = self._build_recursive(left_idx, max_leaf_size)
-        right_node = self._build_recursive(right_idx, max_leaf_size)
+        if not left_indices or not right_indices:
+            # This should only be reachable when len(indices) == 1, which the leaf
+            # case above handles. Keep a defensive fallback.
+            start = len(self._leaf_items)
+            self._leaf_items.extend(indices)
+            node = _BVHNode(node_bbox, None, None, start, len(indices))
+            self.nodes.append(node)
+            return len(self.nodes) - 1
+
+        left_node = self._build_recursive(left_indices, max_leaf_size)
+        right_node = self._build_recursive(right_indices, max_leaf_size)
         node = _BVHNode(node_bbox, left_node, right_node, start=0, count=0)
         self.nodes.append(node)
         return len(self.nodes) - 1

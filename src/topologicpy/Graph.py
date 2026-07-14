@@ -28,45 +28,27 @@ from typing import Any
 
 try:
     import numpy as np
-except:
-    print("Graph - Installing required numpy library.")
-    try:
-        os.system("pip install numpy")
-    except:
-        os.system("pip install numpy --user")
-    try:
-        import numpy as np
-        print("Graph - numpy library installed correctly.")
-    except:
-        warnings.warn("Graph - Error: Could not import numpy.")
+except Exception as e:
+    np = None
+    warnings.warn(f"Graph - Error: Could not import numpy. Install numpy manually if required. Original error: {e}")
 
 try:
     import pandas as pd
-except:
-    print("Graph - Installing required pandas library.")
-    try:
-        os.system("pip install pandas")
-    except:
-        os.system("pip install pandas --user")
-    try:
-        import pandas as pd
-        print("Graph - pandas library installed correctly.")
-    except:
-        warnings.warn("Graph - Error: Could not import pandas.")
+except Exception as e:
+    pd = None
+    warnings.warn(f"Graph - Error: Could not import pandas. Install pandas manually if required. Original error: {e}")
 
 try:
     from tqdm.auto import tqdm
-except:
-    print("Graph - Installing required tqdm library.")
-    try:
-        os.system("pip install tqdm")
-    except:
-        os.system("pip install tqdm --user")
-    try:
-        from tqdm.auto import tqdm
-        print("Graph - tqdm library installed correctly.")
-    except:
-        warnings.warn("Graph - Error: Could not import tqdm.")
+except Exception:
+    class tqdm:
+        """No-op fallback used when tqdm is unavailable."""
+        def __init__(self, *args, **kwargs):
+            self.total = kwargs.get("total", None)
+        def update(self, *args, **kwargs):
+            return None
+        def close(self):
+            return None
     
 GraphQueueItem = namedtuple('GraphQueueItem', ['edges'])
 
@@ -508,7 +490,7 @@ class Graph:
                 print("Graph.AccessGraph - Error: The input topology parameter is not a valid topology. Returning None.")
             return None
         
-        if key.lower() == "type":
+        if isinstance(key, str) and key.lower() == "type":
             if not silent:
                 print("Graph.AccessGraph - Warning: 'type' is a reserved ontology dictionary key and will be overwritten. Use a different key.")
         
@@ -903,7 +885,11 @@ class Graph:
             return None
         sv = vertices[index[0]]
         ev = vertices[index[1]]
-        edge = Edge.ByVertices(sv, ev)
+        edge = Edge.ByVertices([sv, ev], silent=silent)
+        if edge is None:
+            if not silent:
+                print("Graph.AddEdgeIndex - Error: Could not create an edge from the selected vertices. Returning None.")
+            return None
         if dictionary:
             edge = Topology.SetDictionary(edge, dictionary)
         d = Topology.Dictionary(edge)
@@ -1083,14 +1069,18 @@ class Graph:
             if not silent:
                 print("Graph.AddVertexByData - Error: The input graph is not a valid graph. Returning None.")
             return None
-        x = x or random.uniform(0, 100)
-        y = y or random.uniform(0, 100)
-        z = z or random.uniform(0, 100)
+        x = random.uniform(0, 100) if x is None else x
+        y = random.uniform(0, 100) if y is None else y
+        z = random.uniform(0, 100) if z is None else z
 
         v = Vertex.ByCoordinates(x, y, z)
-        if not dictionary is None:
-            v = Topology.SetDictionary(v, d)
-        graph = Graph.AddVertex(graph, v)
+        if v is None:
+            if not silent:
+                print("Graph.AddVertexByData - Error: Could not create a vertex from the input coordinates. Returning the input graph.")
+            return graph
+        if dictionary is not None:
+            v = Topology.SetDictionary(v, dictionary)
+        graph = Graph.AddVertex(graph, v, silent=silent)
         return graph
 
     @staticmethod
@@ -1776,11 +1766,24 @@ class Graph:
         edges = []
         sv = Edge.StartVertex(edge)
         ev = Edge.EndVertex(edge)
-        edges.extend(Graph.Edges(graph, [sv]))
-        edges.extend(Graph.Edges(graph, [ev]))
-        print(edges)
-        edges = [e for e in edges if not Topology.IsSame(e, edge)]
-        # Complete the algorithm here
+        for candidate in (Graph.Edges(graph, [sv]) or []) + (Graph.Edges(graph, [ev]) or []):
+            if candidate is None:
+                continue
+            try:
+                if Topology.IsSame(candidate, edge):
+                    continue
+            except Exception:
+                pass
+            duplicate = False
+            for existing in edges:
+                try:
+                    if Topology.IsSame(candidate, existing):
+                        duplicate = True
+                        break
+                except Exception:
+                    pass
+            if not duplicate:
+                edges.append(candidate)
         return edges
     
     @staticmethod
@@ -2543,9 +2546,9 @@ class Graph:
         except Exception:
             print("Graph.BOTGraph - Information: Installing required rdflib library.")
             try:
-                os.system("pip install rdflib")
+                pass  # automatic pip installation disabled
             except Exception:
-                os.system("pip install rdflib --user")
+                pass  # automatic pip installation disabled
             try:
                 from rdflib import Graph as RDFGraph
                 from rdflib import URIRef, Literal, Namespace
@@ -4570,7 +4573,7 @@ class Graph:
             if not silent:
                 print("Graph.ByBOTGraph - Information: Installing required rdflib library.")
             try:
-                os.system("pip install rdflib")
+                pass  # automatic pip installation disabled
                 import rdflib
                 from rdflib import URIRef
                 from rdflib.namespace import RDF, RDFS
@@ -4896,7 +4899,7 @@ class Graph:
             if not silent:
                 print("Graph.ByBOTPath - Information: Installing required rdflib library.")
             try:
-                os.system("pip install rdflib")
+                pass  # automatic pip installation disabled
                 import rdflib
                 from rdflib import Graph as RDFGraph
             except Exception:
@@ -8279,9 +8282,9 @@ class Graph:
         except:
             print("Graph.ByIFCPath - Warning: Installing required ifcopenshell library.")
             try:
-                os.system("pip install ifcopenshell")
+                pass  # automatic pip installation disabled
             except:
-                os.system("pip install ifcopenshell --user")
+                pass  # automatic pip installation disabled
             try:
                 import ifcopenshell
                 import ifcopenshell.util.placement
@@ -11728,7 +11731,7 @@ class Graph:
                 edge = Edge.ByVertices([sv, ev], tolerance=tolerance, silent=True)
             except TypeError:
                 try:
-                    edge = Edge.ByVertices(sv, ev)
+                    edge = Edge.ByVertices([sv, ev])
                 except Exception:
                     edge = None
             except Exception:
@@ -12880,12 +12883,12 @@ class Graph:
                     visited.add((ev,sv))
                     edge = Graph.Edge(graph, sv, ev)
                     if edge == None:
-                        new_edge = Edge.ByVertices(sv, ev)
+                        new_edge = Edge.ByVertices([sv, ev])
                         d = Dictionary.ByKeysValues(["src", "dst"], [i,j])
                         new_edge = Topology.SetDictionary(new_edge, d)
                     else:
                         d = Topology.Dictionary(edge)
-                        d = Dictionary.SetValuesArKeys(d, ["src", "dst"], [i,j])
+                        d = Dictionary.SetValuesAtKeys(d, ["src", "dst"], [i,j])
                         new_edge = Topology.SetDictionary(edge, d)
                     new_edges.append(new_edge)
         
@@ -14086,9 +14089,9 @@ class Graph:
             if not silent:
                 print("Graph.CommunityPartition - Installing required python-igraph library.")
             try:
-                os.system("pip install python-igraph")
+                pass  # automatic pip installation disabled
             except Exception:
-                os.system("pip install python-igraph --user")
+                pass  # automatic pip installation disabled
             try:
                 import igraph as ig
                 if not silent:
@@ -14450,9 +14453,9 @@ class Graph:
         except:
             print("Graph.CutVertices - Installing required pyhon-igraph library.")
             try:
-                os.system("pip install python-igraph")
+                pass  # automatic pip installation disabled
             except:
-                os.system("pip install python-igraph --user")
+                pass  # automatic pip installation disabled
             try:
                 import igraph as ig
                 print("Graph.CutVertices - python-igraph library installed correctly.")
@@ -19010,9 +19013,9 @@ class Graph:
         except:
             print("Graph - Installing required graphviz library.")
             try:
-                os.system("pip install graphviz")
+                pass  # automatic pip installation disabled
             except:
-                os.system("pip install graphviz --user")
+                pass  # automatic pip installation disabled
             try:
                 from graphviz import Digraph
                 from graphviz import Graph as Udgraph
@@ -19276,7 +19279,7 @@ class Graph:
                             ev = graph_vertices[parent_id]
                             src = child_id
                             dst = parent_id
-                        new_edge = Edge.ByVertices(sv, ev, tolerance=tolerance, silent=silent)
+                        new_edge = Edge.ByVertices([sv, ev], tolerance=tolerance, silent=silent)
                         if new_edge:
                             d = Dictionary.ByKeysValues(["src", "dst"], [src, dst])
                             new_edge = Topology.SetDictionary(new_edge, d)
@@ -22731,9 +22734,9 @@ class Graph:
         except:
             print("Graph.NetworkXGraph - Information: Installing required networkx library.")
             try:
-                os.system("pip install networkx")
+                pass  # automatic pip installation disabled
             except:
-                os.system("pip install networkx --user")
+                pass  # automatic pip installation disabled
             try:
                 import networkx as nx
                 print("Graph.NetworkXGraph - Information: networkx library installed correctly.")
@@ -23525,9 +23528,9 @@ class Graph:
         except Exception:
             print("Graph.PyvisGraph - Information: Installing required pyvis library.")
             try:
-                os.system("pip install pyvis")
+                pass  # automatic pip installation disabled
             except Exception:
-                os.system("pip install pyvis --user")
+                pass  # automatic pip installation disabled
             try:
                 from pyvis.network import Network
                 print("Graph.PyvisGraph - Information: pyvis library installed correctly.")
@@ -27807,7 +27810,7 @@ class Graph:
                 #final_edge = Edge.ByVertices(vertices_a[e[0]], vertices_a[e[1]])
                 sv = vertex_map[e[0]]
                 ev = vertex_map[e[1]]
-                final_edge = Edge.ByVertices(sv, ev)
+                final_edge = Edge.ByVertices([sv, ev])
                 # Set the edge's dictionary
                 final_edge = Topology.SetDictionary(final_edge, d_c, silent=True)
                 # Add the final edge to the list
@@ -27918,7 +27921,7 @@ class Graph:
                 #final_edge = Edge.ByVertices(vertices_a[e[0]], vertices_a[e[1]])
                 sv = vertex_map[e[0]]
                 ev = vertex_map[e[1]]
-                final_edge = Edge.ByVertices(sv, ev)
+                final_edge = Edge.ByVertices([sv, ev])
                 # Set the edge's dictionary
                 final_edge = Topology.SetDictionary(final_edge, d_c, silent=True)
                 # Add the final edge to the list

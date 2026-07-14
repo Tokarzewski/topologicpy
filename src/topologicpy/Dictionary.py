@@ -713,8 +713,39 @@ class Dictionary():
         Booleans the keys/values of the dictionaries in the second list on the
         dictionaries in the first list based on a shared dictionary key/value and the boolean operation.
         """
-        dictionariesA = [d for d in dictionariesA if Dictionary._IsDictionary(d)] if isinstance(dictionariesA, list) else []
-        dictionariesB = [d for d in dictionariesB if Dictionary._IsDictionary(d)] if isinstance(dictionariesB, list) else []
+        from topologicpy.Helper import Helper
+
+        if not isinstance(key, str):
+            if not silent:
+                print("Dictionary.BooleanDictionariesByKey - Error: The input key parameter is not a valid string. Returning None.")
+            return None
+
+        if not isinstance(operation, str):
+            if not silent:
+                print("Dictionary.BooleanDictionariesByKey - Error: operation is not a valid string. Returning None.")
+            return None
+
+        if isinstance(dictionariesA, tuple):
+            dictionariesA = Helper.Flatten(list(dictionariesA))
+        elif isinstance(dictionariesA, list):
+            dictionariesA = Helper.Flatten(dictionariesA)
+        elif Dictionary._IsDictionary(dictionariesA):
+            dictionariesA = [dictionariesA]
+        else:
+            dictionariesA = []
+
+        if isinstance(dictionariesB, tuple):
+            dictionariesB = Helper.Flatten(list(dictionariesB))
+        elif isinstance(dictionariesB, list):
+            dictionariesB = Helper.Flatten(dictionariesB)
+        elif Dictionary._IsDictionary(dictionariesB):
+            dictionariesB = [dictionariesB]
+        else:
+            dictionariesB = []
+
+        dictionariesA = [d for d in dictionariesA if Dictionary._IsDictionary(d)]
+        dictionariesB = [d for d in dictionariesB if Dictionary._IsDictionary(d)]
+
         if len(dictionariesA) < 1:
             if not silent:
                 print("Dictionary.BooleanDictionariesByKey - Error: The dictionariesA input parameter does not contain any valid dictionaries. Returning None.")
@@ -724,8 +755,13 @@ class Dictionary():
                 print("Dictionary.BooleanDictionariesByKey - Error: The dictionariesB input parameter does not contain any valid dictionaries. Returning None.")
             return None
 
-        op = operation.lower()
-        if op not in ["union", "merge", "difference", "intersection", "symmetricdifference", "symdif", "xor", "impose", "imprint"]:
+        op = operation.lower().strip()
+        if op == "intersect":
+            op = "intersection"
+        elif op in ["symmetricdifference", "symdif"]:
+            op = "xor"
+
+        if op not in ["union", "merge", "difference", "intersection", "xor", "impose", "imprint"]:
             if not silent:
                 print("Dictionary.BooleanDictionariesByKey - Error: Unrecognized boolean operation. Returning None.")
             return None
@@ -737,7 +773,7 @@ class Dictionary():
                 return Dictionary.Difference(dA, dB, silent=silent)
             if op == "intersection":
                 return Dictionary.Intersection(dA, dB, silent=silent)
-            if op in ["symmetricdifference", "symdif", "xor"]:
+            if op == "xor":
                 return Dictionary.SymmetricDifference(dA, dB, silent=silent)
             if op == "impose":
                 return Dictionary.Impose(dA, dB, silent=silent)
@@ -758,7 +794,7 @@ class Dictionary():
             for dA in dictionariesA:
                 vA = Dictionary.ValueAtKey(dA, key, None, silent=silent)
                 for dB in dictionariesB:
-                    if vA == Dictionary.ValueAtKey(dB, key, None, silent=silent):
+                    if Dictionary._ValuesMatch(vA, Dictionary.ValueAtKey(dB, key, None, silent=silent)):
                         dA = apply_op(dA, dB)
                 dictionariesC.append(dA)
         return dictionariesC
@@ -913,76 +949,89 @@ class Dictionary():
     @staticmethod
     def ByObjectProperties(bObject, keys, importAll):
         """
+        Creates a dictionary from selected Blender object properties.
+
         Parameters
         ----------
-        bObject : TYPE
-            DESCRIPTION.
-        keys : TYPE
-            DESCRIPTION.
-        importAll : TYPE
-            DESCRIPTION.
-
-        Raises
-        ------
-        Exception
-            DESCRIPTION.
+        bObject : object
+            The input object whose properties are to be imported.
+        keys : list or str
+            The property keys to import when importAll is False.
+        importAll : bool
+            If True, standard object properties and scalar custom properties are imported.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
-
+        topologic_core.Dictionary
+            The created dictionary.
         """
-        # bObject, keys, importAll = item
         dictKeys = []
         dictValues = []
 
+        def _append_standard_property(k):
+            kl = str(k).lower()
+            if kl == "name":
+                dictKeys.append("Name")
+                dictValues.append(bObject.name)
+                return True
+            if kl == "color":
+                dictKeys.append("Color")
+                dictValues.append([bObject.color[0], bObject.color[1], bObject.color[2], bObject.color[3]])
+                return True
+            if kl == "location":
+                dictKeys.append("Location")
+                dictValues.append([bObject.location[0], bObject.location[1], bObject.location[2]])
+                return True
+            if kl == "scale":
+                dictKeys.append("Scale")
+                dictValues.append([bObject.scale[0], bObject.scale[1], bObject.scale[2]])
+                return True
+            if kl == "rotation":
+                dictKeys.append("Rotation")
+                dictValues.append([bObject.rotation_euler[0], bObject.rotation_euler[1], bObject.rotation_euler[2]])
+                return True
+            if kl == "dimensions":
+                dictKeys.append("Dimensions")
+                dictValues.append([bObject.dimensions[0], bObject.dimensions[1], bObject.dimensions[2]])
+                return True
+            return False
+
         if importAll:
-            dictKeys.append("Name")
-            dictValues.append(bObject.name)
-            dictKeys.append("Color")
-            dictValues.append([bObject.color[0], bObject.color[1], bObject.color[2], bObject.color[3]])
-            dictKeys.append("Location")
-            dictValues.append([bObject.location[0], bObject.location[1], bObject.location[2]])
-            dictKeys.append("Scale")
-            dictValues.append([bObject.scale[0], bObject.scale[1], bObject.scale[2]])
-            dictKeys.append("Rotation")
-            dictValues.append([bObject.rotation_euler[0], bObject.rotation_euler[1], bObject.rotation_euler[2]])
-            dictKeys.append("Dimensions")
-            dictValues.append([bObject.dimensions[0], bObject.dimensions[1], bObject.dimensions[2]])
-            for k, v in bObject.items():
-                if isinstance(v, bool) or isinstance(v, int) or isinstance(v, float) or isinstance(v, str):
+            for k in ["name", "color", "location", "scale", "rotation", "dimensions"]:
+                _append_standard_property(k)
+
+            try:
+                items = bObject.items()
+            except Exception:
+                items = []
+            for k, v in items:
+                if isinstance(v, (bool, int, float, str)):
                     dictKeys.append(str(k))
                     dictValues.append(v)
         else:
+            if keys is None:
+                keys = []
+            elif isinstance(keys, str):
+                keys = [keys]
+            elif not isinstance(keys, list):
+                try:
+                    keys = list(keys)
+                except Exception:
+                    keys = [keys]
+
             for k in keys:
                 try:
                     v = bObject[k]
-                    if v:
-                        if isinstance(v, bool) or isinstance(v, int) or isinstance(v, float) or isinstance(v, str):
-                            dictKeys.append(str(k))
-                            dictValues.append(v)
-                except:
-                    if k.lower() == "name":
-                        dictKeys.append("Name")
-                        dictValues.append(bObject.name)
-                    elif k.lower() == "color":
-                        dictKeys.append("Color")
-                        dictValues.append([bObject.color[0], bObject.color[1], bObject.color[2], bObject.color[3]])
-                    elif k.lower() == "location":
-                        dictKeys.append("Location")
-                        dictValues.append([bObject.location[0], bObject.location[1], bObject.location[2]])
-                    elif k.lower() == "scale":
-                        dictKeys.append("Scale")
-                        dictValues.append([bObject.scale[0], bObject.scale[1], bObject.scale[2]])
-                    elif k.lower() == "rotation":
-                        dictKeys.append("Rotation")
-                        dictValues.append([bObject.rotation_euler[0], bObject.rotation_euler[1], bObject.rotation_euler[2]])
-                    elif k.lower() == "dimensions":
-                        dictKeys.append("Dimensions")
-                        dictValues.append([bObject.dimensions[0], bObject.dimensions[1], bObject.dimensions[2]])
-                    else:
-                        raise Exception("Dictionary.ByObjectProperties: Key \""+k+"\" does not exist in the properties of object \""+bObject.name+"\".")
+                    if isinstance(v, (bool, int, float, str)):
+                        dictKeys.append(str(k))
+                        dictValues.append(v)
+                        continue
+                except Exception:
+                    pass
+
+                if not _append_standard_property(k):
+                    object_name = getattr(bObject, "name", "unknown")
+                    raise Exception("Dictionary.ByObjectProperties: Key ""+str(k)+"" does not exist in the properties of object ""+str(object_name)+"".")
 
         return Dictionary.ByKeysValues(dictKeys, dictValues)
 
@@ -1302,8 +1351,18 @@ class Dictionary():
                 print("Dictionary.OneHotEncode - Error: keys is None.")
             return None
 
-        if not isinstance(keys, list):
+        if isinstance(keys, str):
+            keys = [keys]
+        elif isinstance(keys, tuple):
             keys = list(keys)
+        elif isinstance(keys, list):
+            keys = list(keys)
+        else:
+            if not silent:
+                print("Dictionary.OneHotEncode - Error: keys must be a string, tuple, or list.")
+            return None
+
+        keys = [k for k in keys if isinstance(k, str)]
 
         if len(keys) == 0:
             return d

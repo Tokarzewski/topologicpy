@@ -1090,13 +1090,13 @@ def _shape_to_brep_text(shape: Any) -> Optional[str]:
         os.close(fd)
 
         wrote = False
-        if hasattr(_breptools_module, "breptools_Write"):
+        wrote = False
+        if hasattr(_breptools_module, "breptools") and hasattr(_breptools_module.breptools, "Write"):
+            _breptools_module.breptools.Write(shape, tmp_path)
+            wrote = True
+        elif hasattr(_breptools_module, "breptools_Write"):
             _breptools_module.breptools_Write(shape, tmp_path)
             wrote = True
-        elif hasattr(_breptools_module, "BRepTools") and hasattr(_breptools_module.BRepTools, "Write_s"):
-            _breptools_module.BRepTools.Write_s(shape, tmp_path)
-            wrote = True
-
         if not wrote:
             return None
 
@@ -1134,10 +1134,10 @@ def _shape_from_brep_text(text: Any) -> Any:
         builder = BRep_Builder()
 
         read_ok = None
-        if hasattr(_breptools_module, "breptools_Read"):
+        if hasattr(_breptools_module, "breptools") and hasattr(_breptools_module.breptools, "Read"):
+            read_ok = _breptools_module.breptools.Read(shape, tmp_path, builder)
+        elif hasattr(_breptools_module, "breptools_Read"):
             read_ok = _breptools_module.breptools_Read(shape, tmp_path, builder)
-        elif hasattr(_breptools_module, "BRepTools") and hasattr(_breptools_module.BRepTools, "Read_s"):
-            read_ok = _breptools_module.BRepTools.Read_s(shape, tmp_path, builder)
 
         if read_ok is False or _is_null_shape(shape):
             return None

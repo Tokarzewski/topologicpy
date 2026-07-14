@@ -53,7 +53,12 @@ class GQL:
     # ---------------------------------------------------------------------
 
     ONTOLOGY_PREFIX = "top"
-    ONTOLOGY_NAMESPACE = "http://w3id.org/topologicpy#"
+    ONTOLOGY_NAMESPACES = [
+        "http://w3id.org/topologicpy/#",
+        "http://w3id.org/topologicpy#",
+    ]
+    # Backward-compatible primary namespace constant.
+    ONTOLOGY_NAMESPACE = ONTOLOGY_NAMESPACES[0]
 
     ONTOLOGY_CLASS_KEY = "ontology_class"
     ONTOLOGY_URI_KEY = "uri"
@@ -91,8 +96,9 @@ class GQL:
             return None
         if value.startswith("top:"):
             return value
-        if value.startswith(GQL.ONTOLOGY_NAMESPACE):
-            return "top:" + value[len(GQL.ONTOLOGY_NAMESPACE):]
+        for namespace in getattr(GQL, "ONTOLOGY_NAMESPACES", [GQL.ONTOLOGY_NAMESPACE]):
+            if value.startswith(namespace):
+                return "top:" + value[len(namespace):]
         if ":" not in value and value[:1].isupper():
             return "top:" + value
         return value
@@ -127,7 +133,9 @@ class GQL:
         except Exception:
             pass
         if isinstance(topology, dict):
-            return topology.get("dictionary", topology)
+            if isinstance(topology.get("dictionary", None), dict):
+                return GQL._record_dictionary(topology)
+            return topology
         try:
             from topologicpy.Topology import Topology
             return Topology.Dictionary(topology)
@@ -139,7 +147,7 @@ class GQL:
         if dictionary is None:
             return {}
         if isinstance(dictionary, dict):
-            return dict(dictionary)
+            return GQL._record_dictionary(dictionary) if isinstance(dictionary.get("dictionary", None), dict) else dict(dictionary)
         try:
             from topologicpy.Dictionary import Dictionary
             return dict(Dictionary.PythonDictionary(dictionary) or {})
@@ -147,16 +155,48 @@ class GQL:
             return {}
 
     @staticmethod
+    def _record_dictionary(record):
+        """
+        Returns a merged dictionary for a GQL/TGraph-like record.
+
+        Top-level structural fields are preserved, while nested dictionary
+        values may override ordinary metadata keys. This prevents records such
+        as ``{"id": "A", "dictionary": {"label": "Room"}}`` from losing
+        their endpoint/id metadata during conversion.
+        """
+        if not isinstance(record, dict):
+            return {}
+
+        excluded = {"dictionary", "representation", "topology", "object"}
+        structural = {
+            "id", "ID", "index", "uuid", "guid",
+            "src", "dst", "source", "target", "start", "end", "from", "to",
+            "directed", "active",
+        }
+
+        out = {}
+        for key, value in record.items():
+            if key not in excluded:
+                out[key] = value
+
+        nested = record.get("dictionary", None)
+        if isinstance(nested, dict):
+            for key, value in nested.items():
+                if key in excluded:
+                    continue
+                if key in structural and key in out:
+                    continue
+                out[key] = value
+
+        return out
+
+    @staticmethod
     def _dictionary_value(topology_or_dict, key, default=None):
         if topology_or_dict is None or key is None:
             return default
         if isinstance(topology_or_dict, dict):
-            if key in topology_or_dict:
-                return topology_or_dict.get(key, default)
-            d = topology_or_dict.get("dictionary", None)
-            if isinstance(d, dict):
-                return d.get(key, default)
-            return default
+            d = GQL._record_dictionary(topology_or_dict)
+            return d.get(key, default)
         try:
             from topologicpy.Topology import Topology
             from topologicpy.Dictionary import Dictionary
@@ -367,46 +407,100 @@ class GQL:
         vertices = []
         id_to_index = {}
 
+        def _normalise_lookup_key(value):
+            if value is None:
+                return None
+            try:
+                if isinstance(value, str):
+                    s = value.strip()
+                    if s == "":
+                        return None
+                    f = float(s)
+                    if f.is_integer():
+                        return int(f)
+                elif isinstance(value, float) and value.is_integer():
+                    return int(value)
+            except Exception:
+                pass
+            return value
+
+        def _add_lookup(value, index):
+            value = _normalise_lookup_key(value)
+            if value is None:
+                return
+            if value not in id_to_index:
+                id_to_index[value] = index
+            value_str = str(value)
+            if value_str not in id_to_index:
+                id_to_index[value_str] = index
+
+        def _resolve_endpoint(value):
+            value = _normalise_lookup_key(value)
+            if value in id_to_index:
+                return id_to_index[value]
+            value_str = str(value)
+            if value_str in id_to_index:
+                return id_to_index[value_str]
+            return value
+
         for i, node in enumerate(nodes):
             if isinstance(node, dict):
-                d = dict(node.get("dictionary", node))
-                d.pop("representation", None)
-                node_id = d.get("id", d.get("ID", d.get("uuid", d.get("name", d.get("label", i)))))
+                d = GQL._record_dictionary(node)
+                node_id = d.get("id", d.get("ID", d.get("uuid", d.get("guid", d.get("name", d.get("label", i))))))
             else:
                 d = {"label": str(node)}
                 node_id = i
+
             d.setdefault("id", node_id)
             vertices.append(d)
-            id_to_index[node_id] = i
-            for alias in ("index", "ID", "uuid", "guid", "name", "label"):
-                if isinstance(d, dict) and alias in d and d[alias] not in id_to_index:
-                    id_to_index[d[alias]] = i
+
+            # Positional fallback and explicit aliases.
+            _add_lookup(i, i)
+            _add_lookup(node_id, i)
+            for alias in ("index", "id", "ID", "uuid", "guid", "name", "label"):
+                if isinstance(d, dict) and alias in d:
+                    _add_lookup(d.get(alias), i)
 
         edges = []
         for rel in relationships:
             if not isinstance(rel, dict):
                 continue
-            d = dict(rel.get("dictionary", rel))
+            d = GQL._record_dictionary(rel)
             src = d.get("src", d.get("source", d.get("start", d.get("from", None))))
             dst = d.get("dst", d.get("target", d.get("end", d.get("to", None))))
-            if src in id_to_index:
-                src = id_to_index[src]
-            if dst in id_to_index:
-                dst = id_to_index[dst]
+
+            src = _resolve_endpoint(src)
+            dst = _resolve_endpoint(dst)
+
             if not isinstance(src, int) or not isinstance(dst, int):
                 continue
+            if src < 0 or dst < 0 or src >= len(vertices) or dst >= len(vertices):
+                continue
+
             d["src"] = src
             d["dst"] = dst
             edges.append(d)
 
         try:
+            graph_dict = {}
+            excluded_graph_keys = {
+                "dictionary", "nodes", "vertices", "relationships", "edges",
+                "graph", "directed", "type", "representation", "topology", "object",
+            }
+            for key, value in graph.items():
+                if key not in excluded_graph_keys:
+                    graph_dict[key] = value
+            nested_graph_dict = graph.get("dictionary", None)
+            if isinstance(nested_graph_dict, dict):
+                graph_dict.update(nested_graph_dict)
+
             result = TGraph.ByVerticesEdges(
                 vertices=vertices,
                 edges=edges,
                 directed=bool(graph.get("directed", True)),
                 allowSelfLoops=True,
                 allowParallelEdges=True,
-                dictionary=dict(graph.get("dictionary", {})) if isinstance(graph.get("dictionary", {}), dict) else {},
+                dictionary=graph_dict,
                 ontology=ontology,
                 silent=silent,
             )
@@ -680,8 +774,18 @@ class GQL:
             The query result, mutation result, or None if parsing/execution fails.
         """
 
-        from topologicpy.gql.Parser import Parser
-        from topologicpy.gql.Executor import Executor
+        if not isinstance(query, str) or query.strip() == "":
+            if not silent:
+                print("GQL.Query - Error: The input query parameter is not a valid string. Returning None.")
+            return None
+
+        try:
+            from topologicpy.gql.Parser import Parser
+            from topologicpy.gql.Executor import Executor
+        except Exception as e:
+            if not silent:
+                print(f"GQL.Query - Error: Could not import GQL parser/executor. {e}. Returning None.")
+            return None
 
         if normalizeOntologyLabels:
             query = GQL.NormalizeOntologyLabels(
@@ -690,11 +794,23 @@ class GQL:
                 silent=silent,
             )
 
-        ast = Parser.Parse(query, silent=silent)
+        try:
+            ast = Parser.Parse(query, silent=silent)
+        except Exception as e:
+            if not silent:
+                print(f"GQL.Query - Error: Could not parse query. {e}. Returning None.")
+            return None
+
         if ast is None:
             return None
 
-        result = Executor.Execute(graph, ast, silent=silent)
+        try:
+            result = Executor.Execute(graph, ast, silent=silent)
+        except Exception as e:
+            if not silent:
+                print(f"GQL.Query - Error: Could not execute query. {e}. Returning None.")
+            return None
+
         return GQL._annotate_result(result, ontology=ontology, silent=silent)
 
     @staticmethod

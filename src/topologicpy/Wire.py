@@ -148,7 +148,7 @@ class Wire():
         vertices = []
         for arc_point in arc_points:
             vertices.append(Vertex.ByCoordinates(list(arc_point)))
-        arc = Wire.ByVertices(vertices, close=False, tolerance=tolerance, silent=True) #We want to force suppress errors and warnings here.
+        arc = Wire.ByVertices(vertices, close=close, tolerance=tolerance, silent=True) #We want to force suppress errors and warnings here.
         if not Topology.IsInstance(arc, "Wire"):
             if not silent:
                 print("Wire.Arc - Error: Could not create an arc. Returning None.")
@@ -3038,7 +3038,22 @@ class Wire():
         return einstein
     
     @staticmethod
-    def Ellipse(origin= None, inputMode: int = 1, width: float = 2.0, length: float = 1.0, focalLength: float = 0.866025, eccentricity: float = 0.866025, majorAxisLength: float = 1.0, minorAxisLength: float = 0.5, sides: float = 32, fromAngle: float = 0.0, toAngle: float = 360.0, close: bool = True, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001):
+    def Ellipse(origin= None,
+                inputMode: int = 1,
+                width: float = 2.0,
+                length: float = 1.0,
+                focalLength: float = 0.866025,
+                eccentricity: float = 0.866025,
+                majorAxisLength: float = 1.0,
+                minorAxisLength: float = 0.5,
+                sides: float = 32,
+                fromAngle: float = 0.0,
+                toAngle: float = 360.0,
+                close: bool = True,
+                direction: list = [0, 0, 1],
+                placement: str = "center",
+                tolerance: float = 0.0001,
+                silent: bool = False):
         """
         Creates an ellipse and returns all its geometry and parameters.
 
@@ -3079,6 +3094,8 @@ class Wire():
             The description of the placement of the origin of the ellipse. This can be "center", or "lowerleft". It is case insensitive. Default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -3087,6 +3104,11 @@ class Wire():
 
         """
         ellipseAll = Wire.EllipseAll(origin=origin, inputMode=inputMode, width=width, length=length, focalLength=focalLength, eccentricity=eccentricity, majorAxisLength=majorAxisLength, minorAxisLength=minorAxisLength, sides=sides, fromAngle=fromAngle, toAngle=toAngle, close=close, direction=direction, placement=placement, tolerance=tolerance)
+        
+        if ellipseAll is None:
+            if not silent:
+                print("Wire.Ellipse - Error: Could not create an ellipse. Returning None.")
+            return None
         return ellipseAll["ellipse"]
 
     @staticmethod
@@ -4436,7 +4458,7 @@ class Wire():
             contour = process(verticesA=verticesA, verticesB=verticesB, n=n)
             contours += contour
             for c in contour:
-                finalWires.append(Wire.ByVertices(c, close=Wire.IsClosed(wires[i], tolerance=tolerance)))
+                finalWires.append(Wire.ByVertices(c, close=Wire.IsClosed(wires[i])))
 
         contours.append(vertices[-1])
         finalWires.append(wires[-1])
@@ -4959,7 +4981,13 @@ class Wire():
         return totalLength
 
     @staticmethod
-    def Line(origin= None, length: float = 1, direction: list = [1, 0, 0], sides: int = 2, placement: str ="center", tolerance: float = 0.0001):
+    def Line(origin= None,
+             length: float = 1,
+             direction: list = [1, 0, 0],
+             sides: int = 2,
+             placement: str ="center",
+             tolerance: float = 0.0001,
+             silent: bool = True):
         """
         Creates a straight line wire using the input parameters.
 
@@ -4981,6 +5009,8 @@ class Wire():
             The default is "center".
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -4990,25 +5020,29 @@ class Wire():
         """
         from topologicpy.Vertex import Vertex
         from topologicpy.Edge import Edge
-        from topologicpy.Vector import Vector
         from topologicpy.Topology import Topology
 
         if not Topology.IsInstance(origin, "Vertex"):
             origin = Vertex.Origin()
         if not Topology.IsInstance(origin, "Vertex"):
-            print("Wire.Line - Error: The input origin is not a valid vertex. Returning None.")
+            if not silent:
+                print("Wire.Line - Error: The input origin is not a valid vertex. Returning None.")
             return None
         if length <= 0:
-            print("Wire.Line - Error: The input length is less than or equal to zero. Returning None.")
+            if not silent:
+                print("Wire.Line - Error: The input length is less than or equal to zero. Returning None.")
             return None
         if not isinstance(direction, list):
-            print("Wire.Line - Error: The input direction is not a valid list. Returning None.")
+            if not silent:
+                print("Wire.Line - Error: The input direction is not a valid list. Returning None.")
             return None
         if not len(direction) == 3:
-            print("Wire.Line - Error: The length of the input direction is not equal to three. Returning None.")
+            if not silent:
+                print("Wire.Line - Error: The length of the input direction is not equal to three. Returning None.")
             return None
         if sides < 2:
-            print("Wire.Line - Error: The number of sides cannot be less than two. Consider using Edge.Line() instead. Returning None.")
+            if not silent:
+                print("Wire.Line - Error: The number of sides cannot be less than two. Consider using Edge.Line() instead. Returning None.")
             return None
         edge = Edge.Line(origin=origin, length=length, direction=direction, placement=placement)
         vertices = [Edge.StartVertex(edge)]
@@ -5016,7 +5050,12 @@ class Wire():
         for i in range(1, sides):
             vertices.append(Edge.VertexByParameter(edge, i*unitDistance))
         vertices.append(Edge.EndVertex(edge))
-        return Wire.ByVertices(vertices, close=False, tolerance=tolerance)
+        return_wire = Wire.ByVertices(vertices, close=False, tolerance=tolerance)
+        if not Topology.IsInstance(return_wire, "wire"):
+            if not silent:
+                print("Wire.Line - Error: Could not create the wire. Returning None.")
+            return None
+        return return_wire
 
     @staticmethod
     def LShape(origin=None,
@@ -5751,7 +5790,7 @@ class Wire():
             return Topology.SelfMerge(Cluster.ByTopologies(processed_wires, silent=silent))
 
     @staticmethod
-    def Representation(wire, normalize: bool = True, rotate: bool = True, mantissa: int = 6, tolerance: float = 0.0001):
+    def Representation(wire, normalize: bool = True, rotate: bool = True, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = True):
         """
         Returns a normalized representation of a closed wire with alternating edge lengths and interior angles.
 
@@ -5767,6 +5806,8 @@ class Wire():
             The number of decimal places to round the result to. Default is 6.
         tolerance : float , optional
             The desired tolerance. Default is 0.0001.
+        silent : bool, optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
@@ -5828,6 +5869,14 @@ class Wire():
                 return rotate_list_to_minimum([x for x in itertools.chain(*itertools.zip_longest(normalizedLengths, angles)) if x is not None])
             return [x for x in itertools.chain(*itertools.zip_longest(normalizedLengths, angles)) if x is not None]
 
+        if not Topology.IsInstance(wire, "wire"):
+            if not silent:
+                print("Wire.Representation - Error: The input wire parameter is not a valid wire. Returning None.")
+            return None
+        if not Wire.IsClosed(wire):
+            if not silent:
+                print("Wire.Representation - Error: The input wire parameter is not a closed wire. Returning None.")
+            return None
         edges = Topology.Edges(wire)
         return_list = [round(x, mantissa) for x in getRep(edges, normalize=normalize, rotate=rotate, tolerance=tolerance)]
         return return_list

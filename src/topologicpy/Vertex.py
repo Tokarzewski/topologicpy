@@ -37,67 +37,110 @@ except:
 
 class Vertex():
     @staticmethod
-    def AlignCoordinates(vertex, xList: list = None, yList: list = None, zList: list = None, xEpsilon: float = 0.0001, yEpsilon: float = 0.0001, zEpsilon: float = 0.0001, transferDictionary: bool = False, mantissa: int = 6, silent: bool = False):
+    def AlignCoordinates(vertex,
+                        xList: list = None,
+                        yList: list = None,
+                        zList: list = None,
+                        xEpsilon: float = 0.0001,
+                        yEpsilon: float = 0.0001,
+                        zEpsilon: float = 0.0001,
+                        transferDictionary: bool = False,
+                        mantissa: int = 6,
+                        silent: bool = False):
         """
-            Aligns the coordinates of the input vertex with the list of x,y, and z coordinates.
+        Aligns the coordinates of the input vertex with the closest values in the
+        supplied x, y, and z coordinate lists.
 
-            Parameters
-            ----------
-            vertex : topologic_core.Vertex
-                The input vertex.
-            xList : list , optional
-                The input numerical list of x-coordinates. Default is None.
-            yList : list , optional
-                The input numerical list of y-coordinates. Default is None.
-            zList : list , optional
-                The input numerical list of z-coordinates. Default is None.
-            xEpsilon : float , optional
-                The desired tolerance for the x coordinates. Default is 0.0001.
-            yEpsilon : float , optional
-                The desired tolerance for the y coordinates. Default is 0.0001. 
-            zEpsilon : float , optional
-                The desired tolerance for the z coordinates. Default is 0.0001. 
-            transferDictionary : bool , optional
-                if set to True, the dictionary of the input vertex is transferred to the new vertex.
-            mantissa : int , optional
-                The number of decimal places to round the result to. Default is 6.
-            silent : bool , optional
-                If set to True, error and warning messages are suppressed. Default is False.
-            
-            Returns
-            -------
-            topologic_core.Vertex
-                The created vertex aligned to the input list of x,y, and z coordinates.
-        
+        Any coordinate list may be omitted. If a list is omitted, empty, or contains
+        no valid numeric values, the corresponding coordinate is left unchanged.
+
+        Parameters
+        ----------
+        vertex : topologic_core.Vertex
+            The input vertex.
+        xList : list , optional
+            The input numerical list of x-coordinates. Default is None.
+        yList : list , optional
+            The input numerical list of y-coordinates. Default is None.
+        zList : list , optional
+            The input numerical list of z-coordinates. Default is None.
+        xEpsilon : float , optional
+            The tolerance within which the x-coordinate will be snapped. Default is 0.0001.
+        yEpsilon : float , optional
+            The tolerance within which the y-coordinate will be snapped. Default is 0.0001.
+        zEpsilon : float , optional
+            The tolerance within which the z-coordinate will be snapped. Default is 0.0001.
+        transferDictionary : bool , optional
+            If set to True, the dictionary of the input vertex is transferred to the new vertex.
+            Default is False.
+        mantissa : int , optional
+            The number of decimal places to round the result to. Default is 6.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        topologic_core.Vertex
+            The created vertex aligned to the input coordinate lists.
+
         """
+
         from topologicpy.Topology import Topology
         from topologicpy.Helper import Helper
+        import math
+
+        def _is_number(value):
+            return (
+                isinstance(value, (int, float)) and
+                not isinstance(value, bool) and
+                math.isfinite(value)
+            )
+
+        def _clean_numeric_list(values):
+            if not isinstance(values, list):
+                return []
+            return [float(v) for v in values if _is_number(v)]
+
+        def _aligned_coordinate(value, values, epsilon):
+            values = _clean_numeric_list(values)
+            if len(values) < 1:
+                return value
+
+            try:
+                closest_value = round(values[Helper.ClosestMatch(value, values)], mantissa)
+            except Exception:
+                return value
+
+            if abs(value - closest_value) <= epsilon:
+                return closest_value
+
+            return value
 
         if not Topology.IsInstance(vertex, "vertex"):
             if not silent:
                 print("Vertex.AlignCoordinates - Error: The input vertex parameter is not a topologic vertex. Returning None.")
             return None
-        
+
         x, y, z = Vertex.Coordinates(vertex, mantissa=mantissa)
-        if isinstance(xList, list):
-            if len(xList) > 0:
-                closest_x = round(xList[Helper.ClosestMatch(x, xList)], mantissa)
-        if isinstance(yList, list):
-            if len(yList) > 0:
-                closest_y = round(yList[Helper.ClosestMatch(y, yList)], mantissa)
-        if isinstance(zList, list):
-            if len(zList) > 0:
-                closest_z = round(zList[Helper.ClosestMatch(z, zList)], mantissa)
-        
-        if abs(x - closest_x) < xEpsilon:
-            x = closest_x
-        if abs(y - closest_y) < yEpsilon:
-            y = closest_y
-        if abs(z - closest_z) < zEpsilon:
-            z = closest_z
+
+        x = _aligned_coordinate(x, xList, xEpsilon)
+        y = _aligned_coordinate(y, yList, yEpsilon)
+        z = _aligned_coordinate(z, zList, zEpsilon)
+
         return_vertex = Vertex.ByCoordinates(x, y, z)
+
+        if not Topology.IsInstance(return_vertex, "vertex"):
+            if not silent:
+                print("Vertex.AlignCoordinates - Error: Could not create the aligned vertex. Returning None.")
+            return None
+
         if transferDictionary == True:
-            return_vertex = Topology.SetDictionary(return_vertex, Topology.Dictionary(vertex), silent=silent)
+            return_vertex = Topology.SetDictionary(
+                return_vertex,
+                Topology.Dictionary(vertex),
+                silent=silent
+            )
+
         return return_vertex
 
     @staticmethod

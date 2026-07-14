@@ -16,27 +16,97 @@
 
 from __future__ import annotations
 
-import topologicpy
-import os
-import warnings
+import numbers
+from collections import deque
+from typing import Any, Iterable, List
 
 try:
+    import topologicpy
+except Exception:  # pragma: no cover - defensive for isolated source inspection.
+    topologicpy = None
+
+try:  # Optional compatibility aliases. Do not install packages at import time.
     import numpy as np
     import numpy.linalg as la
-except:
-    print("Helper - Installing required numpy library.")
-    try:
-        os.system("pip install numpy")
-    except:
-        os.system("pip install numpy --user")
-    try:
-        import numpy as np
-        import numpy.linalg as la
-        print("Helper - numpy library installed correctly.")
-    except:
-        warnings.warn("Helper - Error: Could not import numpy.")
+except Exception:  # pragma: no cover - numpy is not required by Helper itself.
+    np = None
+    la = None
+
 
 class Helper:
+    """General-purpose helper methods used throughout TopologicPy."""
+
+    # -------------------------------------------------------------------------
+    # Private helpers
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _Mantissa(mantissa: int = 6) -> int:
+        try:
+            return max(0, int(mantissa))
+        except Exception:
+            return 6
+
+    @staticmethod
+    def _Tolerance(tolerance: float = 0.0001) -> float:
+        try:
+            tolerance = float(tolerance)
+            if tolerance < 0:
+                tolerance = abs(tolerance)
+            return tolerance
+        except Exception:
+            return 0.0001
+
+    @staticmethod
+    def _IsNumber(value) -> bool:
+        return isinstance(value, numbers.Real) and not isinstance(value, bool)
+
+    @staticmethod
+    def _NumericList(values, silent: bool = False, caller: str = "Helper"):
+        if not isinstance(values, list):
+            if not silent:
+                print(f"{caller} - Error: The input listA parameter is not a valid list. Returning None.")
+            return None
+        out = []
+        for value in values:
+            if not Helper._IsNumber(value):
+                if not silent:
+                    print(f"{caller} - Error: The input listA parameter contains a non-numeric value. Returning None.")
+                return None
+            out.append(float(value))
+        return out
+
+    @staticmethod
+    def _Hashable(value):
+        try:
+            hash(value)
+            return value
+        except Exception:
+            return repr(value)
+
+    @staticmethod
+    def _DictionaryKeys(dictionary):
+        try:
+            from topologicpy.Dictionary import Dictionary
+            keys = Dictionary.Keys(dictionary)
+            return keys if isinstance(keys, list) else []
+        except Exception:
+            if isinstance(dictionary, dict):
+                return list(dictionary.keys())
+            return []
+
+    @staticmethod
+    def _DictionaryValue(dictionary, key, default=None):
+        try:
+            from topologicpy.Dictionary import Dictionary
+            return Dictionary.ValueAtKey(dictionary, key)
+        except Exception:
+            if isinstance(dictionary, dict):
+                return dictionary.get(key, default)
+            return default
+
+    # -------------------------------------------------------------------------
+    # Public methods
+    # -------------------------------------------------------------------------
     @staticmethod
     def BinAndAverage(listA, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
@@ -60,38 +130,31 @@ class Helper:
             The sorted list of bin averages.
 
         """
-        if not isinstance(listA, list):
-            if not silent:
-                print("Helper.BinAndAverage = Error: The input listA parameter is not a valid list. Returning None.")
+        values = Helper._NumericList(listA, silent=silent, caller="Helper.BinAndAverage")
+        if values is None:
             return None
-        
-        if len(listA) < 1:
+        if len(values) < 1:
             if not silent:
-                print("Helper.BinAndAverage = Error: The input listA parameter is not an empty list. Returning None.")
+                print("Helper.BinAndAverage - Error: The input listA parameter is an empty list. Returning None.")
             return None
-        
-        if len(listA) == 1:
-            return listA
-            
-        # Sort numbers to facilitate grouping
-        listA = sorted(listA)
-        bins = []
-        current_bin = [listA[0]]
+        mantissa = Helper._Mantissa(mantissa)
+        tolerance = Helper._Tolerance(tolerance)
+        if len(values) == 1:
+            return [round(values[0], mantissa)]
 
-        # Group numbers into bins based on tolerance
-        for num in listA[1:]:
+        values = sorted(values)
+        bins = []
+        current_bin = [values[0]]
+        for num in values[1:]:
             if abs(num - current_bin[-1]) <= tolerance:
                 current_bin.append(num)
             else:
                 bins.append(current_bin)
                 current_bin = [num]
-        bins.append(current_bin)  # Add the last bin
+        bins.append(current_bin)
+        return sorted([round(sum(bin_values) / len(bin_values), mantissa) for bin_values in bins])
 
-        # Calculate averages of each bin
-        bin_averages = [round(sum(bin) / len(bin), mantissa) for bin in bins]
-
-        return sorted(bin_averages)
-    
+    @staticmethod
     def CheckVersion(library: str = None, version: str = None, silent: bool = False):
         """
         Compare an input version with the latest version of a Python library on PyPI.
@@ -109,36 +172,47 @@ class Helper:
             str: A message indicating whether the input version is less than,
                 equal to, or greater than the latest version on PyPI.
         """
-        import requests
-        from packaging import version as ver
+        if not isinstance(library, str) or not library.strip():
+            if not silent:
+                print("Helper.CheckVersion - Error: The input library parameter is not valid. Returning None.")
+            return None
+        if version is None or str(version).strip() == "":
+            if not silent:
+                print("Helper.CheckVersion - Error: The input version parameter is not valid. Returning None.")
+            return None
 
         try:
-            # Fetch library data from PyPI
-            url = f"https://pypi.org/pypi/{library}/json"
-            response = requests.get(url)
+            from packaging import version as ver
+        except Exception:
+            if not silent:
+                print("Helper.CheckVersion - Error: Could not import packaging.version. Returning None.")
+            return None
+
+        try:
+            import requests
+            response = requests.get(f"https://pypi.org/pypi/{library.strip()}/json", timeout=10)
             response.raise_for_status()
-
-            # Extract the latest version from the JSON response
             data = response.json()
-            latest_version = data['info']['version']
-
-            # Compare versions using the packaging library
-            if ver.parse(version) < ver.parse(latest_version):
-                return (f"The version that you are using ({version}) is OLDER than the latest version ({latest_version}) from PyPI. Please consider upgrading to the latest version.")
-            elif ver.parse(version) == ver.parse(latest_version):
-                return (f"The version that you are using ({version}) is EQUAL TO the latest version available on PyPI.")
-            else:
-                return (f"The version that you are using ({version}) is NEWER than the latest version ({latest_version}) available from PyPI.")
-
-        except requests.exceptions.RequestException as e:
+            latest_version = data["info"]["version"]
+        except Exception:
             if not silent:
-                print("Helper.CheckVersion - Error: Could not fetch data from PyPI. Returning None")
+                print("Helper.CheckVersion - Error: Could not fetch data from PyPI. Returning None.")
             return None
-        except KeyError:
+
+        try:
+            current = ver.parse(str(version))
+            latest = ver.parse(str(latest_version))
+        except Exception:
             if not silent:
-                print("Helper.CheckVersion - Error: Could not fetch data from PyPI. Returning None")
+                print("Helper.CheckVersion - Error: Could not parse version numbers. Returning None.")
             return None
-    
+
+        if current < latest:
+            return f"The version that you are using ({version}) is OLDER than the latest version ({latest_version}) from PyPI. Please consider upgrading to the latest version."
+        if current == latest:
+            return f"The version that you are using ({version}) is EQUAL TO the latest version available on PyPI."
+        return f"The version that you are using ({version}) is NEWER than the latest version ({latest_version}) available from PyPI."
+
     @staticmethod
     def ClosestMatch(item, listA):
         """
@@ -158,17 +232,12 @@ class Helper:
             The index of the best match in listA for the input item.
 
         """
-        import numbers
-        import random
-        import string
         def levenshtein_distance(s1, s2):
             if len(s1) < len(s2):
                 return levenshtein_distance(s2, s1)
-
             if len(s2) == 0:
                 return len(s1)
-
-            previous_row = range(len(s2) + 1)
+            previous_row = list(range(len(s2) + 1))
             for i, c1 in enumerate(s1):
                 current_row = [i + 1]
                 for j, c2 in enumerate(s2):
@@ -177,27 +246,25 @@ class Helper:
                     substitutions = previous_row[j] + (c1 != c2)
                     current_row.append(min(insertions, deletions, substitutions))
                 previous_row = current_row
-
             return previous_row[-1]
-       
-        def generate_unlikely_string(length=16):
-            characters = string.ascii_letters + string.digits + string.punctuation
-            return ''.join(random.choice(characters) for _ in range(length))
 
-        if not listA:
-            print("Helper.ClosestMatch - Error: THe input listA parameter is not a valid list. Returning None.")
-            return None  # Handle empty list case
+        if not isinstance(listA, list) or len(listA) == 0:
+            print("Helper.ClosestMatch - Error: The input listA parameter is not a valid non-empty list. Returning None.")
+            return None
 
         if isinstance(item, str):
-            listA = [generate_unlikely_string(length=32) if not isinstance(x, str) else x for x in listA]
-            # For string inputs, find the closest match using Levenshtein distance
-            closest_index = min(range(len(listA)), key=lambda i: levenshtein_distance(item, listA[i]))
-        else:
-            listA = [float('-inf') if not isinstance(x, numbers.Real) else x for x in listA]
-            # For numeric or boolean inputs, find the closest match based on absolute difference
-            closest_index = min(range(len(listA)), key=lambda i: abs(listA[i] - item))
+            candidates = [(i, value) for i, value in enumerate(listA) if isinstance(value, str)]
+            if len(candidates) < 1:
+                return None
+            return min(candidates, key=lambda pair: levenshtein_distance(item, pair[1]))[0]
 
-        return closest_index
+        if Helper._IsNumber(item) or isinstance(item, bool):
+            candidates = [(i, value) for i, value in enumerate(listA) if isinstance(value, numbers.Real)]
+            if len(candidates) < 1:
+                return None
+            return min(candidates, key=lambda pair: abs(float(pair[1]) - float(item)))[0]
+
+        return None
 
     @staticmethod
     def ClusterByKeys(elements, dictionaries, *keys, silent=False):
@@ -215,7 +282,6 @@ class Helper:
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
-
         Returns
         -------
         dict
@@ -225,91 +291,42 @@ class Helper:
             "dictionaries": list
                 A nested list of dictionaries where each item is a list of dictionaries with the same key values.
         """
-        
-        from topologicpy.Dictionary import Dictionary
-        from topologicpy.Helper import Helper
-        import inspect
-        keys_list = list(keys)
-        keys_list = Helper.Flatten(keys_list)
-        keys_list = [x for x in keys_list if isinstance(x, str)]
-
-        if len(keys_list) == 0:
-            if not silent:
-                print("Helper.ClusterByKeys - Error: The input keys parameter is an empty list. Returning None.")
-                curframe = inspect.currentframe()
-                calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
-            return None
-        
+        keys_list = [x for x in Helper.Flatten(list(keys)) if isinstance(x, str) and x.strip()]
         if len(keys_list) == 0:
             if not silent:
                 print("Helper.ClusterByKeys - Error: The input keys parameter does not contain any valid strings. Returning None.")
-                curframe = inspect.currentframe()
-                calframe = inspect.getouterframes(curframe, 2)
-                print('caller name:', calframe[1][3])
             return None
-        if not (len(elements) == len(dictionaries)):
+        if not isinstance(elements, list) or not isinstance(dictionaries, list):
+            if not silent:
+                print("Helper.ClusterByKeys - Error: The input elements or dictionaries parameter is not a valid list. Returning None.")
+            return None
+        if len(elements) != len(dictionaries):
             if not silent:
                 print("Helper.ClusterByKeys - Error: The input elements parameter does not have the same length as the input dictionaries parameter. Returning None.")
             return None
-        
-        elements_clusters = []
-        dict_clusters = []
-        values = []
-        new_dictionaries = []
-        for i, d in enumerate(dictionaries):
-            d_keys = Dictionary.Keys(dictionaries[i])
-            if len(d_keys) > 0:
-                values_list = []
-                for key in keys_list:
-                    v = Dictionary.ValueAtKey(d, key)
-                    if not v == None:
-                        values_list.append(v)
-                values_list = str(values_list)
-                dictionaries[i] = Dictionary.SetValueAtKey(dictionaries[i], "_clustering_key_", values_list)
-                values.append(values_list)
+
+        grouped = {}
+        order = []
+        for element, dictionary in zip(elements, dictionaries):
+            if len(Helper._DictionaryKeys(dictionary)) < 1:
+                signature = ("_NONE_",)
             else:
-                dictionaries[i] = Dictionary.SetValueAtKey(dictionaries[i], "_clustering_key_", "_NONE_")
-                values.append("_NONE_")
-            new_dictionaries.append(dictionaries[i])
+                values = []
+                for key in keys_list:
+                    value = Helper._DictionaryValue(dictionary, key, None)
+                    if value is not None:
+                        values.append(Helper._Hashable(value))
+                signature = tuple(values) if len(values) > 0 else ("_NONE_",)
+            if signature not in grouped:
+                grouped[signature] = {"elements": [], "dictionaries": []}
+                order.append(signature)
+            grouped[signature]["elements"].append(element)
+            grouped[signature]["dictionaries"].append(dictionary)
 
-        
-        values = list(set(values))
-        remaining_dictionaries = [x for x in new_dictionaries]
-        remaining_elements = [x for x in elements]
-        remaining_indices = [i for i, x in enumerate(elements)]
-
-        if len(values) == 0:
-            return {"elements": [elements], "dictionaries": [dictionaries]}
-        for value in values:
-            if len(remaining_dictionaries) == 0:
-                break
-            dict = Dictionary.Filter(remaining_elements, remaining_dictionaries, searchType="equal to", key="_clustering_key_", value=value)
-            filtered_indices = dict['filteredIndices']
-            final_dictionaries = []
-            final_elements = []
-            if len(filtered_indices) > 0:
-                for filtered_index in filtered_indices:
-                    filtered_dictionary = remaining_dictionaries[filtered_index]
-                    filtered_dictionary = Dictionary.RemoveKey(filtered_dictionary, "_clustering_key_")
-                    final_dictionaries.append(filtered_dictionary)
-                    filtered_element = remaining_elements[filtered_index]
-                    final_elements.append(filtered_element)
-                dict_clusters.append(final_dictionaries)
-                elements_clusters.append(final_elements)
-            remaining_dictionaries = dict['otherDictionaries']
-            remaining_elements = dict['otherElements']
-            remaining_indices = dict['otherIndices']
-        if len(remaining_elements) > 0:
-            temp_dict_cluster = []
-            temp_element_cluster = []
-            for remaining_index in remaining_indices:
-                temp_element_cluster.append(remaining_elements[remaining_index])
-                temp_dict_cluster.append(remaining_dictionaries[remaining_index])
-            if len(temp_element_cluster) > 0:
-                dict_clusters.append(temp_dict_cluster)
-                elements_clusters.append(temp_element_cluster)
-        return {"elements": elements_clusters, "dictionaries": dict_clusters}
+        return {
+            "elements": [grouped[key]["elements"] for key in order],
+            "dictionaries": [grouped[key]["dictionaries"] for key in order],
+        }
 
     @staticmethod
     def Flatten(listA):
@@ -327,16 +344,15 @@ class Helper:
             The flattened list.
 
         """
-
         if not isinstance(listA, list):
             return [listA]
         flat_list = []
         for item in listA:
-            flat_list = flat_list + Helper.Flatten(item)
+            flat_list.extend(Helper.Flatten(item))
         return flat_list
 
     @staticmethod
-    def Grow(seed_idx, group_size, adjacency, visited_global): 
+    def Grow(seed_idx, group_size, adjacency, visited_global):
         """
         Attempts to grow a spatially connected group of a specified size starting from a given seed index.
 
@@ -366,16 +382,29 @@ class Helper:
         of spatial elements (e.g., cells) based on adjacency. The result may vary between runs due to random shuffling
         of neighbor order to diversify outputs.
         """
-        from collections import deque
         import random
 
-        group = [seed_idx]
-        visited = set(group)
-        queue = deque([seed_idx])
+        try:
+            group_size = int(group_size)
+        except Exception:
+            return None
+        if group_size < 1 or not isinstance(adjacency, dict):
+            return None
+        if visited_global is None:
+            visited_global = set()
+        try:
+            visited_global = set(visited_global)
+        except Exception:
+            visited_global = set()
+        if seed_idx in visited_global:
+            return None
 
+        group = [seed_idx]
+        visited = {seed_idx}
+        queue = deque([seed_idx])
         while queue and len(group) < group_size:
             current = queue.popleft()
-            neighbors = adjacency.get(current, [])
+            neighbors = list(adjacency.get(current, []) or [])
             random.shuffle(neighbors)
             for neighbor in neighbors:
                 if neighbor not in visited and neighbor not in visited_global:
@@ -384,9 +413,8 @@ class Helper:
                     queue.append(neighbor)
                     if len(group) >= group_size:
                         break
-
         return group if len(group) == group_size else None
-    
+
     @staticmethod
     def Iterate(listA):
         """
@@ -404,33 +432,22 @@ class Helper:
             The iterated list.
 
         """
-        # From https://stackoverflow.com/questions/34432056/repeat-elements-of-list-between-each-other-until-we-reach-a-certain-length
-        def onestep(cur,y,base):
-            # one step of the iteration
-            if cur is not None:
-                y.append(cur)
-                base.append(cur)
+        if not isinstance(listA, list):
+            return None
+        sublists = [list(item) for item in listA if isinstance(item, list)]
+        if len(sublists) < 1:
+            return None
+        max_length = max((len(item) for item in sublists), default=0)
+        out = []
+        for sublist in sublists:
+            if max_length == 0:
+                out.append([])
+            elif len(sublist) == 0:
+                out.append([None] * max_length)
             else:
-                y.append(base[0])  # append is simplest, for now
-                base = base[1:]+[base[0]]  # rotate
-            return base
+                out.append([sublist[i % len(sublist)] for i in range(max_length)])
+        return out
 
-        maxLength = len(listA[0])
-        iterated_list = []
-        for aSubList in listA:
-            newLength = len(aSubList)
-            if newLength > maxLength:
-                maxLength = newLength
-        for anItem in listA:
-            for i in range(len(anItem), maxLength):
-                anItem.append(None)
-            y=[]
-            base=[]
-            for cur in anItem:
-                base = onestep(cur,y,base)
-            iterated_list.append(y)
-        return iterated_list
-    
     @staticmethod
     def MakeUnique(listA):
         """
@@ -447,25 +464,20 @@ class Helper:
             The input list, but with each item ensured to be unique if they have duplicates.
 
         """
-        # Create a dictionary to store counts of each string
+        if not isinstance(listA, list):
+            return None
         counts = {}
-        # Create a list to store modified strings
         unique_strings = []
-        
-        for string in listA:
-            # If the string already exists in the counts dictionary
+        for item in listA:
+            string = str(item)
             if string in counts:
-                # Increment the count
                 counts[string] += 1
-                # Append the modified string with underscore and count
                 unique_strings.append(f"{string}_{counts[string]}")
             else:
-                # If it's the first occurrence of the string, add it to the counts dictionary
                 counts[string] = 0
                 unique_strings.append(string)
-        
         return unique_strings
-    
+
     @staticmethod
     def MergeByThreshold(listA, threshold=0.0001):
         """
@@ -484,24 +496,21 @@ class Helper:
             The merged list. The list is sorted in ascending numeric order.
 
         """
-        # Sort the list in ascending order
-        listA.sort()
-        merged_list = []
-
-        # Initialize the first element in the merged list
-        merged_list.append(listA[0])
-
-        # Merge numbers within the threshold
-        for i in range(1, len(listA)):
-            if listA[i] - merged_list[-1] <= threshold:
-                # Merge the current number with the last element in the merged list
-                merged_list[-1] = (merged_list[-1] + listA[i]) / 2
+        values = Helper._NumericList(listA, silent=True, caller="Helper.MergeByThreshold")
+        if values is None:
+            return None
+        if len(values) == 0:
+            return []
+        threshold = Helper._Tolerance(threshold)
+        values = sorted(values)
+        bins = [[values[0]]]
+        for value in values[1:]:
+            if value - bins[-1][-1] <= threshold:
+                bins[-1].append(value)
             else:
-                # If the current number is beyond the threshold, add it as a new element
-                merged_list.append(listA[i])
+                bins.append([value])
+        return [sum(bin_values) / len(bin_values) for bin_values in bins]
 
-        return merged_list
-    
     @staticmethod
     def MaximumIndices(listA, silent: bool = False):
         """
@@ -527,17 +536,14 @@ class Helper:
             return None
         if len(listA) == 0:
             return []
-        if len(listA) == 1:
-            return [0]
-    
-        # Find the maximum value in the list
-        max_value = min(listA)
-        
-        # Find all indices where this minimum value occurs
-        indices = [i for i, value in enumerate(listA) if value == max_value]
-        
-        return indices
-    
+        try:
+            max_value = max(listA)
+        except Exception:
+            if not silent:
+                print("Helper.MaximumIndices - Error: Could not evaluate the maximum value. Returning None.")
+            return None
+        return [i for i, value in enumerate(listA) if value == max_value]
+
     @staticmethod
     def MinimumIndices(listA, silent: bool = False):
         """
@@ -563,17 +569,14 @@ class Helper:
             return None
         if len(listA) == 0:
             return []
-        if len(listA) == 1:
-            return [0]
-    
-        # Find the minimum value in the list
-        min_value = min(listA)
-        
-        # Find all indices where this minimum value occurs
-        indices = [i for i, value in enumerate(listA) if value == min_value]
-        
-        return indices
-    
+        try:
+            min_value = min(listA)
+        except Exception:
+            if not silent:
+                print("Helper.MinimumIndices - Error: Could not evaluate the minimum value. Returning None.")
+            return None
+        return [i for i, value in enumerate(listA) if value == min_value]
+
     @staticmethod
     def Normalize(listA, mantissa: int = 6):
         """
@@ -595,19 +598,16 @@ class Helper:
         if not isinstance(listA, list):
             print("Helper.Normalize - Error: The input list is not valid. Returning None.")
             return None
-        
-        # Make sure the list is numeric
-        l = [x for x in listA if type(x) == int or type(x) == float]
-        if len(l) < 1:
+        values = [float(x) for x in listA if Helper._IsNumber(x)]
+        if len(values) < 1:
             print("Helper.Normalize - Error: The input list does not contain numeric values. Returning None.")
             return None
-        min_val = min(l)
-        max_val = max(l)
+        mantissa = Helper._Mantissa(mantissa)
+        min_val = min(values)
+        max_val = max(values)
         if min_val == max_val:
-            normalized_list = [0 for x in l]
-        else:
-            normalized_list = [round((x - min_val) / (max_val - min_val), mantissa) for x in l]
-        return normalized_list
+            return [0 for _ in values]
+        return [round((x - min_val) / (max_val - min_val), mantissa) for x in values]
 
     @staticmethod
     def Position(item, listA):
@@ -628,22 +628,21 @@ class Helper:
             The position of the item within the list.
 
         """
+        if not Helper._IsNumber(item) or not isinstance(listA, list):
+            return None
         left = 0
         right = len(listA) - 1
-
         while left <= right:
             mid = (left + right) // 2
             if listA[mid] == item:
                 return mid
-            elif listA[mid] < item:
+            if listA[mid] < item:
                 left = mid + 1
             else:
                 right = mid - 1
-
-        # If the target is not found, return the position where it would be inserted
         return left
-    
-    @staticmethod 
+
+    @staticmethod
     def RemoveEven(listA):
         """
         Removes the even indexed members of the input list.
@@ -659,12 +658,11 @@ class Helper:
             The resulting list.
 
         """
-        return_list = []
-        for i in range(1, len(listA), 2):
-            return_list.append(listA[i])
-        return return_list
-    
-    @staticmethod 
+        if not isinstance(listA, list):
+            return None
+        return [listA[i] for i in range(1, len(listA), 2)]
+
+    @staticmethod
     def RemoveOdd(listA):
         """
         Removes the odd indexed members of the input list.
@@ -680,11 +678,10 @@ class Helper:
             The resulting list.
 
         """
-        return_list = []
-        for i in range(0, len(listA), 2):
-            return_list.append(listA[i])
-        return return_list
-    
+        if not isinstance(listA, list):
+            return None
+        return [listA[i] for i in range(0, len(listA), 2)]
+
     @staticmethod
     def Repeat(listA):
         """
@@ -704,22 +701,17 @@ class Helper:
         """
         if not isinstance(listA, list):
             return None
-        repeated_list = [x for x in listA if isinstance(x, list)]
-        if len(repeated_list) < 1:
+        sublists = [list(item) for item in listA if isinstance(item, list)]
+        if len(sublists) < 1:
             return None
-        maxLength = len(repeated_list[0])
-        for aSubList in repeated_list:
-            newLength = len(aSubList)
-            if newLength > maxLength:
-                maxLength = newLength
-        for anItem in repeated_list:
-            if (len(anItem) > 0):
-                itemToAppend = anItem[-1]
+        max_length = max((len(item) for item in sublists), default=0)
+        out = []
+        for sublist in sublists:
+            if len(sublist) == 0:
+                out.append([None] * max_length)
             else:
-                itemToAppend = None
-            for i in range(len(anItem), maxLength):
-                anItem.append(itemToAppend)
-        return repeated_list
+                out.append(sublist + [sublist[-1]] * (max_length - len(sublist)))
+        return out
 
     @staticmethod
     def Sort(listA, *otherLists, reverseFlags=None, silent: bool = False):
@@ -752,39 +744,47 @@ class Helper:
             The sorted list.
 
         """
-       
-        # If reverseFlags is not provided, assume all lists should be sorted in ascending order
-        if reverseFlags is None:
-            reverseFlags = [False] * len(otherLists)
-        if not isinstance(otherLists, tuple):
+        if not isinstance(listA, list):
             if not silent:
-                print("Helper.Sort - Error: No other lists to use for sorting have been provided. Returning None.")
+                print("Helper.Sort - Error: The input listA parameter is not a valid list. Returning None.")
             return None
         if len(otherLists) < 1:
-            if not silent:
-                print("Helper.Sort - Error: The otherLists input parameter does not contain any valid lists. Returning None.")
-            return None
-        if not len(reverseFlags) == len(otherLists):
+            try:
+                return sorted(listA)
+            except Exception:
+                if not silent:
+                    print("Helper.Sort - Error: Could not sort listA without sorting keys. Returning None.")
+                return None
+        if reverseFlags is None:
+            reverseFlags = [False] * len(otherLists)
+        if not isinstance(reverseFlags, list) or len(reverseFlags) != len(otherLists):
             if not silent:
                 print("Helper.Sort - Error: The length of the reverseFlags input parameter is not equal to the number of input lists. Returning None.")
             return None
-        # Convert other_lists to numeric and reverse if needed.
-        sorting_lists = []
-        for i, a_list in enumerate(otherLists):
-            temp_list = []
-            temp_set = list(set(a_list))
-            temp_set = sorted(temp_set)
-            if reverseFlags[i] == True:
-                temp_set.reverse()
-            for item in a_list:
-                temp_list.append(temp_set.index(item))
-            sorting_lists.append(temp_list)
-    
-        combined_lists = list(zip(listA, *sorting_lists))
-        # Sort the combined list based on all the elements and reverse the lists as needed
-        combined_lists.sort(key=lambda x: tuple((-val) if reverse else val for val, reverse in zip(x[1:], reverseFlags)))
-        sorted_listA = [item[0] for item in combined_lists]
-        return sorted_listA
+        for other in otherLists:
+            if not isinstance(other, list) or len(other) != len(listA):
+                if not silent:
+                    print("Helper.Sort - Error: Each sorting list must be a list with the same length as listA. Returning None.")
+                return None
+
+        def sorted_unique(values):
+            unique = []
+            for value in values:
+                if not any(value == existing for existing in unique):
+                    unique.append(value)
+            try:
+                return sorted(unique)
+            except Exception:
+                return sorted(unique, key=lambda value: (type(value).__name__, repr(value)))
+
+        ranks = []
+        for values in otherLists:
+            unique = sorted_unique(values)
+            ranks.append([next(i for i, value in enumerate(unique) if item == value) for item in values])
+
+        order = list(range(len(listA)))
+        order.sort(key=lambda idx: tuple((-rank[idx] if reverseFlags[j] else rank[idx]) for j, rank in enumerate(ranks)))
+        return [listA[i] for i in order]
 
     @staticmethod
     def Transpose(listA):
@@ -804,15 +804,14 @@ class Helper:
         """
         if not isinstance(listA, list):
             return None
-        length = len(listA[0])
-        transposed_list = []
-        for i in range(length):
-            tempRow = []
-            for j in range(len(listA)):
-                tempRow.append(listA[j][i])
-            transposed_list.append(tempRow)
-        return transposed_list
-    
+        rows = [row for row in listA if isinstance(row, list)]
+        if len(rows) != len(listA):
+            return None
+        if len(rows) == 0:
+            return []
+        min_length = min(len(row) for row in rows)
+        return [[row[i] for row in rows] for i in range(min_length)]
+
     @staticmethod
     def Trim(listA):
         """
@@ -830,17 +829,16 @@ class Helper:
             The repeated list.
 
         """
-        minLength = len(listA[0])
-        returnList = []
-        for aSubList in listA:
-            newLength = len(aSubList)
-            if newLength < minLength:
-                minLength = newLength
-        for anItem in listA:
-            anItem = anItem[:minLength]
-            returnList.append(anItem)
-        return returnList
-    
+        if not isinstance(listA, list):
+            return None
+        sublists = [item for item in listA if isinstance(item, list)]
+        if len(sublists) != len(listA):
+            return None
+        if len(sublists) == 0:
+            return []
+        min_length = min(len(item) for item in sublists)
+        return [item[:min_length] for item in sublists]
+
     @staticmethod
     def Version(check: bool = True, silent: bool = False):
         """
@@ -859,8 +857,11 @@ class Helper:
             The current version of the software. Optionally, includes a check with PyPi.
 
         """
-        
-        result = topologicpy.__version__
-        if check == True:
-            result = Helper.CheckVersion("topologicpy", result, silent=silent)
+        result = getattr(topologicpy, "__version__", None) if topologicpy is not None else None
+        if result is None:
+            if not silent:
+                print("Helper.Version - Error: Could not determine the current TopologicPy version. Returning None.")
+            return None
+        if check is True:
+            return Helper.CheckVersion("topologicpy", result, silent=silent)
         return result

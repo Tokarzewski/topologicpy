@@ -159,7 +159,12 @@ def _parse_feat_cell(cell: Any) -> Optional[List[float]]:
             return [float(p) for p in parts]
         except Exception:
             return None
-    return None
+
+    # numeric scalar encoded as a string, e.g. "1.25"
+    try:
+        return [float(s)]
+    except Exception:
+        return None
 
 
 def _activation(name: str) -> nn.Module:
@@ -465,13 +470,26 @@ class ANN:
             rng = np.random.default_rng(cfg.random_state)
             rng.shuffle(idx)
 
-        a, b, c = cfg.split
-        if not (0.0 <= a <= 1.0 and 0.0 <= b <= 1.0 and 0.0 <= c <= 1.0):
-            raise ValueError("ANN - Error: split ratios must be in [0,1].")
+        try:
+            a, b, c = cfg.split
+        except Exception:
+            raise ValueError("ANN - Error: split must contain exactly three numeric values.")
+
+        try:
+            a, b, c = float(a), float(b), float(c)
+        except Exception:
+            raise ValueError("ANN - Error: split must contain three numeric values.")
+
+        if a < 0 or b < 0 or c < 0:
+            raise ValueError("ANN - Error: split ratios must be non-negative.")
+
         s = a + b + c
-        if abs(s - 1.0) > 1e-6:
-            # normalize if user passed, e.g., (80,10,10)
-            a, b, c = a / s, b / s, c / s
+        if s <= 0:
+            raise ValueError("ANN - Error: split ratios must sum to a positive value.")
+
+        # Always normalise. This accepts both ratios, e.g. (0.8, 0.1, 0.1),
+        # and percentages/count-like weights, e.g. (80, 10, 10).
+        a, b, c = a / s, b / s, c / s
 
         n_train = int(round(a * n))
         n_val = int(round(b * n))
@@ -731,6 +749,12 @@ class ANN:
         loss_fn = self._loss_fn()
         opt = self._optimizer()
 
+        if self.idx_train is None or len(self.idx_train) == 0:
+            raise RuntimeError("ANN.Train - Error: The training split is empty.")
+
+        if self.idx_val is None or len(self.idx_val) == 0:
+            raise RuntimeError("ANN.Train - Error: The validation split is empty.")
+
         train_loader = self._make_loader(self.idx_train, shuffle=True)
         val_loader = self._make_loader(self.idx_val, shuffle=False)
 
@@ -830,6 +854,14 @@ class ANN:
             raise RuntimeError("ANN - Error: No model built.")
         if self.y is None:
             raise RuntimeError("ANN - Error: No labels available for evaluation.")
+
+        if idx is None:
+            raise RuntimeError("ANN - Error: The requested split is None.")
+
+        idx = np.asarray(idx, dtype=int)
+
+        if idx.size == 0:
+            raise RuntimeError("ANN - Error: The requested split is empty.")
 
         cfg = self.config
         loader = self._make_loader(idx, shuffle=False)
@@ -950,24 +982,48 @@ class ANN:
         if self.model is None:
             raise RuntimeError("ANN.Predict - Error: No model. Train or load a model first.")
 
-        # If predicting new CSV, we reuse schema (features_keys / feat_header)
+        # If predicting a new CSV, reuse the frozen training-time feature
+        # schema. This prevents PyTorch shape errors and keeps inference
+        # behaviour consistent with training.
         if path is not None:
             df = pd.read_csv(path)
             cfg = self.config
-            if cfg.features_keys is not None and len(cfg.features_keys) > 0:
-                missing = [k for k in cfg.features_keys if k not in df.columns]
-                if missing:
-                    raise ValueError(f"ANN.Predict - Error: Missing feature columns in new CSV: {missing}")
-                X = df[cfg.features_keys].to_numpy(dtype=float)
+
+            if self._feature_schema_mode == "columns" or (self._feature_schema_mode is None and cfg.features_keys is not None and len(cfg.features_keys) > 0):
+                keys = self._feature_schema_keys or cfg.features_keys
+                keys = list(keys or [])
+                if len(keys) == 0:
+                    raise ValueError("ANN.Predict - Error: No feature columns are defined for prediction.")
+
+                # Match _prepare_xy: missing explicit feature columns are filled
+                # with 0.0 instead of failing with a low-level pandas/key error.
+                for k in keys:
+                    if k not in df.columns:
+                        df[k] = 0.0
+
+                X = df[keys].to_numpy(dtype=float)
+
             else:
                 if cfg.feat_header not in df.columns:
                     raise ValueError(f"ANN.Predict - Error: Feature column '{cfg.feat_header}' not found in new CSV.")
+
+                target_dim = int(self._feature_schema_dim) if self._feature_schema_dim is not None else None
                 feats = []
+
                 for i, cell in enumerate(df[cfg.feat_header].values):
                     v = _parse_feat_cell(cell)
                     if v is None:
                         raise ValueError(f"ANN.Predict - Error: Could not parse features at row {i} in new CSV.")
-                    feats.append(v)
+
+                    vv = list(v)
+                    if target_dim is not None:
+                        if len(vv) < target_dim:
+                            vv = vv + [0.0] * (target_dim - len(vv))
+                        elif len(vv) > target_dim:
+                            vv = vv[:target_dim]
+
+                    feats.append(vv)
+
                 X = np.asarray(feats, dtype=float)
 
             work_df = df
@@ -1188,19 +1244,24 @@ class ANN:
 
         if normalize:
             cm = cm.astype(float)
-            cm = cm / (cm.sum(axis=1, keepdims=True) + 1e-12)
+            row_sums = cm.sum(axis=1, keepdims=True)
 
-            # Round
+            with np.errstate(divide="ignore", invalid="ignore"):
+                cm = np.divide(
+                    cm,
+                    row_sums,
+                    out=np.zeros_like(cm, dtype=float),
+                    where=row_sums != 0
+                )
+
             cm = np.round(cm, decimals=mantissa)
 
-            # Enforce exact row sum = 1
-            col_sums = cm.sum(axis=0)
-            diff = 1.0 - col_sums
-
-            # Add correction to the largest element in each column
-            for j in range(cm.shape[1]):
-                i = np.argmax(cm[j])
-                cm[i, j] += diff[i]
+            # Enforce exact row sum = 1 after rounding for non-empty rows.
+            for i in range(cm.shape[0]):
+                row_sum = float(np.sum(cm[i]))
+                if row_sum > 0:
+                    j = int(np.argmax(cm[i]))
+                    cm[i, j] += 1.0 - row_sum
 
         if title is None:
             title = f"Confusion Matrix ({s})"

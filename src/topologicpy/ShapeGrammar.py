@@ -16,120 +16,157 @@
 
 from __future__ import annotations
 
-class ShapeGrammar:
-    def __init__(self):
-        self.title = "Untitled" # Stores the title of the topology grammar.
-        self.description = "" # Stores the description of the grammar.
-        self.rules = []  # Stores transformation rules of the topology grammar.
-        # Operations
-        # Replace
-        replace = {"title": "Replace",
-                   "description": "Replaces the input topology with the output topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Transform
-        transform = {"title": "Transform",
-                   "description": "Transforms the input topology using the specified matrix.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Union
-        union = {"title": "Union",
-                   "description": "Unions the input topology and the output topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Difference
-        difference = {"title": "Difference",
-                   "description": "Subtracts the output topology from the input topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Difference
-        symdif = {"title": "Symmetric Difference",
-                   "description": "Calculates the symmetrical difference of the input topology and the output topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Intersect
-        intersect = {"title": "Intersect",
-                   "description": "Intersects the input topology and the output topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Merge
-        merge = {"title": "Merge",
-                   "description": "Merges the input topology and the output topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Slice
-        slice = {"title": "Slice",
-                   "description": "Slices the input topology using the output topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Impose
-        impose = {"title": "Impose",
-                   "description": "Imposes the output topology on the input topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Imprint
-        imprint = {"title": "Imprint",
-                   "description": "Imposes the output topology on the input topology.",
-                   "uSides": None,
-                   "vSides": None,
-                   "wSides": None}
-        # Divide
-        divide = {"title": "Divide",
-                   "description": "Divides the input topology along the x, y, and z axes using the specified number of sides (uSides, vSides, wSides)",
-                   "uSides": 2,
-                   "vSides": 2,
-                   "wSides": 2}
-        self.operations = [replace, transform, union, difference, symdif, intersect, merge, slice, impose, imprint, divide]
+import copy
+from typing import Any, Dict, List, Optional, Tuple
 
+
+class ShapeGrammar:
+    """A lightweight topology shape-grammar container.
+
+    A ``ShapeGrammar`` stores transformation rules. Each rule consists of an
+    input topology pattern, an optional output topology, an operation, and an
+    optional 4x4 matrix that prepares the rule output relative to the rule
+    input. ``ApplicableRules`` can then compute matching transformations, and
+    ``ApplyRule`` applies a selected rule to a target topology.
+    """
+
+    _OPERATION_SPECS = (
+        ("Replace", "Replaces the input topology with the output topology.", None, None, None),
+        ("Transform", "Transforms the input topology using the specified matrix.", None, None, None),
+        ("Union", "Unions the input topology and the output topology.", None, None, None),
+        ("Difference", "Subtracts the output topology from the input topology.", None, None, None),
+        ("Symmetric Difference", "Calculates the symmetrical difference of the input topology and the output topology.", None, None, None),
+        ("Intersect", "Intersects the input topology and the output topology.", None, None, None),
+        ("Merge", "Merges the input topology and the output topology.", None, None, None),
+        ("Slice", "Slices the input topology using the output topology.", None, None, None),
+        ("Impose", "Imposes the output topology on the input topology.", None, None, None),
+        ("Imprint", "Imprints the output topology on the input topology.", None, None, None),
+        ("Divide", "Divides the input topology along the x, y, and z axes using the specified number of sides (uSides, vSides, wSides).", 2, 2, 2),
+    )
+
+    def __init__(self):
+        self.title = "Untitled"
+        self.description = ""
+        self.rules = []
+        self.operations = [
+            {"title": title, "description": description, "uSides": u, "vSides": v, "wSides": w}
+            for title, description, u, v, w in self._OPERATION_SPECS
+        ]
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _is_4x4_matrix(matrix) -> bool:
+        if not isinstance(matrix, (list, tuple)) or len(matrix) != 4:
+            return False
+        for row in matrix:
+            if not isinstance(row, (list, tuple)) or len(row) != 4:
+                return False
+            for value in row:
+                try:
+                    float(value)
+                except Exception:
+                    return False
+        return True
+
+    @staticmethod
+    def _copy_matrix(matrix):
+        if matrix is None:
+            return None
+        return [[float(value) for value in row] for row in matrix]
+
+    @staticmethod
+    def _op_title(operation) -> str:
+        if isinstance(operation, dict):
+            return str(operation.get("title", ""))
+        if operation is None:
+            return ""
+        return str(operation)
+
+    def _normalise_operation(self, operation, silent: bool = False):
+        """Returns a canonical operation dictionary or None if invalid.
+
+        ``operation=None`` intentionally means the documented default operation:
+        ``Replace``.
+        """
+        if operation is None:
+            return copy.deepcopy(self.OperationByTitle("Replace"))
+        if operation in self.operations:
+            return copy.deepcopy(operation)
+        if isinstance(operation, str):
+            op = self.OperationByTitle(operation)
+            if op is not None:
+                return copy.deepcopy(op)
+        if isinstance(operation, dict):
+            op = self.OperationByTitle(operation.get("title"))
+            if op is not None:
+                normalised = copy.deepcopy(op)
+                # Preserve explicit divide-side overrides supplied in the rule.
+                for key in ("uSides", "vSides", "wSides"):
+                    if key in operation and operation[key] is not None:
+                        normalised[key] = operation[key]
+                return normalised
+        if not silent:
+            print("ShapeGrammar - Error: The operation parameter is not a valid operation. Returning None.")
+        return None
+
+    @staticmethod
+    def _is_topology(obj) -> bool:
+        try:
+            from topologicpy.Topology import Topology
+            return bool(Topology.IsInstance(obj, "Topology"))
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Operations and rule storage
+    # ------------------------------------------------------------------
     def OperationTitles(self):
         """
         Returns the list of available operation titles.
 
-        Parameters
-        ----------
-        
         Returns
         -------
         list
-            The requested list of operation titles
+            The requested list of operation titles.
         """
         return [op["title"] for op in self.operations]
-    
+
     def OperationByTitle(self, title):
         """
-        Returns the operation given the input title string
+        Returns the operation matching the input title string.
 
         Parameters
         ----------
         title : str
-            The input operation str. See OperationTitles for list of operations.
-        
+            The input operation title. See ``OperationTitles`` for available
+            operations. Matching is case-insensitive; exact matches are preferred
+            over substring matches.
+
         Returns
         -------
-        ShapeGrammar.Operation
-            The requested operation
+        dict or None
+            The requested operation dictionary, or None if no operation matches.
         """
+        if not isinstance(title, str) or title.strip() == "":
+            return None
+        query = title.strip().lower()
         for op in self.operations:
-            op_title = op["title"]
-            if title.lower() in op_title.lower():
+            if query == str(op.get("title", "")).lower():
+                return op
+        for op in self.operations:
+            op_title = str(op.get("title", ""))
+            if query in op_title.lower():
                 return op
         return None
 
     def AddRule(self,
                 input,
                 output,
-                title : str = "Untitled Rule",
+                title: str = "Untitled Rule",
                 description: str = "",
-                operation : dict = None,
+                operation: dict = None,
                 matrix: list = None,
                 silent: bool = False):
         """
@@ -138,20 +175,25 @@ class ShapeGrammar:
         Parameters
         ----------
         input : topologic_core.Topology
-            The linput topology of the rule.
+            The input topology of the rule.
         output : topologic_core.Topology
-            The output topology of the rule.
-        title : str , optional
-            The title of the rule. Default is "Untitled Rule"
+            The output topology of the rule. This may be None for transform-like
+            rules that only use the input topology.
+        title : str, optional
+            The title of the rule. Default is ``"Untitled Rule"``.
         description : str, optional
-            The description of the rule. Default is "".
-        operation : dict , optional
-            The desired rule operation. See Rule Operations. If set to None, the replacement rule is applied. Default is None.
-        matrix : list
-            The 4x4 transformation matrix that tranforms the output topology to the input topology. If set to None, no transformation is applied. Default is None.
+            The description of the rule. Default is ``""``.
+        operation : dict or str, optional
+            The desired rule operation. If set to None, the replacement rule is
+            applied. Default is None.
+        matrix : list, optional
+            The 4x4 transformation matrix that transforms the output topology to
+            the input topology. If set to None, no rule-preparation transform is
+            applied. Default is None.
         silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
+            If set to True, error and warning messages are suppressed. Default is
+            False.
+
         Returns
         -------
         None
@@ -159,40 +201,33 @@ class ShapeGrammar:
         """
         from topologicpy.Topology import Topology
 
-        def is_4x4_matrix(matrix):
-            return (
-                isinstance(matrix, list) and
-                len(matrix) == 4 and
-                all(isinstance(row, list) and len(row) == 4 for row in matrix)
-            )
-
         if not Topology.IsInstance(input, "Topology"):
             if not silent:
-                print("ShapeGrammar.AddRule - Error: The input input parameter is not a valid topology. Returning None.")
+                print("ShapeGrammar.AddRule - Error: The input parameter is not a valid topology. Returning None.")
             return None
-        if not output == None:
-            if not Topology.IsInstance(output, "Topology"):
-                if not silent:
-                    print("ShapeGrammar.AddRule - Error: The input output parameter is not a valid topology. Returning None.")
-                return None
-        if not operation == None:
-            if not operation in self.operations:
-                if not silent:
-                    print("ShapeGrammar.AddRule - Error: The input operation parameter is not a valid operation. Returning None.")
-                return None
-        if not matrix == None:
-            if not is_4x4_matrix(matrix):
-                if not silent:
-                    print("ShapeGrammar.AddRule - Error: The input matrix parameter is not a valid matrix. Returning None.")
-                return None
-        
-        self.rules.append({"input":input,
-                           "output": output,
-                           "title": title,
-                           "description": description,
-                           "operation": operation,
-                           "matrix": matrix
-                           })
+        if output is not None and not Topology.IsInstance(output, "Topology"):
+            if not silent:
+                print("ShapeGrammar.AddRule - Error: The output parameter is not a valid topology. Returning None.")
+            return None
+
+        op = self._normalise_operation(operation, silent=silent)
+        if op is None:
+            return None
+
+        if matrix is not None and not self._is_4x4_matrix(matrix):
+            if not silent:
+                print("ShapeGrammar.AddRule - Error: The matrix parameter is not a valid 4x4 numeric matrix. Returning None.")
+            return None
+
+        self.rules.append({
+            "input": input,
+            "output": output,
+            "title": str(title) if title is not None else "Untitled Rule",
+            "description": str(description) if description is not None else "",
+            "operation": op,
+            "matrix": self._copy_matrix(matrix),
+        })
+        return None
 
     def ApplicableRules(self, topology, keys: list = None, silent: bool = False):
         """
@@ -201,207 +236,228 @@ class ShapeGrammar:
         Parameters
         ----------
         topology : topologic_core.Topology
-            The input topology
-        keys : list , optional
-            The list of dictionary keys to semantically match the rules. Default is None which means dictionaries are not considered.
+            The input topology.
+        keys : list, optional
+            The dictionary keys to semantically match. Default is None, meaning
+            dictionaries are not considered.
         silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
+            If set to True, error and warning messages are suppressed. Default is
+            False.
+
         Returns
         -------
-        list
-            The list of applicable rules.
+        tuple
+            ``(rules, matrices)`` where ``rules`` is the list of applicable rules
+            and ``matrices`` is the corresponding list of similarity transforms.
+            Returns None if the input topology is invalid.
         """
         from topologicpy.Topology import Topology
         from topologicpy.Dictionary import Dictionary
 
         if not Topology.IsInstance(topology, "Topology"):
             if not silent:
-                print("ShapeGrammar.ApplicableRules - Error: The input topology parameter is not a valid topology. Returning None.")
+                print("ShapeGrammar.ApplicableRules - Error: The topology parameter is not a valid topology. Returning None.")
             return None
-        
+
         ap_rules = []
         ap_trans = []
         d = Topology.Dictionary(topology)
-        for i, rule in enumerate(self.rules):
+        match_keys = [k for k in keys if isinstance(k, str)] if isinstance(keys, list) else []
+
+        for rule in self.rules:
+            if not isinstance(rule, dict) or "input" not in rule:
+                continue
             dict_status = True
-            input = rule["input"]
-            # If there is a list of keys specified, check that the values match
-            if isinstance(keys, list):
-                d_input = Topology.Dictionary(input)
-                for j, key in enumerate(keys):
-                    if not Dictionary.ValueAtKey(d, key, None) == Dictionary.ValueAtKey(d_input, key, None):
+            rule_input = rule.get("input")
+            if match_keys:
+                d_input = Topology.Dictionary(rule_input)
+                for key in match_keys:
+                    if Dictionary.ValueAtKey(d, key, None) != Dictionary.ValueAtKey(d_input, key, None):
                         dict_status = False
                         break
-            #If it passed the dictionary key test, then check topology similarity
-            if dict_status:
-                topology_status, mat = Topology.IsSimilar(rule["input"], topology)
-                if topology_status:
-                    ap_rules.append(rule)
-                    ap_trans.append(mat)
+            if not dict_status:
+                continue
+
+            try:
+                similar = Topology.IsSimilar(rule_input, topology)
+            except Exception:
+                similar = (False, None)
+            if isinstance(similar, (list, tuple)) and len(similar) >= 2:
+                topology_status, mat = bool(similar[0]), similar[1]
+            else:
+                topology_status, mat = bool(similar), None
+            if topology_status:
+                ap_rules.append(rule)
+                ap_trans.append(mat)
         return ap_rules, ap_trans
 
+    # ------------------------------------------------------------------
+    # Rule application
+    # ------------------------------------------------------------------
     def ApplyRule(self, topology, rule: dict = None, matrix: list = None, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
-        Returns rules applicable to the input topology.
+        Applies a rule to the input topology.
 
         Parameters
         ----------
         topology : topologic_core.Topology
-            The input topology
-        rule : dict , optional
-            The desired rule to apply. Default is None.
-        matrix : list
-            The 4x4 transformation matrix that tranforms the output topology to the input topology. If set to None, no transformation is applied. Default is None.
+            The input topology.
+        rule : dict, optional
+            The desired rule to apply. If None, the method returns the topology
+            transformed by ``matrix`` when supplied, otherwise the input topology.
+        matrix : list, optional
+            The 4x4 transformation matrix that transforms the rule result to the
+            target topology. If set to None, no final transformation is applied.
         mantissa : int, optional
             Decimal precision. Default is 6.
         tolerance : float, optional
-            The desired Tolerance. Not used here but included for API compatibility. Default is 0.0001.
+            The desired tolerance. Default is 0.0001.
         silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
+            If set to True, error and warning messages are suppressed. Default is
+            False.
+
         Returns
         -------
-        topologic_core.Topology
-            The transformed topology
+        topologic_core.Topology or None
+            The transformed topology, or None if validation fails.
         """
-
         from topologicpy.Topology import Topology
-        from topologicpy.Cluster import Cluster
-        from topologicpy.Face import Face
-        from topologicpy.Vertex import Vertex
 
-        def is_4x4_matrix(matrix):
-            return (
-                isinstance(matrix, list) and
-                len(matrix) == 4 and
-                all(isinstance(row, list) and len(row) == 4 for row in matrix)
-            )
-        
-        def bb(topology):
-            vertices = Topology.Vertices(topology, silent=True)
-            x = []
-            y = []
-            z = []
-            for aVertex in vertices:
-                x.append(Vertex.X(aVertex, mantissa=mantissa))
-                y.append(Vertex.Y(aVertex, mantissa=mantissa))
-                z.append(Vertex.Z(aVertex, mantissa=mantissa))
-            x_min = min(x)
-            y_min = min(y)
-            z_min = min(z)
-            maxX = max(x)
-            maxY = max(y)
-            maxZ = max(z)
-            return [x_min, y_min, z_min, maxX, maxY, maxZ]
-        
-        def slice(topology, uSides, vSides, wSides):
-            x_min, y_min, z_min, maxX, maxY, maxZ = bb(topology)
-            centroid = Vertex.ByCoordinates(x_min+(maxX-x_min)*0.5, y_min+(maxY-y_min)*0.5, z_min+(maxZ-z_min)*0.5)
-            wOrigin = Vertex.ByCoordinates(Vertex.X(centroid, mantissa=mantissa), Vertex.Y(centroid, mantissa=mantissa), z_min)
-            wFace = Face.Rectangle(origin=wOrigin, width=(maxX-x_min)*1.1, length=(maxY-y_min)*1.1)
-            wFaces = []
-            wOffset = (maxZ-z_min)/wSides
-            for i in range(wSides-1):
-                wFaces.append(Topology.Translate(wFace, 0,0,wOffset*(i+1)))
-            uOrigin = Vertex.ByCoordinates(x_min, Vertex.Y(centroid, mantissa=mantissa), Vertex.Z(centroid, mantissa=mantissa))
-            uFace = Face.Rectangle(origin=uOrigin, width=(maxZ-z_min)*1.1, length=(maxY-y_min)*1.1, direction=[1,0,0])
-            uFaces = []
-            uOffset = (maxX-x_min)/uSides
-            for i in range(uSides-1):
-                uFaces.append(Topology.Translate(uFace, uOffset*(i+1),0,0))
-            vOrigin = Vertex.ByCoordinates(Vertex.X(centroid, mantissa=mantissa), y_min, Vertex.Z(centroid, mantissa=mantissa))
-            vFace = Face.Rectangle(origin=vOrigin, width=(maxX-x_min)*1.1, length=(maxZ-z_min)*1.1, direction=[0,1,0])
-            vFaces = []
-            vOffset = (maxY-y_min)/vSides
-            for i in range(vSides-1):
-                vFaces.append(Topology.Translate(vFace, 0,vOffset*(i+1),0))
-            all_faces = uFaces+vFaces+wFaces
-            if len(all_faces) > 0:
-                f_clus = Cluster.ByTopologies(uFaces+vFaces+wFaces)
-                return Topology.Slice(topology, f_clus, tolerance=tolerance)
-            else:
-                return topology
+        def _divide_by_sides(base_topology, uSides, vSides, wSides):
+            from topologicpy.Cluster import Cluster
+            from topologicpy.Face import Face
+            from topologicpy.Vertex import Vertex
+
+            def _bb(topo):
+                vertices = Topology.Vertices(topo, silent=True) or []
+                if not vertices:
+                    return None
+                xs, ys, zs = [], [], []
+                for v in vertices:
+                    xs.append(Vertex.X(v, mantissa=mantissa))
+                    ys.append(Vertex.Y(v, mantissa=mantissa))
+                    zs.append(Vertex.Z(v, mantissa=mantissa))
+                return [min(xs), min(ys), min(zs), max(xs), max(ys), max(zs)]
+
+            try:
+                uSides = int(uSides)
+                vSides = int(vSides)
+                wSides = int(wSides)
+            except Exception:
+                return base_topology
+            if uSides < 1 or vSides < 1 or wSides < 1:
+                return base_topology
+
+            bounds = _bb(base_topology)
+            if bounds is None:
+                return base_topology
+            x_min, y_min, z_min, maxX, maxY, maxZ = bounds
+            dx, dy, dz = maxX - x_min, maxY - y_min, maxZ - z_min
+            if abs(dx) <= float(tolerance) and abs(dy) <= float(tolerance) and abs(dz) <= float(tolerance):
+                return base_topology
+
+            centroid = Vertex.ByCoordinates(x_min + dx * 0.5, y_min + dy * 0.5, z_min + dz * 0.5)
+            faces = []
+            if wSides > 1 and abs(dz) > float(tolerance):
+                w_origin = Vertex.ByCoordinates(Vertex.X(centroid, mantissa=mantissa), Vertex.Y(centroid, mantissa=mantissa), z_min)
+                w_face = Face.Rectangle(origin=w_origin, width=max(dx * 1.1, tolerance), length=max(dy * 1.1, tolerance))
+                offset = dz / float(wSides)
+                for i in range(wSides - 1):
+                    faces.append(Topology.Translate(w_face, 0, 0, offset * (i + 1)))
+            if uSides > 1 and abs(dx) > float(tolerance):
+                u_origin = Vertex.ByCoordinates(x_min, Vertex.Y(centroid, mantissa=mantissa), Vertex.Z(centroid, mantissa=mantissa))
+                u_face = Face.Rectangle(origin=u_origin, width=max(dz * 1.1, tolerance), length=max(dy * 1.1, tolerance), direction=[1, 0, 0])
+                offset = dx / float(uSides)
+                for i in range(uSides - 1):
+                    faces.append(Topology.Translate(u_face, offset * (i + 1), 0, 0))
+            if vSides > 1 and abs(dy) > float(tolerance):
+                v_origin = Vertex.ByCoordinates(Vertex.X(centroid, mantissa=mantissa), y_min, Vertex.Z(centroid, mantissa=mantissa))
+                v_face = Face.Rectangle(origin=v_origin, width=max(dx * 1.1, tolerance), length=max(dz * 1.1, tolerance), direction=[0, 1, 0])
+                offset = dy / float(vSides)
+                for i in range(vSides - 1):
+                    faces.append(Topology.Translate(v_face, 0, offset * (i + 1), 0))
+            if not faces:
+                return base_topology
+            return Topology.Slice(base_topology, Cluster.ByTopologies(faces), tolerance=tolerance)
 
         if not Topology.IsInstance(topology, "Topology"):
             if not silent:
-                print("ShapeGrammar.ApplyRule - Error: The input topology parameter is not a valid topology. Returning None.")
+                print("ShapeGrammar.ApplyRule - Error: The topology parameter is not a valid topology. Returning None.")
             return None
-        if not matrix == None:
-            if not is_4x4_matrix(matrix):
+        if matrix is not None and not self._is_4x4_matrix(matrix):
+            if not silent:
+                print("ShapeGrammar.ApplyRule - Error: The matrix parameter is not a valid 4x4 numeric matrix. Returning None.")
+            return None
+
+        result_output = topology
+        if rule is not None:
+            if not isinstance(rule, dict):
                 if not silent:
-                    print("ShapeGrammar.ApplyRule - Error: The input matrix parameter is not a valid matrix. Returning None.")
+                    print("ShapeGrammar.ApplyRule - Error: The rule parameter is not a valid rule. Returning None.")
                 return None
-        
-        if not rule == None:
-            input = rule["input"]
-            output = rule["output"]
-            r_matrix = rule["matrix"]
-            operation = rule["operation"]
-            if not operation == None:
-                op_title = operation["title"]
-            else:
-                op_title = "None"
+            rule_input = rule.get("input", topology)
+            output = rule.get("output", None)
+            r_matrix = rule.get("matrix", None)
+            if r_matrix is not None and not self._is_4x4_matrix(r_matrix):
+                if not silent:
+                    print("ShapeGrammar.ApplyRule - Error: The rule matrix is not a valid 4x4 numeric matrix. Returning None.")
+                return None
+            operation = self._normalise_operation(rule.get("operation", None), silent=silent)
+            if operation is None:
+                return None
 
-            result_output = topology
-            temp_output = None
-            if not output == None:
-                temp_output = output
-            # Transform the output topology to the input topology to prepare it for final transformation
-            if not r_matrix == None and not output == None:
-                    temp_output = Topology.Transform(output, r_matrix)
+            if not Topology.IsInstance(rule_input, "Topology"):
+                if not silent:
+                    print("ShapeGrammar.ApplyRule - Error: The rule input is not a valid topology. Returning None.")
+                return None
+            if output is not None and not Topology.IsInstance(output, "Topology"):
+                if not silent:
+                    print("ShapeGrammar.ApplyRule - Error: The rule output is not a valid topology. Returning None.")
+                return None
 
-            if "replace" in op_title.lower():
+            op_title = str(operation.get("title", "Replace")).strip().lower()
+            temp_output = output
+            if r_matrix is not None and output is not None:
+                temp_output = Topology.Transform(output, self._copy_matrix(r_matrix))
+
+            # IMPORTANT: Symmetric Difference must be tested before Difference.
+            if "symmetric difference" in op_title or "symmetrical difference" in op_title:
+                result_output = Topology.SymmetricDifference(rule_input, temp_output)
+            elif "replace" in op_title:
                 result_output = temp_output
-            elif "transform" in op_title.lower():
-                result_output = Topology.Transform(topology, r_matrix)
-            elif "union" in op_title.lower():
-                result_output = Topology.Union(input, temp_output)
-            elif "difference" in op_title.lower():
-                result_output = Topology.Difference(input, temp_output)
-            elif "symmetric difference" in op_title.lower():
-                result_output = Topology.SymmetricDifference(input, temp_output)
-            elif "intersect" in op_title.lower():
-                result_output = Topology.Intersect(input, temp_output)
-            elif "merge" in op_title.lower():
-                result_output = Topology.Merge(input, temp_output)
-            elif "slice" in op_title.lower():
-                result_output = Topology.Slice(input, temp_output)
-            elif "impose" in op_title.lower():
-                result_output = Topology.Impose(input, temp_output)
-            elif "imprint" in op_title.lower():
-                result_output = Topology.Imprint(input, temp_output)
-            elif "divide" in op_title.lower():
-                uSides = operation["uSides"]
-                vSides = operation["vSides"]
-                wSides = operation["wSides"]
-                if not uSides == None and not vSides == None and not wSides == None:
-                    result_output = slice(input, uSides, vSides, wSides)
-        
-        # Finally, transform the result to the input topology
-        if not matrix == None:
-            result_output = Topology.Transform(result_output, matrix)
-        
+            elif "transform" in op_title:
+                result_output = Topology.Transform(topology, self._copy_matrix(r_matrix)) if r_matrix is not None else topology
+            elif "union" in op_title:
+                result_output = Topology.Union(rule_input, temp_output)
+            elif "difference" in op_title:
+                result_output = Topology.Difference(rule_input, temp_output)
+            elif "intersect" in op_title:
+                result_output = Topology.Intersect(rule_input, temp_output)
+            elif "merge" in op_title:
+                result_output = Topology.Merge(rule_input, temp_output)
+            elif "slice" in op_title:
+                result_output = Topology.Slice(rule_input, temp_output)
+            elif "impose" in op_title:
+                result_output = Topology.Impose(rule_input, temp_output)
+            elif "imprint" in op_title:
+                result_output = Topology.Imprint(rule_input, temp_output)
+            elif "divide" in op_title:
+                result_output = _divide_by_sides(rule_input, operation.get("uSides"), operation.get("vSides"), operation.get("wSides"))
+            else:
+                result_output = topology
+
+        if matrix is not None and result_output is not None:
+            result_output = Topology.Transform(result_output, self._copy_matrix(matrix))
         return result_output
 
+    # ------------------------------------------------------------------
+    # Visualisation helpers
+    # ------------------------------------------------------------------
     def ClusterByInputOutput(self, input, output, silent: bool = False):
         """
-        Returns the Plotly figure of the input and output topologies as a rule.
-
-        Parameters
-        ----------
-        input : topologic_core.Topology
-            The input topology
-        output : topologic_core.Topology
-            The output topology
-        silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        This function does not return a value
+        Returns a cluster containing the input topology, output topology, and a
+        small arrow between them.
         """
-
         from topologicpy.Vertex import Vertex
         from topologicpy.Cell import Cell
         from topologicpy.Topology import Topology
@@ -417,97 +473,53 @@ class ShapeGrammar:
                 print("ShapeGrammar.ClusterByInputOutput - Error: The output topology parameter is not a valid topology. Returning None.")
             return None
 
-        input_bb = Topology.BoundingBox(input)
-        input_centroid = Topology.Centroid(input_bb)
-        input_d = Topology.Dictionary(input_bb)
-        xmin = Dictionary.ValueAtKey(input_d, "xmin")
-        ymin = Dictionary.ValueAtKey(input_d, "ymin")
-        zmin = Dictionary.ValueAtKey(input_d, "zmin")
-        xmax = Dictionary.ValueAtKey(input_d, "xmax")
-        ymax = Dictionary.ValueAtKey(input_d, "ymax")
-        zmax = Dictionary.ValueAtKey(input_d, "zmax")
-        input_width = xmax-xmin
-        input_length = ymax-ymin
-        input_height = zmax-zmin
-        input_max = max(input_width, input_length, input_height)
-        sf = 1/input_max
-        temp_input = Topology.Translate(input, -Vertex.X(input_centroid), -Vertex.Y(input_centroid), -Vertex.Z(input_centroid))
-        temp_input = Topology.Scale(temp_input, x=sf, y=sf, z=sf)
-        temp_input = Topology.Translate(temp_input, 0.5, 0, 0)
+        def _scaled_copy(topo, x_offset):
+            bb = Topology.BoundingBox(topo)
+            if bb is None:
+                return None
+            centroid = Topology.Centroid(bb)
+            d = Topology.Dictionary(bb)
+            xmin = Dictionary.ValueAtKey(d, "xmin", 0)
+            ymin = Dictionary.ValueAtKey(d, "ymin", 0)
+            zmin = Dictionary.ValueAtKey(d, "zmin", 0)
+            xmax = Dictionary.ValueAtKey(d, "xmax", xmin)
+            ymax = Dictionary.ValueAtKey(d, "ymax", ymin)
+            zmax = Dictionary.ValueAtKey(d, "zmax", zmin)
+            extent = max(float(xmax) - float(xmin), float(ymax) - float(ymin), float(zmax) - float(zmin))
+            sf = 1.0 / extent if extent > 0 else 1.0
+            temp = Topology.Translate(topo, -Vertex.X(centroid), -Vertex.Y(centroid), -Vertex.Z(centroid))
+            temp = Topology.Scale(temp, x=sf, y=sf, z=sf)
+            return Topology.Translate(temp, x_offset, 0, 0)
 
-        output_bb = Topology.BoundingBox(output)
-        output_centroid = Topology.Centroid(output_bb)
-        output_d = Topology.Dictionary(output_bb)
-        xmin = Dictionary.ValueAtKey(output_d, "xmin")
-        ymin = Dictionary.ValueAtKey(output_d, "ymin")
-        zmin = Dictionary.ValueAtKey(output_d, "zmin")
-        xmax = Dictionary.ValueAtKey(output_d, "xmax")
-        ymax = Dictionary.ValueAtKey(output_d, "ymax")
-        zmax = Dictionary.ValueAtKey(output_d, "zmax")
-        output_width = xmax-xmin
-        output_length = ymax-ymin
-        output_height = zmax-zmin
-        output_max = max(output_width, output_length, output_height)
-        sf = 1/output_max
-        temp_output = Topology.Translate(output, -Vertex.X(output_centroid), -Vertex.Y(output_centroid), -Vertex.Z(output_centroid))
-        temp_output = Topology.Scale(temp_output, x=sf, y=sf, z=sf)
-        temp_output = Topology.Translate(temp_output, 2.5, 0, 0)
+        temp_input = _scaled_copy(input, 0.5)
+        temp_output = _scaled_copy(output, 2.5)
+        if temp_input is None or temp_output is None:
+            return None
 
         cyl = Cell.Cylinder(radius=0.04, height=0.4, placement="bottom")
-        cyl=Topology.Rotate(cyl, axis=[0,1,0], angle=90)
+        cyl = Topology.Rotate(cyl, axis=[0, 1, 0], angle=90)
         cyl = Topology.Translate(cyl, 1.25, 0, 0)
 
         cone = Cell.Cone(baseRadius=0.1, topRadius=0, height=0.15, placement="bottom")
-        cone=Topology.Rotate(cone, axis=[0,1,0], angle=90)
+        cone = Topology.Rotate(cone, axis=[0, 1, 0], angle=90)
         cone = Topology.Translate(cone, 1.65, 0, 0)
         cluster = Cluster.ByTopologies([temp_input, temp_output, cyl, cone])
-        cluster = Topology.Place(cluster, originA=Topology.Centroid(cluster), originB=Vertex.Origin())
-        return cluster
-    
+        return Topology.Place(cluster, originA=Topology.Centroid(cluster), originB=Vertex.Origin())
+
     def ClusterByRule(self, rule, silent: bool = False):
-        """
-        Returns the Plotly figure of the input rule.
-
-        Parameters
-        ----------
-        rule : dict
-            The input rule
-        silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        topologic_core.Cluster
-            The created rule cluster
-        """
-                
-        if not isinstance(rule, dict):
+        """Returns a cluster visualising the input rule."""
+        if not isinstance(rule, dict) or "input" not in rule:
             if not silent:
-                print("ShapeGrammar.ClusterByRule - Error: The input rule parameter is not a valid rule. Returning None.")
+                print("ShapeGrammar.ClusterByRule - Error: The rule parameter is not a valid rule. Returning None.")
             return None
-        input = rule["input"]
-        output = self.ApplyRule(input, rule)
-        return self.ClusterByInputOutput(input, output, silent=silent)
-    
+        input_topology = rule.get("input")
+        output_topology = self.ApplyRule(input_topology, rule, silent=silent)
+        if output_topology is None:
+            return None
+        return self.ClusterByInputOutput(input_topology, output_topology, silent=silent)
+
     def FigureByInputOutput(self, input, output, silent: bool = False):
-        """
-        Returns the Plotly figure of the input and output topologies as a rule.
-
-        Parameters
-        ----------
-        input : topologic_core.Topology
-            The input topology
-        output : topologic_core.Topology
-            The output topology
-        silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        Plotly.Figure
-            The created plotly figure.
-        """
-
+        """Returns a Plotly figure of the input and output topologies as a rule."""
         from topologicpy.Topology import Topology
         from topologicpy.Plotly import Plotly
 
@@ -521,31 +533,22 @@ class ShapeGrammar:
             return None
 
         cluster = self.ClusterByInputOutput(input, output, silent=silent)
-        data = Plotly.DataByTopology(cluster)
-        fig = Plotly.FigureByData(data)
-        return fig
-    
-    def FigureByRule(self, rule, silent: bool = False):
-        """
-        Returns the Plotly figure of the input rule.
-
-        Parameters
-        ----------
-        rule : dict
-            The input rule
-        silent : bool, optional
-            If set to True, error and warning messages are suppressed. Default is False.
-        
-        Returns
-        -------
-        Plotly.Figure
-            The create plotly figure
-        """
-        from topologicpy.Topology import Topology
-        if not isinstance(rule, dict):
-            if not silent:
-                print("ShapeGrammar.DrawRule - Error: The input rule parameter is not a valid rule. Returning None.")
+        if cluster is None:
             return None
-        input = rule["input"]
-        output = self.ApplyRule(input, rule)
-        return self.FigureByInputOutput(input, output, silent=silent)
+        data = Plotly.DataByTopology(cluster)
+        return Plotly.FigureByData(data)
+
+    def FigureByRule(self, rule, silent: bool = False):
+        """Returns a Plotly figure visualising the input rule."""
+        if not isinstance(rule, dict) or "input" not in rule:
+            if not silent:
+                print("ShapeGrammar.FigureByRule - Error: The rule parameter is not a valid rule. Returning None.")
+            return None
+        input_topology = rule.get("input")
+        output_topology = self.ApplyRule(input_topology, rule, silent=silent)
+        if output_topology is None:
+            return None
+        return self.FigureByInputOutput(input_topology, output_topology, silent=silent)
+
+
+__all__ = ["ShapeGrammar"]
