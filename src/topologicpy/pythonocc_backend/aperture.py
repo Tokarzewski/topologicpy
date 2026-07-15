@@ -13,6 +13,12 @@ class Aperture(Topology):
     def ByTopologyContext(topology, context):
         return Aperture(shape=None, topology=topology)
 
+    @staticmethod
+    def Topology(aperture):
+        if not isinstance(aperture, Aperture):
+            return None
+        return aperture.topology
+
 # ---------------------------------------------------------------------------
 # Explicit unsupported Aperture API
 # ---------------------------------------------------------------------------

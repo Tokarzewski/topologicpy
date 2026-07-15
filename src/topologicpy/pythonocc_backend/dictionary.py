@@ -14,9 +14,15 @@ def _unwrap_attribute(value):
     doing `Dictionary.ValueAtKey(d, "type").lower()`). Values stored without
     going through that wrapping (a plain str/int/float/list) pass through
     unchanged, since none of the duck-type checks below match them.
+
+    The algorithm layer stores Python None as StringAttribute("__NONE__").
+    When reading back, we convert that sentinel back to Python None.
     """
     if hasattr(value, "StringValue"):
-        return value.StringValue()
+        s = value.StringValue()
+        if s == "__NONE__":
+            return None
+        return s
     if hasattr(value, "IntValue"):
         return value.IntValue()
     if hasattr(value, "DoubleValue"):

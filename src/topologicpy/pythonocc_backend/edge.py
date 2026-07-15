@@ -244,11 +244,22 @@ class EdgeUtility:
         )
         if length2 == 0:
             return 0
-        return (
+        t = (
             (vertex.x - edge.start.x) * (edge.end.x - edge.start.x)
             + (vertex.y - edge.start.y) * (edge.end.y - edge.start.y)
             + (vertex.z - edge.start.z) * (edge.end.z - edge.start.z)
         ) / length2
+        # Clamp to [0,1] and check if the vertex is on the edge segment.
+        # If the clamped projection is farther than tolerance from the
+        # vertex, the point is not on the edge.
+        t_clamped = max(0.0, min(1.0, t))
+        px = edge.start.x + t_clamped * (edge.end.x - edge.start.x)
+        py = edge.start.y + t_clamped * (edge.end.y - edge.start.y)
+        pz = edge.start.z + t_clamped * (edge.end.z - edge.start.z)
+        dist2 = (vertex.x - px) ** 2 + (vertex.y - py) ** 2 + (vertex.z - pz) ** 2
+        if dist2 > 1e-8:
+            raise RuntimeError("Vertex is not on the edge")
+        return t
 
     @staticmethod
     def Angle(edgeA, edgeB):
