@@ -67,6 +67,21 @@ def _as_compsolid(shape):
         return None
 
 
+def _shape_same(a, b):
+    """OCCT shape equality. Two TopoDS_Shape objects are the same
+    topology iff IsSame returns True (coincident + same orientation
+    class). Used for shared/non-manifold face detection where
+    BOPAlgo_MakerVolume emits distinct Python objects for the same
+    geometric face in adjacent cells.
+    """
+    if a is b:
+        return True
+    try:
+        return bool(a.IsSame(b))
+    except Exception:
+        return False
+
+
 def _is_null_shape(shape):
     if shape is None:
         return True
@@ -265,21 +280,37 @@ class CellComplex(Topology):
     def NonManifoldFaces(self, faces=None):
         """
         Returns the Faces shared by two or more of this CellComplex's Cells
-        (the non-manifold internal boundaries), identified by OCCT shape
-        identity (hash) across each Cell's own Faces() list.
+        (the non-manifold internal boundaries). Identity is decided by OCCT
+        shape equality (TopoDS_Shape.IsSame), NOT Python object/identity
+        hashing: BOPAlgo_MakerVolume rebuilds the shared face as a
+        distinct TopoDS_Face object inside each Cell, so two copies of the
+        same geometric face have different Python identities and hashes yet
+        are the same topology. IsSame is the only correct test here.
         """
-        counts = {}
-        by_key = {}
+        per_cell = []
         for cell in self.Cells():
+            seen = []
             for face in cell.Faces():
                 shape = getattr(face, "shape", None)
                 if _is_null_shape(shape):
                     continue
-                key = hash(shape)
-                counts[key] = counts.get(key, 0) + 1
-                by_key[key] = face
+                # de-dupe within a single cell first
+                if not any(_shape_same(shape, s) for s, _ in seen):
+                    seen.append((shape, face))
+            if seen:
+                per_cell.append(seen)
 
-        result = [by_key[k] for k, count in counts.items() if count >= 2]
+        result = []
+        used = set()
+        for i in range(len(per_cell)):
+            for j in range(i + 1, len(per_cell)):
+                for s_i, f_i in per_cell[i]:
+                    for s_j, f_j in per_cell[j]:
+                        if _shape_same(s_i, s_j):
+                            key = id(f_i)
+                            if key not in used:
+                                used.add(key)
+                                result.append(f_i)
         if faces is not None:
             faces.extend(result)
             return 0

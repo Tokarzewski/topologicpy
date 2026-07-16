@@ -2095,6 +2095,17 @@ class Topology:
                 key = getattr(item, "_uuid", id(item))
             if key in other_keys:
                 result.append(item)
+                continue
+            # Geometric fallback: identities (uuids) differ when the same
+            # face was rebuilt by BOPAlgo_MakerVolume in adjacent cells,
+            # but the underlying OCCT shapes are the same topology.
+            item_shape = getattr(item, "shape", None)
+            if item_shape is not None:
+                for other in other_items:
+                    other_shape = getattr(other, "shape", None)
+                    if other_shape is not None and Topology.IsSame(item, other):
+                        result.append(item)
+                        break
 
         result = _deduplicate_by_identity(result)
         if output is not None:
