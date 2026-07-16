@@ -996,7 +996,7 @@ class Topology():
 
             elif topologyType.lower() == "wire":
                 try:
-                    _ = Core.EdgeUtility.AdjacentWires(topology, adjacentTopologies)
+                    _ = Core.EdgeUtility.AdjacentWires(topology, hostTopology, adjacentTopologies)
                 except:
                     try:
                         _ = Core.InstanceCall(topology, "Wires", hostTopology, adjacentTopologies)
@@ -1005,7 +1005,7 @@ class Topology():
 
             elif topologyType.lower() == "face":
                 try:
-                    _ = Core.EdgeUtility.AdjacentFaces(topology, adjacentTopologies)
+                    _ = Core.EdgeUtility.AdjacentFaces(topology, hostTopology, adjacentTopologies)
                 except:
                     try:
                         _ = Core.InstanceCall(topology, "Faces", hostTopology, adjacentTopologies)
@@ -1074,7 +1074,7 @@ class Topology():
                         error = True
             elif topologyType.lower() == "shell":
                 try:
-                    _ = Core.WireUtility.AdjacentShells(adjacentTopologies)
+                    _ = Core.WireUtility.AdjacentShells(topology, hostTopology, adjacentTopologies)
                 except:
                     try:
                         _ = Core.InstanceCall(topology, "Shells", hostTopology, adjacentTopologies)
@@ -1082,7 +1082,7 @@ class Topology():
                         error = True
             elif topologyType.lower() == "cell":
                 try:
-                    _ = Core.WireUtility.AdjacentCells(adjacentTopologies)
+                    _ = Core.WireUtility.AdjacentCells(topology, hostTopology, adjacentTopologies)
                 except:
                     try:
                         _ = Core.InstanceCall(topology, "Cells", hostTopology, adjacentTopologies)
@@ -1126,7 +1126,7 @@ class Topology():
                 _ = Core.InstanceCall(topology, "AdjacentFaces", hostTopology, adjacentTopologies)
             elif topologyType.lower() == "shell":
                 try:
-                    _ = Core.FaceUtility.AdjacentShells(adjacentTopologies)
+                    _ = Core.FaceUtility.AdjacentShells(topology, hostTopology, adjacentTopologies)
                 except:
                     try:
                         _ = Core.InstanceCall(topology, "Shells", hostTopology, adjacentTopologies)
@@ -1134,7 +1134,7 @@ class Topology():
                         error = True
             elif topologyType.lower() == "cell":
                 try:
-                    _ = Core.FaceUtility.AdjacentCells(adjacentTopologies)
+                    _ = Core.FaceUtility.AdjacentCells(topology, hostTopology, adjacentTopologies)
                 except:
                     try:
                         _ = Core.InstanceCall(topology, "Cells", hostTopology, adjacentTopologies)
@@ -14318,10 +14318,12 @@ class Topology():
             if not silent:
                 print("Topology.Contains - Error: The input b parameter is not a valid topology. Returning None.")
             return None
-        eb_a = Topology.ExternalBoundary(a) or a
-        if Topology.Intersect(b,eb_a, tolerance  = tolerance, silent = silent) is not None:
-            return False 
-        return Topology.Difference(b,a, tolerance  = tolerance, silent = silent) == None
+        # Contains(a, b) == True iff no part of b lies outside a.
+        # The previous implementation rejected the case with Intersect(b, eb_a) is
+        # not None, but that intersects b with a's boundary, which is non-None
+        # whenever b touches a's boundary — so it wrongly returned False for a
+        # boundary-touching containment. Rely on Difference alone.
+        return Topology.Difference(b, a, tolerance=tolerance, silent=True) == None
 
     @staticmethod
     def CoveredBy(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):
@@ -14544,7 +14546,17 @@ class Topology():
             return None
         a_ = Topology.ExternalBoundary(a, silent=True) if (Topology.IsInstance(a, "CellComplex")) else a
         b_ = Topology.ExternalBoundary(b, silent=True) if (Topology.IsInstance(b, "CellComplex")) else b
-        return Topology.SymmetricDifference(a_, b_, tolerance=tolerance, silent=silent) is None
+        # Two topologies are equal iff neither has any part outside the other.
+        # Using symmetric-difference (XOR) is None was incorrect: XOR is None
+        # whenever one operand is fully contained by the other (XOR short-circuits
+        # to None when one of the two directional subtractions is empty), so a
+        # concentric inner face was wrongly reported equal to its containing
+        # outer face. Test both directional differences instead.
+        if Topology.Difference(a, b, tolerance=tolerance, silent=True) is not None:
+            return False
+        if Topology.Difference(b, a, tolerance=tolerance, silent=True) is not None:
+            return False
+        return True
 
     @staticmethod
     def Overlaps(topologyA, topologyB, tolerance: float = 0.0001, silent: bool = False):

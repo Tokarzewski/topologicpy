@@ -151,8 +151,10 @@ def make_occ_cell(shell):
         from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
         from OCC.Core.BRepCheck import BRepCheck_Analyzer
         from OCC.Core.BRepLib import breplib
+        from OCC.Core.BOPAlgo import BOPAlgo_MakerVolume
+        from OCC.Core.TopTools import TopTools_ListOfShape
     except Exception:
-        return None
+        BOPAlgo_MakerVolume = None
 
     occ_shell = getattr(shell, "shape", None)
     if occ_shell is None:
@@ -171,21 +173,58 @@ def make_occ_cell(shell):
         except Exception:
             return None
 
+    def _solid_from(solid):
+        try:
+            breplib.OrientClosedSolid(solid)
+        except Exception:
+            pass
+        # BOPAlgo_MakerVolume / MakeSolid can yield an inside-out solid
+        # (negative volume). Flip the orientation if needed so the
+        # backend Cell reports a positive volume.
+        try:
+            from OCC.Core.TopAbs import TopAbs_REVERSED
+            from OCC.Core.GProp import GProp_GProps
+            from OCC.Core.BRepGProp import brepgprop
+            props = GProp_GProps()
+            brepgprop.VolumeProperties(solid, props)
+            if props.Mass() < 0.0:
+                solid.Orientation(TopAbs_REVERSED)
+                breplib.OrientClosedSolid(solid)
+        except Exception:
+            pass
+        try:
+            analyzer = BRepCheck_Analyzer(solid)
+            if not analyzer.IsValid():
+                return solid
+        except Exception:
+            pass
+        return solid
+
     try:
         solid_maker = BRepBuilderAPI_MakeSolid(occ_shell)
-        if not solid_maker.IsDone():
-            return None
-        occ_solid = solid_maker.Solid()
-        try:
-            breplib.OrientClosedSolid(occ_solid)
-        except Exception:
-            pass
-        try:
-            analyzer = BRepCheck_Analyzer(occ_solid)
-            if not analyzer.IsValid():
-                return occ_solid
-        except Exception:
-            pass
-        return occ_solid
+        if solid_maker.IsDone():
+            occ_solid = solid_maker.Solid()
+            return _solid_from(occ_solid)
     except Exception:
-        return None
+        pass
+
+    # Fallback: BOPAlgo_MakerVolume builds a solid from a (possibly
+    # non-closed) shell by thickening — robust for polyhedra like the
+    # dodecahedron whose pentagonal faces don't sew perfectly closed.
+    if BOPAlgo_MakerVolume is not None:
+        try:
+            args = TopTools_ListOfShape()
+            args.Append(occ_shell)
+            maker = BOPAlgo_MakerVolume()
+            maker.SetArgs(args)
+            maker.SetRunParallel(False)
+            maker.Perform()
+            if not maker.IsDone():
+                return None
+            occ_solid = maker.GetResult()
+            if occ_solid is None or (hasattr(occ_solid, "IsNull") and occ_solid.IsNull()):
+                return None
+            return _solid_from(occ_solid)
+        except Exception:
+            return None
+    return None

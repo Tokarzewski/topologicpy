@@ -369,7 +369,7 @@ class Shell():
         return Shell.ByFaces(faces, transferDictionaries=transferDictionaries, tolerance=tolerance, silent=silent)
 
     @staticmethod
-    def ByThickenedWire(wire, offsetA: float = 1.0, offsetB: float = 1.0, tolerance: float = 0.0001):
+    def ByThickenedWire(wire, offsetA: float = 1.0, offsetB: float = 1.0, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a shell by thickening the input wire. This method assumes the wire is manifold and planar.
 
@@ -1831,7 +1831,7 @@ class Shell():
         return shell
 
     @staticmethod
-    def Planarize(shell, origin= None, mantissa: int = 6, tolerance: float = 0.0001):
+    def Planarize(shell, origin= None, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Returns a planarized version of the input shell.
 
@@ -2078,7 +2078,7 @@ class Shell():
         return shell
     
     @staticmethod
-    def SelfMerge(shell, angTolerance: float = 0.1, tolerance: float = 0.0001):
+    def SelfMerge(shell, angTolerance: float = 0.1, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a face by merging the faces of the input shell. The shell must be planar within the input angular tolerance.
 
@@ -2146,7 +2146,7 @@ class Shell():
             return None
 
     @staticmethod
-    def Simplify(shell, simplifyBoundary: bool = True, mantissa: int = 6, tolerance: float = 0.0001):
+    def Simplify(shell, simplifyBoundary: bool = True, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
             Simplifies the input shell edges based on the Douglas Peucker algorithm. See https://en.wikipedia.org/wiki/Ramer%E2%80%93Douglas%E2%80%93Peucker_algorithm
             Part of this code was contributed by gaoxipeng. See https://github.com/wassimj/topologicpy/issues/35

@@ -1578,6 +1578,23 @@ class Topology:
             return None
         if _is_null_shape(result_shape):
             return None
+        # Coplanar 2D operands (e.g. an inner face CUT from a containing
+        # outer face for a hollow section) can produce a non-null compound
+        # that only carries near-zero-area fragments at shared edges, or just
+        # the boundary EDGES/WIRES of the operands with no FACE/SOLID left.
+        # Treat such results as empty so Difference/Intersect report None/empty
+        # faithfully (otherwise ``Contains``/``Within`` report False for a
+        # face that is genuinely inside another).
+        if occt_op_class in (BRepAlgoAPI_Cut, BRepAlgoAPI_Common):
+            solids = _iter_occ_subshapes(result_shape, TopAbs_SOLID)
+            if not solids:
+                faces = _iter_occ_subshapes(result_shape, TopAbs_FACE)
+                if not faces:
+                    # No solid and no face left: the subtraction/intersection
+                    # is empty (only leftover edges/wires/vertices). Report None.
+                    return None
+                if Topology._total_face_area(result_shape) <= 1e-9:
+                    return None
         result_shape = _postprocess_boolean_result(result_shape)
 
         result_dictionary = {}
@@ -1603,6 +1620,64 @@ class Topology:
         # the result type faithful to topologic_core's symdif->Cluster contract.
         from topologicpy.Cluster import Cluster
         return Cluster.ByTopologies([a_minus_b, b_minus_a])
+
+    def Slice(self, otherTopology: Any, transferDictionary: bool = False):
+        # Topologic's Slice is used in the algorithm layer (e.g. Wire.Fillet)
+        # to obtain the intersection of two topologies. Implement it via
+        # BRepAlgoAPI_Section, which returns the intersection curve/points of
+        # the two operands -- that is exactly what Wire.Fillet needs (the
+        # point where a bisector edge crosses a fillet circle).
+        return self._section_boolean(otherTopology)
+
+    def Impose(self, otherTopology: Any, transferDictionary: bool = False):
+        # Impose keeps the intersection of the two operands' material.
+        return self._section_boolean(otherTopology)
+
+    def Imprint(self, otherTopology: Any, transferDictionary: bool = False):
+        # Imprint returns the shared (intersection) region of the operands.
+        return self._section_boolean(otherTopology)
+
+    @staticmethod
+    def _section_boolean(self_or_shape, otherTopology: Any):
+        """Shared BRepAlgoAPI_Section dispatcher for Slice/Impose/Imprint."""
+        if BRepAlgoAPI_Section is None:
+            return None
+        shape_a = _shape_from_topology(self_or_shape if not isinstance(self_or_shape, tuple) else self_or_shape[0])
+        shape_b = _shape_from_topology(otherTopology)
+        if _is_null_shape(shape_a) or _is_null_shape(shape_b):
+            return None
+        try:
+            section = BRepAlgoAPI_Section(shape_a, shape_b)
+            section.Build()
+            if not section.IsDone():
+                return None
+            result_shape = section.Shape()
+        except Exception:
+            return None
+        if _is_null_shape(result_shape):
+            return None
+        result_shape = _postprocess_boolean_result(result_shape)
+        result_dictionary = {}
+        if transferDictionary:
+            result_dictionary = _merge_backend_dictionaries(
+                Topology.GetDictionary(self_or_shape), Topology.GetDictionary(otherTopology)
+            )
+        return Topology.ByOcctShape(result_shape, dictionary=result_dictionary)
+
+    @staticmethod
+    def _total_face_area(shape: Any) -> float:
+        """Sum of the surface area of every FACE subshape of ``shape``."""
+        if _is_null_shape(shape) or brepgprop is None or GProp_GProps is None:
+            return 0.0
+        try:
+            total = 0.0
+            for face_shape in _iter_occ_subshapes(shape, TopAbs_FACE):
+                props = GProp_GProps()
+                brepgprop.SurfaceProperties(face_shape, props)
+                total += props.Mass()
+            return total
+        except Exception:
+            return 0.0
 
     @staticmethod
     def _piece_belongs_to_any(piece_shape, reference_shapes) -> bool:

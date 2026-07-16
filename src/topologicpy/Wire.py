@@ -2973,7 +2973,7 @@ class Wire():
         return edges
 
     @staticmethod
-    def Einstein(origin= None, radius: float = 0.5, direction: list = [0, 0, 1], placement: str = "center", mantissa: int = 6, tolerance: float = 0.0001):
+    def Einstein(origin= None, radius: float = 0.5, direction: list = [0, 0, 1], placement: str = "center", mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates an aperiodic monotile, also called an 'einstein' tile (meaning one tile in German, not the name of the famous physicist). See https://arxiv.org/abs/2303.10798
 
@@ -3472,7 +3472,26 @@ class Wire():
                             fillet = Wire.Circle(origin=center, radius=radius, close=True, tolerance=tolerance, silent=silent)
                             bisector = Edge.ByVertices(v, center, tolerance=tolerance, silent=silent)
                             mid_vertex = Topology.Slice(bisector, fillet)
-                            mid_vertex = Topology.Vertices(mid_vertex)[1]
+                            verts = Topology.Vertices(mid_vertex, silent=True) if mid_vertex is not None else None
+                            if not verts or len(verts) < 2:
+                                # Slice returned too few intersections (e.g. the
+                                # bisector meet the fillet circle at a single point).
+                                # Recover the arc apex geometrically: the point on the
+                                # circle farthest from v along the bisector.
+                                try:
+                                    vb = Vertex.ByCoordinates(Vertex.X(v), Vertex.Y(v), Vertex.Z(v))
+                                    cb = Vertex.ByCoordinates(Vertex.X(center), Vertex.Y(center), Vertex.Z(center))
+                                    dv = [Vertex.X(vb)-Vertex.X(cb), Vertex.Y(vb)-Vertex.Y(cb), Vertex.Z(vb)-Vertex.Z(cb)]
+                                    n = math.sqrt(sum(c*c for c in dv)) or 1.0
+                                    dv = [c/n for c in dv]
+                                    mx = Vertex.X(cb) + radius*dv[0]
+                                    my = Vertex.Y(cb) + radius*dv[1]
+                                    mz = Vertex.Z(cb) + radius*dv[2]
+                                    mid_vertex = Vertex.ByCoordinates(mx, my, mz)
+                                except Exception:
+                                    mid_vertex = center
+                            else:
+                                mid_vertex = verts[1]
                             fillet = Wire.Arc(v1, mid_vertex, v2, sides=sides, close= False, tolerance=tolerance, silent=silent)
                             f_sv = Wire.StartVertex(fillet)
                             if Vertex.Distance(f_sv, edge1) < Vertex.Distance(f_sv, edge0):
@@ -5489,7 +5508,7 @@ class Wire():
         return return_wire
 
     @staticmethod
-    def Planarize(wire, origin= None, mantissa: int = 6, tolerance: float = 0.0001):
+    def Planarize(wire, origin= None, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Returns a planarized version of the input wire.
 
@@ -6662,7 +6681,7 @@ class Wire():
         return Wire.Rectangle(origin=origin, width=size, length=size, diagonals=diagonals, direction=direction, placement=placement, tolerance=tolerance)
     
     @staticmethod
-    def Squircle(origin = None, radius: float = 0.5, sides: int = 121, a: float = 2.0, b: float = 2.0, direction: list = [0, 0, 1], placement: str = "center", angTolerance: float = 0.1, tolerance: float = 0.0001):
+    def Squircle(origin = None, radius: float = 0.5, sides: int = 121, a: float = 2.0, b: float = 2.0, direction: list = [0, 0, 1], placement: str = "center", angTolerance: float = 0.1, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a Squircle which is a hybrid between a circle and a square. See https://en.wikipedia.org/wiki/Squircle
 
@@ -6746,7 +6765,7 @@ class Wire():
         return baseWire
 
     @staticmethod
-    def Star(origin= None, radiusA: float = 0.5, radiusB: float = 0.2, rays: int = 8, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001):
+    def Star(origin= None, radiusA: float = 0.5, radiusB: float = 0.2, rays: int = 8, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a star.
 
@@ -7260,7 +7279,7 @@ class Wire():
         return Wire.ByVertices(new_vertices, close=False, silent=True)
 
     @staticmethod
-    def Trapezoid(origin= None, widthA: float = 1.0, widthB: float = 0.75, offsetA: float = 0.0, offsetB: float = 0.0, length: float = 1.0, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001):
+    def Trapezoid(origin= None, widthA: float = 1.0, widthB: float = 0.75, offsetA: float = 0.0, offsetB: float = 0.0, length: float = 1.0, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a trapezoid.
 
