@@ -386,6 +386,24 @@ def _cell_utility_not_implemented(name, return_value=None):
         return _not_implemented(f"CellUtility.{name}", return_value)
     return _method
 
+
+def _make_adjacent(method_name):
+    """Return a staticmethod that delegates to topology.method(hostTopology, output)."""
+    @staticmethod
+    def _impl(topology, hostTopology, output):
+        if topology is None:
+            return 1
+        return getattr(topology, method_name)(hostTopology, output)
+    return _impl
+
+CellUtility.AdjacentVertices = _make_adjacent("Vertices")
+CellUtility.AdjacentEdges = _make_adjacent("Edges")
+CellUtility.AdjacentWires = _make_adjacent("Wires")
+CellUtility.AdjacentFaces = _make_adjacent("Faces")
+CellUtility.AdjacentShells = _make_adjacent("Shells")
+CellUtility.AdjacentCells = _make_adjacent("Cells")
+CellUtility.AdjacentCellComplexes = _make_adjacent("CellComplexes")
+
 # Cell.ByBox, Cell.ByWires, Cell.InternalVertex, CellUtility.Volume,
 # CellUtility.Contains, and CellUtility.InternalVertex are implemented above
 # -- do not clobber them here.

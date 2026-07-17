@@ -226,8 +226,12 @@ def test_topology_shortest_edge_distance_and_edges():
     v0 = _v(0, 0, 0)
     v1 = _v(3, 0, 0)
     v2 = _v(0, 4, 0)
-    cluster = Cell.ByFaces([Face.ByExternalBoundary(
-        Wire.ByVertices([v0, v1, v2], close=True))])
-    shortest = Topology.ShortestEdge(cluster, v0, v1, silent=True)
+    # Build a closed shell (two triangles) so the backend can form a valid
+    # cluster/cell; ShortestEdge examines sub-topologies between the two inputs.
+    cluster = Shell.ByFaces([
+        Face.ByWire(Wire.ByVertices([v0, v1, v2], close=True, silent=True), silent=True),
+        Face.ByWire(Wire.ByVertices([v0, v1, _v(3, 0, 1)], close=True, silent=True), silent=True),
+    ], silent=True)
+    shortest = Topology.ShortestEdge(cluster, _v(0, 0, 3), tolerance=0.0001, silent=True)
     assert shortest is not None, "ShortestEdge must return an edge"
-    assert abs(Edge.ByStartVertexEndVertex(v0, v1).Length() - 3.0) < 1e-6
+    assert abs(Edge.Length(Edge.ByStartVertexEndVertex(v0, v1, silent=True)) - 3.0) < 1e-6

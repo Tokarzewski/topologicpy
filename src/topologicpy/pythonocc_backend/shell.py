@@ -573,5 +573,23 @@ def _shell_utility_not_implemented(name, return_value=None):
         return _not_implemented(f"ShellUtility.{name}", return_value)
     return _method
 
+
+def _make_adjacent(method_name):
+    """Return a staticmethod that delegates to topology.method(hostTopology, output)."""
+    @staticmethod
+    def _impl(topology, hostTopology, output):
+        if topology is None:
+            return 1
+        return getattr(topology, method_name)(hostTopology, output)
+    return _impl
+
+ShellUtility.AdjacentVertices = _make_adjacent("Vertices")
+ShellUtility.AdjacentEdges = _make_adjacent("Edges")
+ShellUtility.AdjacentWires = _make_adjacent("Wires")
+ShellUtility.AdjacentFaces = _make_adjacent("Faces")
+ShellUtility.AdjacentShells = _make_adjacent("Shells")
+ShellUtility.AdjacentCells = _make_adjacent("Cells")
+ShellUtility.AdjacentCellComplexes = _make_adjacent("CellComplexes")
+
 # Shell.ExternalBoundary, Shell.Slice/Divide/Impose/Imprint, ShellUtility.ExternalBoundary,
 # and ShellUtility.InternalBoundaries are implemented above -- do not clobber them here.

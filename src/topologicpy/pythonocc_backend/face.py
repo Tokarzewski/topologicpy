@@ -425,3 +425,54 @@ def _face_internal_vertex(self, tolerance=0.0001, silent=False):
 # Core.InstanceCall convention (face.InternalVertex(tolerance)), which a
 # staticmethod-wrapped lambda would break (see HANDOFF.md item 1).
 Face.InternalVertex = _face_internal_vertex
+
+def _adjacent_shells(face, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(face, Face) or hostTopology is None:
+        return 1
+    result, fv_src, candidates = [], face.Vertices(), []
+    Topology.Shells(hostTopology, None, candidates)
+    for s in candidates:
+        for sf_face in (getattr(s, "faces", []) or []):
+            fv = sf_face.Vertices()
+            if len(fv) == len(fv_src) and all(any(same_vertex(a,b) for b in fv_src) for a in fv):
+                result.append(s); break
+    if output is not None: output.extend(result)
+    return 0
+
+def _adjacent_cells(face, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(face, Face) or hostTopology is None:
+        return 1
+    result, fv_src, candidates = [], face.Vertices(), []
+    Topology.Cells(hostTopology, None, candidates)
+    for c in candidates:
+        for cs in (getattr(c, "shells", []) or []):
+            for cs_face in (getattr(cs, "faces", []) or []):
+                fv = cs_face.Vertices()
+                if len(fv) == len(fv_src) and all(any(same_vertex(a,b) for b in fv_src) for a in fv):
+                    result.append(c); break
+            if result and result[-1] is c: break
+    if output is not None: output.extend(result)
+    return 0
+
+
+def _make_adjacent(method_name):
+    """Return a staticmethod that delegates to topology.method(hostTopology, output)."""
+    @staticmethod
+    def _impl(topology, hostTopology, output):
+        if topology is None:
+            return 1
+        return getattr(topology, method_name)(hostTopology, output)
+    return _impl
+
+FaceUtility.AdjacentVertices = _make_adjacent("Vertices")
+FaceUtility.AdjacentEdges = _make_adjacent("Edges")
+FaceUtility.AdjacentWires = _make_adjacent("Wires")
+FaceUtility.AdjacentCellComplexes = _make_adjacent("CellComplexes")
+
+
+
+

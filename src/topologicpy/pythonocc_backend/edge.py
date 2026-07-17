@@ -346,6 +346,68 @@ class EdgeUtility:
             return None
         return Edge.ByStartVertexEndVertex(pA, pB)
 
+
+# Edge -> Wire: find Wires in hostTopology containing this Edge.
+def _adjacent_wires(edge, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(edge, Edge) or hostTopology is None:
+        return 1
+    result, candidates = [], []
+    Topology.Wires(hostTopology, None, candidates)
+    for w in candidates:
+        we = []
+        Topology.Edges(w, None, we)
+        for e in we:
+            if (same_vertex(edge.start, e.start) and same_vertex(edge.end, e.end)) or \
+               (same_vertex(edge.start, e.end) and same_vertex(edge.end, e.start)):
+                result.append(w); break
+    if output is not None:
+        output.extend(result)
+    return 0
+
+
+# Edge -> Face: find Faces in hostTopology containing this Edge.
+def _adjacent_faces(edge, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(edge, Edge) or hostTopology is None:
+        return 1
+    result, candidates = [], []
+    Topology.Faces(hostTopology, None, candidates)
+    for f in candidates:
+        fw = getattr(f, 'external', None)
+        if fw is None:
+            continue
+        fe = []
+        Topology.Edges(fw, None, fe)
+        for e in fe:
+            if (same_vertex(edge.start, e.start) and same_vertex(edge.end, e.end)) or \
+               (same_vertex(edge.start, e.end) and same_vertex(edge.end, e.start)):
+                result.append(f); break
+    if output is not None:
+        output.extend(result)
+    return 0
+
+
+EdgeUtility.AdjacentWires = staticmethod(_adjacent_wires)
+EdgeUtility.AdjacentFaces = staticmethod(_adjacent_faces)
+
+
+def _make_adjacent(method_name):
+    """Return a staticmethod that delegates to topology.method(hostTopology, output)."""
+    @staticmethod
+    def _impl(topology, hostTopology, output):
+        if topology is None:
+            return 1
+        return getattr(topology, method_name)(hostTopology, output)
+    return _impl
+
+
+EdgeUtility.AdjacentShells = _make_adjacent("Shells")
+EdgeUtility.AdjacentCells = _make_adjacent("Cells")
+EdgeUtility.AdjacentCellComplexes = _make_adjacent("CellComplexes")
+
 # ---------------------------------------------------------------------------
 # Edge.ByCurve, Edge.ByStartVertexEndVertexTolerance, EdgeUtility.Angle,
 # EdgeUtility.NormalAtParameter, and EdgeUtility.Trim now have real

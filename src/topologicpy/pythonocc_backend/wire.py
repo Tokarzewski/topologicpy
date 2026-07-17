@@ -429,6 +429,69 @@ class WireUtility:
         result = [w for w in (Wire.ByEdges(run, tolerance=tolerance) for run in runs) if w is not None]
         return result if result else None
 
+# Wire -> Shell: find Shells in hostTopology containing this Wire.
+def _adjacent_shells(wire, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(wire, Wire) or hostTopology is None:
+        return 1
+    result, we_src, candidates = [], (getattr(wire, "edges", []) or []), []
+    Topology.Shells(hostTopology, None, candidates)
+    for s in candidates:
+        for sf_face in (getattr(s, "faces", []) or []):
+            wf = [sf_face.external] if getattr(sf_face, "external", None) else []
+            for wf_wire in wf:
+                we = getattr(wf_wire, "edges", []) or []
+                if len(we) == len(we_src) and all(
+                    any(same_vertex(a.start, b.start) and same_vertex(a.end, b.end) for b in we_src)
+                    or any(same_vertex(a.start, b.end) and same_vertex(a.end, b.start) for b in we_src)
+                    for a in we
+                ):
+                    result.append(s); break
+            if result and result[-1] is s: break
+    if output is not None: output.extend(result)
+    return 0
+
+def _adjacent_cells(wire, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(wire, Wire) or hostTopology is None:
+        return 1
+    result, we_src, candidates = [], (getattr(wire, "edges", []) or []), []
+    Topology.Cells(hostTopology, None, candidates)
+    for c in candidates:
+        for cs in (getattr(c, "shells", []) or []):
+            for cs_face in (getattr(cs, "faces", []) or []):
+                wf = [cs_face.external] if getattr(cs_face, "external", None) else []
+                for wf_wire in wf:
+                    we = getattr(wf_wire, "edges", []) or []
+                    if len(we) == len(we_src) and all(
+                        any(same_vertex(a.start, b.start) and same_vertex(a.end, b.end) for b in we_src)
+                        or any(same_vertex(a.start, b.end) and same_vertex(a.end, b.start) for b in we_src)
+                        for a in we
+                    ):
+                        result.append(c); break
+                if result and result[-1] is c: break
+            if result and result[-1] is c: break
+    if output is not None: output.extend(result)
+    return 0
+
+
+def _make_adjacent(method_name):
+    """Return a staticmethod that delegates to topology.method(hostTopology, output)."""
+    @staticmethod
+    def _impl(topology, hostTopology, output):
+        if topology is None:
+            return 1
+        return getattr(topology, method_name)(hostTopology, output)
+    return _impl
+
+WireUtility.AdjacentVertices = _make_adjacent("Vertices")
+WireUtility.AdjacentEdges = _make_adjacent("Edges")
+WireUtility.AdjacentWires = _make_adjacent("Wires")
+WireUtility.AdjacentFaces = _make_adjacent("Faces")
+WireUtility.AdjacentCellComplexes = _make_adjacent("CellComplexes")
+
 # ---------------------------------------------------------------------------
 # Wire.ByEdgesCluster, Wire.ByWires, Wire.Reverse, WireUtility.Length,
 # WireUtility.Cycles, and WireUtility.Split now have real implementations
