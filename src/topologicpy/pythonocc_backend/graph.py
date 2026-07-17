@@ -354,32 +354,230 @@ class Graph:
     def GetGUID(self):
         return self._uuid
 
-
 class GraphUtility:
     pass
 
+
 # ---------------------------------------------------------------------------
-# Explicit unsupported Graph API
+# Graph construction / functional mutation / routing
 # ---------------------------------------------------------------------------
-from .helpers import not_implemented as _not_implemented
+
+def _graph_copy(graph):
+    """Return a shallow copy of a backend Graph (new uuid, shared sub-objects)."""
+    import copy as _copy
+    new = _copy.copy(graph)
+    new._uuid = new_uuid()
+    return new
 
 
-def _graph_not_implemented(name, return_value=None):
-    def _method(*args, **kwargs):
-        return _not_implemented(f"Graph.{name}", return_value)
-    return _method
+@staticmethod
+def _ByTopology(topology, silent: bool = False):
+    """
+    Build a backend Graph from any topology: collect its vertices and edges.
+    Mirrors topologicpy.Graph.ByTopology's behaviour (vertices + edges only).
+    """
+    from .vertex import Vertex
+    from .edge import Edge
+
+    if topology is None:
+        return None
+    # Backend-native objects expose Vertices/Edges instance methods that
+    # accept an out-parameter list; call the wrapper-free path directly.
+    verts = []
+    try:
+        _ = topology.Vertices(None, verts)
+    except Exception:
+        verts = []
+    edges = []
+    try:
+        _ = topology.Edges(None, edges)
+    except Exception:
+        edges = []
+    if not verts and not edges:
+        # fall back to edges' endpoints
+        for e in edges:
+            verts.append(e.start)
+            verts.append(e.end)
+    verts = [v for v in verts if isinstance(v, Vertex)]
+    edges = [e for e in edges if isinstance(e, Edge)]
+    if not verts and not edges:
+        return None
+    return Graph.ByVerticesEdges(verts, edges)
 
 
-def _graph_utility_not_implemented(name, return_value=None):
-    def _method(*args, **kwargs):
-        return _not_implemented(f"GraphUtility.{name}", return_value)
-    return _method
+@staticmethod
+def _ByAdjacencyMatrix(adjacencyMatrix, dictionaries=None, silent: bool = False):
+    """
+    Build a backend Graph from an adjacency matrix. Delegates to the real
+    (pure-Python) topologicpy wrapper implementation so behaviour matches
+    the reference backend exactly.
+    """
+    from topologicpy.Graph import Graph as _WrapperGraph
+    return _WrapperGraph.ByAdjacencyMatrix(
+        adjacencyMatrix=adjacencyMatrix,
+        dictionaries=dictionaries,
+        silent=silent,
+    )
 
 
-Graph.ByTopology = staticmethod(_graph_not_implemented("ByTopology"))
-Graph.ByAdjacencyMatrix = staticmethod(_graph_not_implemented("ByAdjacencyMatrix"))
-Graph.RemoveVertex = _graph_not_implemented("RemoveVertex")
-Graph.RemoveEdge = _graph_not_implemented("RemoveEdge")
-Graph.ShortestPath = _graph_not_implemented("ShortestPath")
-GraphUtility.AdjacentVertices = staticmethod(_graph_utility_not_implemented("AdjacentVertices"))
-GraphUtility.ShortestPath = staticmethod(_graph_utility_not_implemented("ShortestPath"))
+@staticmethod
+def _RemoveVertex(graph, vertex, silent: bool = False):
+    """
+    Functional vertex removal: return a new backend Graph with `vertex`
+    (and its incident edges) removed. Mirrors Graph.RemoveVertex.
+    """
+    if not isinstance(graph, Graph):
+        return None
+    if isinstance(vertex, Vertex):
+        vertex = [vertex]
+    if not isinstance(vertex, (list, tuple)) or len(vertex) == 0:
+        return None
+    new_graph = _graph_copy(graph)
+    new_graph.RemoveVertices(list(vertex))
+    return new_graph
+
+
+@staticmethod
+def _RemoveEdge(graph, *edges, tolerance: float = 0.0001, silent: bool = False):
+    """
+    Functional edge removal: return a new backend Graph with the given
+    edges removed. Mirrors Graph.RemoveEdge.
+    """
+    if not isinstance(graph, Graph):
+        return None
+    edge_list = [e for e in edges if isinstance(e, Edge)]
+    if len(edge_list) == 0:
+        return None
+    new_graph = _graph_copy(graph)
+    new_graph.RemoveEdges(list(edge_list), tolerance=tolerance)
+    return new_graph
+
+
+@staticmethod
+def _ShortestPath(graph, vertexA, vertexB, vertexKey: str = "",
+                    edgeKey: str = "Length", tolerance: float = 0.0001,
+                    silent: bool = False):
+    """
+    Return the shortest path between vertexA and vertexB as a Wire, using
+    Dijkstra over edge weights (edgeKey dictionary value, else Euclidean
+    length). Returns None if no path exists. Mirrors Graph.ShortestPath.
+    """
+    from .wire import Wire
+
+    if not isinstance(graph, Graph):
+        return None
+    if not isinstance(vertexA, Vertex) or not isinstance(vertexB, Vertex):
+        return None
+
+    # Build adjacency: map vertex -> list of (neighbour, edge, weight)
+    adj = {}
+    for v in graph.vertices:
+        adj.setdefault(id(v), [])
+
+    def _weight(edge):
+        if edgeKey:
+            try:
+                from .dictionary import Dictionary
+                from .topology import Topology
+                d = Topology.Dictionary(edge)
+                w = Dictionary.ValueAtKey(d, edgeKey)
+                if w is not None:
+                    try:
+                        return float(w)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            return float(Edge.Length(edge))
+        except Exception:
+            return 1.0
+
+    for e in graph.edges:
+        sa, ea = id(e.start), id(e.end)
+        w = _weight(e)
+        adj.setdefault(sa, []).append((ea, e, w))
+        adj.setdefault(ea, []).append((sa, e, w))
+
+    start_id = None
+    end_id = None
+    for v in graph.vertices:
+        if same_vertex(v, vertexA, tolerance):
+            start_id = id(v)
+        if same_vertex(v, vertexB, tolerance):
+            end_id = id(v)
+    if start_id is None or end_id is None:
+        return None
+
+    import heapq
+    dist = {start_id: 0.0}
+    prev_edge = {start_id: None}
+    visited = set()
+    pq = [(0.0, start_id)]
+    while pq:
+        d, u = heapq.heappop(pq)
+        if u in visited:
+            continue
+        visited.add(u)
+        if u == end_id:
+            break
+        for (nbr, edge, w) in adj.get(u, []):
+            if nbr in visited:
+                continue
+            nd = d + w
+            if nd < dist.get(nbr, float("inf")):
+                dist[nbr] = nd
+                prev_edge[nbr] = edge
+                heapq.heappush(pq, (nd, nbr))
+
+    if end_id not in prev_edge:
+        return None  # unreachable
+
+    # Walk back collecting edges
+    path_edges = []
+    cur = end_id
+    while cur != start_id:
+        e = prev_edge.get(cur)
+        if e is None:
+            return None
+        path_edges.append(e)
+        # step to the other endpoint
+        if id(e.start) == cur:
+            cur = id(e.end)
+        else:
+            cur = id(e.start)
+    path_edges.reverse()
+
+    oriented = Graph._oriented_edge_chain(path_edges, vertexA, tolerance=tolerance)
+    wire = Wire.ByEdges(oriented if oriented is not None else path_edges,
+                         tolerance=tolerance)
+    return wire
+
+
+@staticmethod
+def _AdjacentVertices(graph, vertex, vertices=None, tolerance: float = 0.0001):
+    """GraphUtility.AdjacentVertices -> delegate to instance method."""
+    result = graph.AdjacentVertices(vertex) if isinstance(graph, Graph) else []
+    if vertices is not None:
+        vertices.extend(result)
+        return 0
+    return result
+
+
+@staticmethod
+def _UtilityShortestPath(graph, vertexA, vertexB, vertexKey: str = "",
+                           edgeKey: str = "Length", tolerance: float = 0.0001,
+                           silent: bool = False):
+    """GraphUtility.ShortestPath -> delegate to Graph.ShortestPath."""
+    return Graph._ShortestPath(graph, vertexA, vertexB,
+                               vertexKey=vertexKey, edgeKey=edgeKey,
+                               tolerance=tolerance, silent=silent)
+
+
+Graph.ByTopology = staticmethod(_ByTopology)
+Graph.ByAdjacencyMatrix = staticmethod(_ByAdjacencyMatrix)
+Graph.RemoveVertex = staticmethod(_RemoveVertex)
+Graph.RemoveEdge = staticmethod(_RemoveEdge)
+Graph.ShortestPath = staticmethod(_ShortestPath)
+GraphUtility.AdjacentVertices = staticmethod(_AdjacentVertices)
+GraphUtility.ShortestPath = staticmethod(_UtilityShortestPath)

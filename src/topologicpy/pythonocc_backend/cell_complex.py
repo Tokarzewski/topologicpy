@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from .topology import Topology
 from .cell import Cell
+from .cluster import Cluster
 from .helpers import unique_by_uuid
 
 try:
@@ -329,5 +330,12 @@ def _cell_complex_not_implemented(name, return_value=None):
     return _method
 
 
-CellComplex.ByCellsCluster = staticmethod(_cell_complex_not_implemented("ByCellsCluster"))
+CellComplex.ByCellsCluster = staticmethod(
+    lambda cluster, transferDictionaries=False, tolerance=0.0001, silent=False: (
+        CellComplex.ByCells(
+            (Topology.Cells(cluster) if isinstance(cluster, Cluster) else []),
+            tolerance=tolerance,
+        )
+    )
+)
 # CellComplex.ExternalBoundary and CellComplex.NonManifoldFaces are implemented above.
