@@ -27,6 +27,13 @@ try:
 except Exception:
     _HAS_OCC = False
 
+# Only set the backend env var when OCC is importable, so this file
+# doesn't pollute os.environ at collection time when OCC is missing
+# (that would cause every subsequently-discovered test to attempt the
+# pythonocc backend and fail en masse).
+if not _HAS_OCC:
+    os.environ.pop("TOPOLOGICPY_CORE_BACKEND", None)
+
 pytestmark = pytest.mark.skipif(not _HAS_OCC, reason="PythonOCC (OCC) not importable")
 
 # Constructors live in the algorithm layer and dispatch to the active
