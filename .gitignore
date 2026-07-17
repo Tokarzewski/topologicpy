@@ -12,3 +12,4 @@
 *.lock
 *.vsidx
 *.sqlite
+.venv/
