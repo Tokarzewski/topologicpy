@@ -12425,11 +12425,16 @@ class TGraph:
         """
         Returns the graph difference between the first and second input TGraphs.
 
+        This implementation avoids unsafe index-based edge comparison. An edge in
+        graphA is removed only if both of its endpoint vertices can be confidently
+        matched to equivalent vertices in graphB and the corresponding edge exists
+        in graphB.
+
         Parameters
         ----------
-        graphA : 'TGraph'
+        graphA : TGraph
             The first input TGraph.
-        graphB : 'TGraph'
+        graphB : TGraph
             The second input TGraph.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
@@ -12439,14 +12444,207 @@ class TGraph:
         Optional[TGraph]
             The resulting TGraph, or None if the operation fails.
         """
+
         if not isinstance(graphA, TGraph) or not isinstance(graphB, TGraph):
+            if not silent:
+                print("TGraph.Difference - Error: One or both inputs are not valid TGraphs. Returning None.")
             return None
-        g = TGraph._CopyGraph(graphA)
+
+        def _clean_dictionary(d):
+            if not isinstance(d, dict):
+                return {}
+            result = dict(d)
+            result.pop("index", None)
+            return result
+
+        def _hashable_value(value):
+            try:
+                hash(value)
+                return value
+            except Exception:
+                return repr(value)
+
+        def _representation_xyz(rep):
+            """
+            Attempts to extract a stable coordinate key from a Topologic vertex-like
+            representation. Returns None if coordinates cannot be extracted.
+            """
+            if rep is None:
+                return None
+
+            try:
+                from topologicpy.Vertex import Vertex
+                return (
+                    round(float(Vertex.X(rep)), 6),
+                    round(float(Vertex.Y(rep)), 6),
+                    round(float(Vertex.Z(rep)), 6),
+                )
+            except Exception:
+                pass
+
+            try:
+                return (
+                    round(float(rep.X()), 6),
+                    round(float(rep.Y()), 6),
+                    round(float(rep.Z()), 6),
+                )
+            except Exception:
+                pass
+
+            if isinstance(rep, (list, tuple)) and len(rep) >= 3:
+                try:
+                    return (
+                        round(float(rep[0]), 6),
+                        round(float(rep[1]), 6),
+                        round(float(rep[2]), 6),
+                    )
+                except Exception:
+                    pass
+
+            return None
+
+        def _vertex_key(v):
+            """
+            Returns a conservative identity key for a TGraph vertex record.
+
+            Priority:
+            1. explicit stable dictionary identifiers;
+            2. geometric vertex coordinates;
+            3. simple immutable representation;
+            4. non-empty dictionary content.
+
+            If no useful identity can be found, returns None. Returning None is safer
+            than accidentally matching unrelated vertices by index.
+            """
+            if not isinstance(v, dict):
+                return None
+
+            d = _clean_dictionary(v.get("dictionary", {}))
+            rep = v.get("representation", None)
+
+            for key in ("id", "uuid", "guid", "uid", "name", "label"):
+                if key in d and d[key] is not None:
+                    return ("dict_id", key, _hashable_value(d[key]))
+
+            xyz = _representation_xyz(rep)
+            if xyz is not None:
+                return ("xyz", xyz)
+
+            if isinstance(rep, (str, int, float, bool)):
+                return ("rep", rep)
+
+            if d:
+                items = tuple(sorted((str(k), _hashable_value(value)) for k, value in d.items()))
+                return ("dict", items)
+
+            return None
+
+        def _active_vertex(graph, index):
+            try:
+                if index < 0 or index >= len(graph._vertices):
+                    return False
+                v = graph._vertices[index]
+                if isinstance(v, dict):
+                    return v.get("active", True)
+                return True
+            except Exception:
+                return False
+
+        def _active_edge(e):
+            return isinstance(e, dict) and e.get("active", True)
+
+        def _edge_directed(e, graph):
+            try:
+                return bool(e.get("directed", graph._directed))
+            except Exception:
+                return bool(getattr(graph, "_directed", False))
+
+        try:
+            g = TGraph._CopyGraph(graphA)
+        except Exception:
+            if not silent:
+                print("TGraph.Difference - Error: Could not copy graphA. Returning None.")
+            return None
+
+        # -------------------------------------------------------------------------
+        # Build conservative unique vertex identity maps for graphA and graphB.
+        # Ambiguous duplicate keys are deliberately ignored.
+        # -------------------------------------------------------------------------
+
+        def _unique_vertex_key_map(graph):
+            key_to_indices = {}
+
+            for i, v in enumerate(graph._vertices):
+                if not _active_vertex(graph, i):
+                    continue
+
+                key = _vertex_key(v)
+                if key is None:
+                    continue
+
+                key_to_indices.setdefault(key, []).append(i)
+
+            return {
+                key: indices[0]
+                for key, indices in key_to_indices.items()
+                if len(indices) == 1
+            }
+
+        a_key_to_index = _unique_vertex_key_map(graphA)
+        b_key_to_index = _unique_vertex_key_map(graphB)
+
+        # Map graphA vertex indices to graphB vertex indices by identity key.
+        a_to_b = {}
+
+        for key, a_index in a_key_to_index.items():
+            if key in b_key_to_index:
+                a_to_b[a_index] = b_key_to_index[key]
+
+        if not a_to_b:
+            return g
+
+        # -------------------------------------------------------------------------
+        # Remove from copied graphA only those edges whose mapped equivalent exists
+        # in graphB.
+        # -------------------------------------------------------------------------
+
         for e in list(g._edges):
-            if not e.get("active", True):
+            if not _active_edge(e):
                 continue
-            if TGraph.HasEdge(graphB, e.get("src"), e.get("dst"), directed=e.get("directed", g._directed)):
-                g.RemoveEdge(e.get("index"), silent=True)
+
+            src = e.get("src", None)
+            dst = e.get("dst", None)
+
+            if not isinstance(src, int) or not isinstance(dst, int):
+                continue
+
+            if src not in a_to_b or dst not in a_to_b:
+                continue
+
+            b_src = a_to_b[src]
+            b_dst = a_to_b[dst]
+
+            edirected = _edge_directed(e, g)
+
+            try:
+                exists_in_b = TGraph.HasEdge(graphB, b_src, b_dst, directed=edirected)
+            except Exception:
+                exists_in_b = False
+
+            if not exists_in_b:
+                continue
+
+            edge_index = e.get("index", None)
+
+            if edge_index is None:
+                continue
+
+            try:
+                g.RemoveEdge(edge_index, silent=True)
+            except Exception:
+                if not silent:
+                    print(f"TGraph.Difference - Warning: Could not remove edge {edge_index}.")
+
         return g
 
     @staticmethod
@@ -14188,11 +14386,16 @@ class TGraph:
         """
         Returns the graph intersection of two input TGraphs.
 
+        This implementation avoids unsafe index-based vertex and edge comparison.
+        Vertices are considered common only when they can be confidently matched by
+        a stable identity key. Edges are considered common only when both endpoint
+        vertices match and the corresponding edge exists in graphB.
+
         Parameters
         ----------
-        graphA : 'TGraph'
+        graphA : TGraph
             The first input TGraph.
-        graphB : 'TGraph'
+        graphB : TGraph
             The second input TGraph.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
@@ -14202,18 +14405,212 @@ class TGraph:
         Optional[TGraph]
             The resulting TGraph, or None if the operation fails.
         """
+
         if not isinstance(graphA, TGraph) or not isinstance(graphB, TGraph):
+            if not silent:
+                print("TGraph.Intersect - Error: One or both inputs are not valid TGraphs. Returning None.")
             return None
-        common_vertices = [i for i in TGraph._ActiveVertexIndices(graphA) if i in set(TGraph._ActiveVertexIndices(graphB))]
-        g = TGraph.Subgraph(graphA, common_vertices, induced=False)
-        index_map = {old: new for new, old in enumerate(common_vertices)}
+
+        def _clean_dictionary(d):
+            if not isinstance(d, dict):
+                return {}
+            result = dict(d)
+            result.pop("index", None)
+            return result
+
+        def _hashable_value(value):
+            try:
+                hash(value)
+                return value
+            except Exception:
+                return repr(value)
+
+        def _representation_xyz(rep):
+            """
+            Attempts to extract a stable coordinate key from a Topologic vertex-like
+            representation. Returns None if coordinates cannot be extracted.
+            """
+            if rep is None:
+                return None
+
+            try:
+                from topologicpy.Vertex import Vertex
+                return (
+                    round(float(Vertex.X(rep)), 6),
+                    round(float(Vertex.Y(rep)), 6),
+                    round(float(Vertex.Z(rep)), 6),
+                )
+            except Exception:
+                pass
+
+            try:
+                return (
+                    round(float(rep.X()), 6),
+                    round(float(rep.Y()), 6),
+                    round(float(rep.Z()), 6),
+                )
+            except Exception:
+                pass
+
+            if isinstance(rep, (list, tuple)) and len(rep) >= 3:
+                try:
+                    return (
+                        round(float(rep[0]), 6),
+                        round(float(rep[1]), 6),
+                        round(float(rep[2]), 6),
+                    )
+                except Exception:
+                    pass
+
+            return None
+
+        def _vertex_key(v):
+            """
+            Returns a conservative identity key for a TGraph vertex record.
+
+            Priority:
+            1. explicit stable dictionary identifiers;
+            2. geometric vertex coordinates;
+            3. simple immutable representation;
+            4. non-empty dictionary content.
+
+            If no useful identity can be found, returns None. Returning None is safer
+            than accidentally matching unrelated vertices by index.
+            """
+            if not isinstance(v, dict):
+                return None
+
+            d = _clean_dictionary(v.get("dictionary", {}))
+            rep = v.get("representation", None)
+
+            for key in ("id", "uuid", "guid", "uid", "name", "label"):
+                if key in d and d[key] is not None:
+                    return ("dict_id", key, _hashable_value(d[key]))
+
+            xyz = _representation_xyz(rep)
+            if xyz is not None:
+                return ("xyz", xyz)
+
+            if isinstance(rep, (str, int, float, bool)):
+                return ("rep", rep)
+
+            if d:
+                items = tuple(sorted((str(k), _hashable_value(value)) for k, value in d.items()))
+                return ("dict", items)
+
+            return None
+
+        def _active_vertex(graph, index):
+            try:
+                if index < 0 or index >= len(graph._vertices):
+                    return False
+                v = graph._vertices[index]
+                if isinstance(v, dict):
+                    return v.get("active", True)
+                return True
+            except Exception:
+                return False
+
+        def _active_edge(e):
+            return isinstance(e, dict) and e.get("active", True)
+
+        def _edge_directed(e, graph):
+            try:
+                return bool(e.get("directed", graph._directed))
+            except Exception:
+                return bool(getattr(graph, "_directed", False))
+
+        def _unique_vertex_key_map(graph):
+            """
+            Returns {vertex_key: vertex_index}, but only for keys that occur exactly
+            once in the graph. Duplicate keys are ambiguous and are ignored.
+            """
+            key_to_indices = {}
+
+            for i, v in enumerate(graph._vertices):
+                if not _active_vertex(graph, i):
+                    continue
+
+                key = _vertex_key(v)
+                if key is None:
+                    continue
+
+                key_to_indices.setdefault(key, []).append(i)
+
+            return {
+                key: indices[0]
+                for key, indices in key_to_indices.items()
+                if len(indices) == 1
+            }
+
+        a_key_to_index = _unique_vertex_key_map(graphA)
+        b_key_to_index = _unique_vertex_key_map(graphB)
+
+        # Map graphA vertex indices to graphB vertex indices by stable identity key.
+        a_to_b = {}
+        common_vertices = []
+
+        for key, a_index in a_key_to_index.items():
+            if key in b_key_to_index:
+                a_to_b[a_index] = b_key_to_index[key]
+                common_vertices.append(a_index)
+
+        common_vertices.sort()
+
+        try:
+            g = TGraph.Subgraph(graphA, common_vertices, induced=False)
+        except Exception:
+            if not silent:
+                print("TGraph.Intersect - Error: Could not create vertex subgraph. Returning None.")
+            return None
+
+        index_map = {old_index: new_index for new_index, old_index in enumerate(common_vertices)}
+
+        # Add only those graphA edges whose remapped equivalent exists in graphB.
         for e in graphA._edges:
-            if not e.get("active", True):
+            if not _active_edge(e):
                 continue
-            srcIndex, dstIndex, edirected = e.get("src"), e.get("dst"), e.get("directed", graphA._directed)
-            if srcIndex in index_map and dstIndex in index_map and TGraph.HasEdge(graphB, srcIndex, dstIndex, directed=edirected):
-                d = dict(e.get("dictionary", {})); d.pop("index", None)
-                g.AddEdge(index_map[srcIndex], index_map[dstIndex], directed=edirected, dictionary=d, representation=e.get("representation", None))
+
+            src = e.get("src", None)
+            dst = e.get("dst", None)
+
+            if not isinstance(src, int) or not isinstance(dst, int):
+                continue
+
+            if src not in index_map or dst not in index_map:
+                continue
+
+            if src not in a_to_b or dst not in a_to_b:
+                continue
+
+            b_src = a_to_b[src]
+            b_dst = a_to_b[dst]
+
+            edirected = _edge_directed(e, graphA)
+
+            try:
+                exists_in_b = TGraph.HasEdge(graphB, b_src, b_dst, directed=edirected)
+            except Exception:
+                exists_in_b = False
+
+            if not exists_in_b:
+                continue
+
+            d = _clean_dictionary(e.get("dictionary", {}))
+            rep = e.get("representation", None)
+
+            try:
+                g.AddEdge(
+                    index_map[src],
+                    index_map[dst],
+                    directed=edirected,
+                    dictionary=d,
+                    representation=rep,
+                )
+            except Exception:
+                if not silent:
+                    print(f"TGraph.Intersect - Warning: Could not add common edge {src}->{dst}.")
+
         return g
 
     def _invalidate_cache(self) -> None:
@@ -19792,6 +20189,102 @@ class TGraph:
         key = self._edge_key(src, dst, directed)
         self._edge_lookup.setdefault(key, set()).add(edge_index)
 
+    def _unregister_edge_adjacency(self, edge_index: int) -> None:
+        """
+        Unregisters an edge from this TGraph adjacency lookup tables.
+
+        Parameters
+        ----------
+        edge_index : int
+            The input edge index.
+
+        Returns
+        -------
+        None
+            None.
+        """
+        if not self._validate_edge_index(edge_index, active=False):
+            return
+
+        edge = self._edges[edge_index]
+        if not isinstance(edge, dict):
+            return
+
+        src = edge.get("src", None)
+        dst = edge.get("dst", None)
+        directed = bool(edge.get("directed", self._directed))
+
+        for table in (self._out_edges, self._in_edges, self._incident_edges):
+            for vertex_index in (src, dst):
+                try:
+                    if vertex_index in table:
+                        table[vertex_index].discard(edge_index)
+                except Exception:
+                    pass
+
+        try:
+            key = self._edge_key(src, dst, directed)
+            if key in self._edge_lookup:
+                self._edge_lookup[key].discard(edge_index)
+                if not self._edge_lookup[key]:
+                    del self._edge_lookup[key]
+        except Exception:
+            pass
+
+    def _validate_edge_index(self, index: int, active: bool = True) -> bool:
+        """
+        Returns True if the input edge index is valid.
+
+        Parameters
+        ----------
+        index : int
+            The input edge index.
+        active : bool , optional
+            If set to True, the edge must also be active. Default is True.
+
+        Returns
+        -------
+        bool
+            True if the edge index is valid. Otherwise, False.
+        """
+        if not isinstance(index, int) or isinstance(index, bool):
+            return False
+        if index < 0 or index >= len(self._edges):
+            return False
+        if not active:
+            return True
+        edge = self._edges[index]
+        if not isinstance(edge, dict):
+            return False
+        return bool(edge.get("active", True))
+
+    def _validate_vertex_index(self, index: int, active: bool = True) -> bool:
+        """
+        Returns True if the input vertex index is valid.
+
+        Parameters
+        ----------
+        index : int
+            The input vertex index.
+        active : bool , optional
+            If set to True, the vertex must also be active. Default is True.
+
+        Returns
+        -------
+        bool
+            True if the vertex index is valid. Otherwise, False.
+        """
+        if not isinstance(index, int) or isinstance(index, bool):
+            return False
+        if index < 0 or index >= len(self._vertices):
+            return False
+        if not active:
+            return True
+        vertex = self._vertices[index]
+        if not isinstance(vertex, dict):
+            return False
+        return bool(vertex.get("active", True))
+
     def RemoveEdge(self, edge: Union[int, Dict[str, Any]], silent: bool = False) -> "TGraph":
         """
         Removes an edge from this TGraph.
@@ -21548,11 +22041,16 @@ class TGraph:
         """
         Returns the symmetric difference of two input TGraphs.
 
+        This implementation avoids unsafe index-based graph comparison. Vertices are
+        matched only by a conservative stable identity key. Edges are included in the
+        result only when their endpoint identities and edge direction do not appear
+        in both graphs.
+
         Parameters
         ----------
-        graphA : 'TGraph'
+        graphA : TGraph
             The first input TGraph.
-        graphB : 'TGraph'
+        graphB : TGraph
             The second input TGraph.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
@@ -21562,9 +22060,372 @@ class TGraph:
         Optional[TGraph]
             The resulting TGraph, or None if the operation fails.
         """
+
         if not isinstance(graphA, TGraph) or not isinstance(graphB, TGraph):
+            if not silent:
+                print("TGraph.SymmetricDifference - Error: One or both inputs are not valid TGraphs. Returning None.")
             return None
-        return TGraph.Union(TGraph.Difference(graphA, graphB), TGraph.Difference(graphB, graphA))
+
+        def _clean_dictionary(d):
+            if not isinstance(d, dict):
+                return {}
+            result = dict(d)
+            result.pop("index", None)
+            return result
+
+        def _hashable_value(value):
+            try:
+                hash(value)
+                return value
+            except Exception:
+                return repr(value)
+
+        def _representation_xyz(rep):
+            """
+            Attempts to extract a stable coordinate key from a Topologic vertex-like
+            representation. Returns None if coordinates cannot be extracted.
+            """
+            if rep is None:
+                return None
+
+            try:
+                from topologicpy.Vertex import Vertex
+                return (
+                    round(float(Vertex.X(rep)), 6),
+                    round(float(Vertex.Y(rep)), 6),
+                    round(float(Vertex.Z(rep)), 6),
+                )
+            except Exception:
+                pass
+
+            try:
+                return (
+                    round(float(rep.X()), 6),
+                    round(float(rep.Y()), 6),
+                    round(float(rep.Z()), 6),
+                )
+            except Exception:
+                pass
+
+            if isinstance(rep, (list, tuple)) and len(rep) >= 3:
+                try:
+                    return (
+                        round(float(rep[0]), 6),
+                        round(float(rep[1]), 6),
+                        round(float(rep[2]), 6),
+                    )
+                except Exception:
+                    pass
+
+            return None
+
+        def _vertex_key(v):
+            """
+            Returns a conservative identity key for a TGraph vertex record.
+
+            Priority:
+            1. explicit stable dictionary identifiers;
+            2. geometric vertex coordinates;
+            3. simple immutable representation;
+            4. non-empty dictionary content.
+
+            If no useful identity can be found, returns None. Returning None is safer
+            than accidentally matching unrelated vertices by index.
+            """
+            if not isinstance(v, dict):
+                return None
+
+            d = _clean_dictionary(v.get("dictionary", {}))
+            rep = v.get("representation", None)
+
+            for key in ("id", "uuid", "guid", "uid", "name", "label"):
+                if key in d and d[key] is not None:
+                    return ("dict_id", key, _hashable_value(d[key]))
+
+            xyz = _representation_xyz(rep)
+            if xyz is not None:
+                return ("xyz", xyz)
+
+            if isinstance(rep, (str, int, float, bool)):
+                return ("rep", rep)
+
+            if d:
+                items = tuple(sorted((str(k), _hashable_value(value)) for k, value in d.items()))
+                return ("dict", items)
+
+            return None
+
+        def _active_vertex(graph, index):
+            try:
+                if index < 0 or index >= len(graph._vertices):
+                    return False
+                v = graph._vertices[index]
+                if isinstance(v, dict):
+                    return v.get("active", True)
+                return True
+            except Exception:
+                return False
+
+        def _active_edge(e):
+            return isinstance(e, dict) and e.get("active", True)
+
+        def _edge_directed(e, graph):
+            try:
+                return bool(e.get("directed", graph._directed))
+            except Exception:
+                return bool(getattr(graph, "_directed", False))
+
+        def _edge_key(src, dst, directed):
+            if directed:
+                return ("directed", src, dst)
+            return ("undirected", min(src, dst), max(src, dst))
+
+        def _unique_vertex_key_map(graph):
+            """
+            Returns {vertex_key: vertex_index}, but only for keys that occur exactly
+            once in the graph. Duplicate keys are ambiguous and are ignored.
+            """
+            key_to_indices = {}
+
+            for i, v in enumerate(graph._vertices):
+                if not _active_vertex(graph, i):
+                    continue
+
+                key = _vertex_key(v)
+                if key is None:
+                    continue
+
+                key_to_indices.setdefault(key, []).append(i)
+
+            return {
+                key: indices[0]
+                for key, indices in key_to_indices.items()
+                if len(indices) == 1
+            }
+
+        def _raw_edge_key_set(graph):
+            """
+            Returns a set of active edge keys in the graph using raw graph-local
+            vertex indices.
+            """
+            result = set()
+
+            for e in graph._edges:
+                if not _active_edge(e):
+                    continue
+
+                src = e.get("src", None)
+                dst = e.get("dst", None)
+
+                if not isinstance(src, int) or not isinstance(dst, int):
+                    continue
+
+                if not _active_vertex(graph, src) or not _active_vertex(graph, dst):
+                    continue
+
+                directed = _edge_directed(e, graph)
+                result.add(_edge_key(src, dst, directed))
+
+            return result
+
+        a_key_to_index = _unique_vertex_key_map(graphA)
+        b_key_to_index = _unique_vertex_key_map(graphB)
+
+        # Cross-graph vertex mappings by stable identity.
+        a_to_b = {}
+        b_to_a = {}
+
+        for key, a_index in a_key_to_index.items():
+            if key in b_key_to_index:
+                b_index = b_key_to_index[key]
+                a_to_b[a_index] = b_index
+                b_to_a[b_index] = a_index
+
+        a_edge_keys = _raw_edge_key_set(graphA)
+        b_edge_keys = _raw_edge_key_set(graphB)
+
+        result_directed = bool(getattr(graphA, "_directed", False) or getattr(graphB, "_directed", False))
+        result_allow_self_loops = bool(
+            getattr(graphA, "_allowSelfLoops", False) or
+            getattr(graphB, "_allowSelfLoops", False)
+        )
+        result_allow_parallel_edges = bool(
+            getattr(graphA, "_allowParallelEdges", False) or
+            getattr(graphB, "_allowParallelEdges", False)
+        )
+
+        try:
+            g = TGraph(
+                directed=result_directed,
+                allowSelfLoops=result_allow_self_loops,
+                allowParallelEdges=result_allow_parallel_edges,
+                dictionary={"generated_by": "TGraph.SymmetricDifference"},
+            )
+        except Exception:
+            try:
+                g = TGraph(directed=result_directed)
+            except Exception:
+                if not silent:
+                    print("TGraph.SymmetricDifference - Error: Could not instantiate output TGraph. Returning None.")
+                return None
+
+        a_to_g = {}
+        b_to_g = {}
+
+        def _add_vertex_to_result(v):
+            if not isinstance(v, dict):
+                d = {}
+                rep = None
+            else:
+                d = _clean_dictionary(v.get("dictionary", {}))
+                rep = v.get("representation", None)
+
+            try:
+                new_index = len(g._vertices)
+                g.AddVertex(dictionary=d, representation=rep)
+                return new_index
+            except Exception:
+                return None
+
+        # Add all active graphA vertices.
+        for i, av in enumerate(graphA._vertices):
+            if not _active_vertex(graphA, i):
+                continue
+
+            new_index = _add_vertex_to_result(av)
+            if new_index is not None:
+                a_to_g[i] = new_index
+
+        # Add graphB vertices. Merge only when graphB vertex has a unique stable
+        # identity already matched to a graphA vertex.
+        for i, bv in enumerate(graphB._vertices):
+            if not _active_vertex(graphB, i):
+                continue
+
+            if i in b_to_a and b_to_a[i] in a_to_g:
+                b_to_g[i] = a_to_g[b_to_a[i]]
+                continue
+
+            new_index = _add_vertex_to_result(bv)
+            if new_index is not None:
+                b_to_g[i] = new_index
+
+        output_edge_keys = set()
+
+        def _add_edge_to_result(src, dst, directed, dictionary, representation):
+            if src is None or dst is None:
+                return False
+
+            if not isinstance(src, int) or not isinstance(dst, int):
+                return False
+
+            if src < 0 or dst < 0 or src >= len(g._vertices) or dst >= len(g._vertices):
+                return False
+
+            key = _edge_key(src, dst, directed)
+
+            if key in output_edge_keys:
+                return False
+
+            try:
+                if TGraph.HasEdge(g, src, dst, directed=directed):
+                    output_edge_keys.add(key)
+                    return False
+            except Exception:
+                pass
+
+            try:
+                g.AddEdge(
+                    src,
+                    dst,
+                    directed=directed,
+                    dictionary=_clean_dictionary(dictionary),
+                    representation=representation,
+                )
+                output_edge_keys.add(key)
+                return True
+            except Exception:
+                return False
+
+        # Add graphA edges that do NOT have a mapped equivalent in graphB.
+        for e in graphA._edges:
+            if not _active_edge(e):
+                continue
+
+            src = e.get("src", None)
+            dst = e.get("dst", None)
+
+            if not isinstance(src, int) or not isinstance(dst, int):
+                continue
+
+            if not _active_vertex(graphA, src) or not _active_vertex(graphA, dst):
+                continue
+
+            directed = _edge_directed(e, graphA)
+
+            exists_in_b = False
+            if src in a_to_b and dst in a_to_b:
+                b_src = a_to_b[src]
+                b_dst = a_to_b[dst]
+                exists_in_b = _edge_key(b_src, b_dst, directed) in b_edge_keys
+
+            if exists_in_b:
+                continue
+
+            if src not in a_to_g or dst not in a_to_g:
+                continue
+
+            ok = _add_edge_to_result(
+                a_to_g[src],
+                a_to_g[dst],
+                directed,
+                e.get("dictionary", {}),
+                e.get("representation", None),
+            )
+
+            if not ok and not silent:
+                print(f"TGraph.SymmetricDifference - Warning: Could not add graphA edge {src}->{dst}.")
+
+        # Add graphB edges that do NOT have a mapped equivalent in graphA.
+        for e in graphB._edges:
+            if not _active_edge(e):
+                continue
+
+            src = e.get("src", None)
+            dst = e.get("dst", None)
+
+            if not isinstance(src, int) or not isinstance(dst, int):
+                continue
+
+            if not _active_vertex(graphB, src) or not _active_vertex(graphB, dst):
+                continue
+
+            directed = _edge_directed(e, graphB)
+
+            exists_in_a = False
+            if src in b_to_a and dst in b_to_a:
+                a_src = b_to_a[src]
+                a_dst = b_to_a[dst]
+                exists_in_a = _edge_key(a_src, a_dst, directed) in a_edge_keys
+
+            if exists_in_a:
+                continue
+
+            if src not in b_to_g or dst not in b_to_g:
+                continue
+
+            ok = _add_edge_to_result(
+                b_to_g[src],
+                b_to_g[dst],
+                directed,
+                e.get("dictionary", {}),
+                e.get("representation", None),
+            )
+
+            if not ok and not silent:
+                print(f"TGraph.SymmetricDifference - Warning: Could not add graphB edge {src}->{dst}.")
+
+        return g
 
     @staticmethod
     def TopologicalDistance(graph: "TGraph", vertexA: Any, vertexB: Any, mode: str = "out",
@@ -22267,112 +23128,442 @@ class TGraph:
         return adjacency
 
     @staticmethod
-    def Union(graphA: "TGraph", graphB: "TGraph", silent: bool = False) -> Optional["TGraph"]:
+    def Union(
+        graphA: "TGraph",
+        graphB: "TGraph",
+        vertexKeys: list = None,
+        edgeKeys: list = None,
+        mantissa: int = 6,
+        silent: bool = False,
+    ) -> Optional["TGraph"]:
         """
         Returns the union of two input TGraphs.
 
+        Vertices from graphB are remapped into the output graph before graphB
+        edges are added. Vertex identity is determined as follows:
+
+        1. If vertexKeys is not None, vertices are considered identical only
+           when their dictionaries contain the same values at all supplied keys.
+        2. If vertexKeys is None, vertices are considered identical only when
+           their representation coordinates match after rounding to mantissa.
+
+        Edge identity is determined as follows:
+
+        1. If edgeKeys is not None and an edge contains all supplied keys, the
+           edge dictionary values at those keys define the edge identity.
+        2. Otherwise, edge identity falls back to the remapped source and
+           destination vertex indices and edge direction.
+
         Parameters
         ----------
-        graphA : 'TGraph'
+        graphA : TGraph
             The first input TGraph.
-        graphB : 'TGraph'
+        graphB : TGraph
             The second input TGraph.
+        vertexKeys : list , optional
+            A list of dictionary keys used to determine semantic vertex identity.
+            If set to None, vertex identity falls back to matching x, y, z
+            coordinates of the vertex representations. Default is None.
+        edgeKeys : list , optional
+            A list of dictionary keys used to determine semantic edge identity.
+            If set to None, edge identity falls back to source/destination vertex
+            indices and direction after graphB vertices have been remapped.
+            Default is None.
+        mantissa : int , optional
+            The number of decimal places to use when matching coordinates.
+            Default is 6.
         silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
+            If set to True, error and warning messages are suppressed.
+            Default is False.
 
         Returns
         -------
         Optional[TGraph]
             The resulting TGraph, or None if the operation fails.
         """
+
+        # Backward compatibility with the old signature:
+        # Union(graphA, graphB, silent)
+        if isinstance(vertexKeys, bool) and edgeKeys is None:
+            silent = vertexKeys
+            vertexKeys = None
+
         if not isinstance(graphA, TGraph) or not isinstance(graphB, TGraph):
+            if not silent:
+                print("TGraph.Union - Error: One or both inputs are not valid TGraphs. Returning None.")
             return None
-        g = TGraph._CopyGraph(graphA)
-        n = max(len(graphA._vertices), len(graphB._vertices))
-        while len(g._vertices) < n:
-            idx = len(g._vertices)
-            bv = graphB._vertices[idx] if idx < len(graphB._vertices) else {}
-            d = dict(bv.get("dictionary", {})) if isinstance(bv, dict) else {}
-            d.pop("index", None)
-            g.AddVertex(dictionary=d, representation=bv.get("representation", None) if isinstance(bv, dict) else None)
-        for e in graphB._edges:
-            if not e.get("active", True):
+
+        try:
+            mantissa = int(mantissa)
+        except Exception:
+            mantissa = 6
+        mantissa = max(0, mantissa)
+
+        def _normalise_keys(keys):
+            if keys is None:
+                return None
+            if isinstance(keys, str):
+                keys = [keys]
+            if not isinstance(keys, (list, tuple, set)):
+                return []
+            clean = []
+            for key in keys:
+                if key is None:
+                    continue
+                key = str(key).strip()
+                if key:
+                    clean.append(key)
+            return clean
+
+        vertexKeys = _normalise_keys(vertexKeys)
+        edgeKeys = _normalise_keys(edgeKeys)
+
+        def _active_record(record):
+            if not isinstance(record, dict):
+                return False
+            return bool(record.get("active", True))
+
+        def _clean_dictionary(dictionary):
+            if not isinstance(dictionary, dict):
+                return {}
+            return dict(dictionary)
+
+        def _dictionary(record):
+            if not isinstance(record, dict):
+                return {}
+            return _clean_dictionary(record.get("dictionary", {}))
+
+        def _value_at_key(dictionary, key):
+            if not isinstance(dictionary, dict):
+                return None
+
+            if key in dictionary:
+                return dictionary.get(key)
+
+            # Be forgiving about key case, but do not alter the value itself.
+            key_lower = str(key).lower()
+            for existing_key, value in dictionary.items():
+                try:
+                    if str(existing_key).lower() == key_lower:
+                        return value
+                except Exception:
+                    continue
+            return None
+
+        def _normalise_value(value):
+            if value in [None, "", "*", "$"]:
+                return None
+
+            if isinstance(value, dict):
+                items = []
+                for k, v in value.items():
+                    nv = _normalise_value(v)
+                    if nv is not None:
+                        items.append((str(k), nv))
+                return tuple(sorted(items))
+
+            if isinstance(value, (list, tuple, set)):
+                values = []
+                for item in value:
+                    nv = _normalise_value(item)
+                    if nv is not None:
+                        values.append(nv)
+                return tuple(values)
+
+            try:
+                hash(value)
+                if isinstance(value, str):
+                    value = value.strip()
+                    if value in ["", "*", "$"]:
+                        return None
+                return value
+            except Exception:
+                return repr(value)
+
+        def _dictionary_identity(dictionary, keys):
+            if keys is None or len(keys) == 0:
+                return None
+            values = []
+            for key in keys:
+                value = _normalise_value(_value_at_key(dictionary, key))
+                if value is None:
+                    return None
+                values.append((key, value))
+            return tuple(values)
+
+        def _representation_xyz(representation):
+            if representation is None:
+                return None
+
+            try:
+                from topologicpy.Vertex import Vertex
+                return (
+                    round(float(Vertex.X(representation)), mantissa),
+                    round(float(Vertex.Y(representation)), mantissa),
+                    round(float(Vertex.Z(representation)), mantissa),
+                )
+            except Exception:
+                pass
+
+            try:
+                return (
+                    round(float(representation.X()), mantissa),
+                    round(float(representation.Y()), mantissa),
+                    round(float(representation.Z()), mantissa),
+                )
+            except Exception:
+                pass
+
+            if isinstance(representation, (list, tuple)) and len(representation) >= 3:
+                try:
+                    return (
+                        round(float(representation[0]), mantissa),
+                        round(float(representation[1]), mantissa),
+                        round(float(representation[2]), mantissa),
+                    )
+                except Exception:
+                    pass
+
+            return None
+
+        def _dictionary_xyz(dictionary):
+            candidates = [
+                ("x", "y", "z"),
+                ("X", "Y", "Z"),
+                ("IFC_x", "IFC_y", "IFC_z"),
+            ]
+            for x_key, y_key, z_key in candidates:
+                x = _value_at_key(dictionary, x_key)
+                y = _value_at_key(dictionary, y_key)
+                z = _value_at_key(dictionary, z_key)
+                if x is None or y is None or z is None:
+                    continue
+                try:
+                    return (
+                        round(float(x), mantissa),
+                        round(float(y), mantissa),
+                        round(float(z), mantissa),
+                    )
+                except Exception:
+                    continue
+            return None
+
+        def _vertex_identity(vertex_record):
+            """Returns a vertex identity key or None if no safe identity exists."""
+            if not isinstance(vertex_record, dict):
+                return None
+
+            dictionary = _dictionary(vertex_record)
+
+            if vertexKeys is not None:
+                identity = _dictionary_identity(dictionary, vertexKeys)
+                if identity is None:
+                    return None
+                return ("vertex_dictionary", identity)
+
+            xyz = _representation_xyz(vertex_record.get("representation", None))
+            if xyz is None:
+                xyz = _dictionary_xyz(dictionary)
+            if xyz is None:
+                return None
+            return ("vertex_xyz", xyz)
+
+        def _normalised_edge_endpoints(src, dst, directed):
+            if directed:
+                return (src, dst, True)
+            return (min(src, dst), max(src, dst), False)
+
+        def _edge_identity(edge_record, src, dst, directed):
+            if not isinstance(edge_record, dict):
+                return None
+
+            if edgeKeys is not None:
+                dictionary_identity = _dictionary_identity(_dictionary(edge_record), edgeKeys)
+                if dictionary_identity is not None:
+                    return ("edge_dictionary", dictionary_identity)
+
+            return ("edge_endpoints", _normalised_edge_endpoints(src, dst, directed))
+
+        def _build_unique_vertex_lookup(graph):
+            key_to_indices = {}
+            for i, vertex in enumerate(graph._vertices):
+                if not _active_record(vertex):
+                    continue
+                key = _vertex_identity(vertex)
+                if key is None:
+                    continue
+                key_to_indices.setdefault(key, []).append(i)
+            return {
+                key: indices[0]
+                for key, indices in key_to_indices.items()
+                if len(indices) == 1
+            }
+
+        def _count_vertex_keys(graph):
+            counts = {}
+            for vertex in graph._vertices:
+                if not _active_record(vertex):
+                    continue
+                key = _vertex_identity(vertex)
+                if key is None:
+                    continue
+                counts[key] = counts.get(key, 0) + 1
+            return counts
+
+        def _existing_edge_identities(graph):
+            identities = set()
+            for edge in graph._edges:
+                if not _active_record(edge):
+                    continue
+                src = edge.get("src", None)
+                dst = edge.get("dst", None)
+                if not isinstance(src, int) or not isinstance(dst, int):
+                    continue
+                directed = bool(edge.get("directed", graph._directed))
+                identity = _edge_identity(edge, src, dst, directed)
+                if identity is not None:
+                    identities.add(identity)
+            return identities
+
+        def _merge_missing_dictionary_values(target_record, source_record):
+            """
+            Preserves graphA values and only adds keys that are missing from the
+            target. This avoids losing metadata when two vertices are merged.
+            """
+            if not isinstance(target_record, dict) or not isinstance(source_record, dict):
+                return
+            target_dictionary = _dictionary(target_record)
+            source_dictionary = _dictionary(source_record)
+            changed = False
+            for key, value in source_dictionary.items():
+                if key == "index":
+                    continue
+                if key not in target_dictionary:
+                    target_dictionary[key] = value
+                    changed = True
+            if changed:
+                target_record["dictionary"] = target_dictionary
+
+        def _normalise_output_dictionaries(graph):
+            """Synchronises stored dictionary indices with actual graph indices."""
+            for i, vertex in enumerate(graph._vertices):
+                if not isinstance(vertex, dict):
+                    continue
+                dictionary = _dictionary(vertex)
+                dictionary["index"] = i
+                vertex["dictionary"] = dictionary
+
+            for i, edge in enumerate(graph._edges):
+                if not isinstance(edge, dict):
+                    continue
+                dictionary = _dictionary(edge)
+                dictionary["index"] = i
+                dictionary["src"] = edge.get("src", None)
+                dictionary["dst"] = edge.get("dst", None)
+                edge["dictionary"] = dictionary
+
+        try:
+            g = TGraph._CopyGraph(graphA)
+        except Exception:
+            if not silent:
+                print("TGraph.Union - Error: Could not copy graphA. Returning None.")
+            return None
+
+        # Build the lookup from the output copy, not directly from graphA. This
+        # avoids assuming that _CopyGraph preserves every inactive record exactly.
+        unique_key_to_g_index = _build_unique_vertex_lookup(g)
+        b_key_counts = _count_vertex_keys(graphB)
+
+        # Remap graphB vertices into the output graph.
+        b_to_g = {}
+        for i, vertex_b in enumerate(graphB._vertices):
+            if not _active_record(vertex_b):
                 continue
-            src, dst, edirected = e.get("src"), e.get("dst"), e.get("directed", graphB._directed)
-            if src >= len(g._vertices) or dst >= len(g._vertices):
+
+            key = _vertex_identity(vertex_b)
+
+            if key is not None and b_key_counts.get(key, 0) == 1 and key in unique_key_to_g_index:
+                mapped_index = unique_key_to_g_index[key]
+                b_to_g[i] = mapped_index
+                try:
+                    _merge_missing_dictionary_values(g._vertices[mapped_index], vertex_b)
+                except Exception:
+                    pass
                 continue
-            if not TGraph.HasEdge(g, src, dst, directed=edirected):
-                d = dict(e.get("dictionary", {})); d.pop("index", None)
-                g.AddEdge(src, dst, directed=edirected, dictionary=d, representation=e.get("representation", None))
+
+            try:
+                dictionary = _dictionary(vertex_b)
+                dictionary.pop("index", None)
+                representation = vertex_b.get("representation", None)
+                new_index = len(g._vertices)
+                g.AddVertex(dictionary=dictionary, representation=representation)
+                b_to_g[i] = new_index
+            except Exception:
+                if not silent:
+                    print(f"TGraph.Union - Warning: Could not add vertex {i} from graphB.")
+
+        existing_edge_identities = _existing_edge_identities(g)
+
+        # Add graphB edges with remapped endpoints.
+        for edge_b in graphB._edges:
+            if not _active_record(edge_b):
+                continue
+
+            src = edge_b.get("src", None)
+            dst = edge_b.get("dst", None)
+
+            if not isinstance(src, int) or not isinstance(dst, int):
+                continue
+            if src not in b_to_g or dst not in b_to_g:
+                continue
+
+            new_src = b_to_g[src]
+            new_dst = b_to_g[dst]
+
+            if new_src == new_dst:
+                continue
+            if new_src < 0 or new_dst < 0:
+                continue
+            if new_src >= len(g._vertices) or new_dst >= len(g._vertices):
+                continue
+
+            try:
+                directed = bool(edge_b.get("directed", graphB._directed))
+            except Exception:
+                directed = bool(graphB._directed)
+
+            identity = _edge_identity(edge_b, new_src, new_dst, directed)
+            if identity is not None and identity in existing_edge_identities:
+                continue
+
+            try:
+                dictionary = _dictionary(edge_b)
+                dictionary.pop("index", None)
+                dictionary["src"] = new_src
+                dictionary["dst"] = new_dst
+                representation = edge_b.get("representation", None)
+
+                before = len(g._edges)
+                g.AddEdge(
+                    new_src,
+                    new_dst,
+                    directed=directed,
+                    dictionary=dictionary,
+                    representation=representation,
+                )
+
+                if len(g._edges) > before and identity is not None:
+                    existing_edge_identities.add(identity)
+            except Exception:
+                if not silent:
+                    print(f"TGraph.Union - Warning: Could not add edge {src}->{dst} from graphB.")
+
+        try:
+            _normalise_output_dictionaries(g)
+        except Exception:
+            pass
+
         return g
-
-    def _unregister_edge_adjacency(self, edge_index: int) -> None:
-        """
-        Unregisters an edge from this TGraph adjacency lookup tables.
-
-        Parameters
-        ----------
-        edge_index : int
-            The input edge index value.
-
-        Returns
-        -------
-        None
-            None.
-        """
-        if not self._validate_edge_index(edge_index, active=False):
-            return
-        e = self._edges[edge_index]
-        src, dst, directed = e["src"], e["dst"], e["directed"]
-        for table in [self._out_edges, self._in_edges, self._incident_edges]:
-            for key in [src, dst]:
-                if key in table:
-                    table[key].discard(edge_index)
-        key = self._edge_key(src, dst, directed)
-        if key in self._edge_lookup:
-            self._edge_lookup[key].discard(edge_index)
-            if not self._edge_lookup[key]:
-                del self._edge_lookup[key]
-
-    def _validate_edge_index(self, index: int, active: bool = True) -> bool:
-        """
-        Returns True if the input edge index is valid.
-
-        Parameters
-        ----------
-        index : int
-            The input index.
-        active : bool , optional
-            The input active value. Default is True.
-
-        Returns
-        -------
-        bool
-            True if the requested condition is satisfied. Otherwise, False.
-        """
-        if not isinstance(index, int) or index < 0 or index >= len(self._edges):
-            return False
-        return True if not active else bool(self._edges[index].get("active", True))
-
-    def _validate_vertex_index(self, index: int, active: bool = True) -> bool:
-        """
-        Returns True if the input vertex index is valid.
-
-        Parameters
-        ----------
-        index : int
-            The input index.
-        active : bool , optional
-            The input active value. Default is True.
-
-        Returns
-        -------
-        bool
-            True if the requested condition is satisfied. Otherwise, False.
-        """
-        if not isinstance(index, int) or index < 0 or index >= len(self._vertices):
-            return False
-        return True if not active else bool(self._vertices[index].get("active", True))
 
     @staticmethod
     def ValidateOntology(
@@ -22879,24 +24070,72 @@ class TGraph:
         vertices: Optional[List[Any]] = None,
         obstacles: Optional[List[Any]] = None,
         bidirectional: bool = True,
+        maxDistance: Optional[float] = None,
+        maxNeighbors: Optional[int] = None,
+        includeBoundaryVertices: bool = True,
+        leafSize: int = 24,
+        allowBoundaryPaths: bool = True,
+        trim: bool = False,
+        approximateMaxNeighbors: bool = False,
+        neighborCandidateFactor: int = 8,
         tolerance: float = 0.0001,
-        silent: bool = False,
+        silent: bool = False
     ) -> Optional["TGraph"]:
         """
-        Returns a visibility graph derived from the input topology.
+        Returns a fast visibility graph derived from the input planar face.
+
+        This implementation is designed for navigation visibility graphs and avoids
+        Topologic boolean operations inside the main visibility loop. It uses a
+        divide-and-conquer angular visibility algorithm inspired by rotational
+        sweep visibility graph construction.
 
         Parameters
         ----------
         face : Any
-            The input face value.
+            The input planar face defining the navigable region.
         vertices : Optional[List[Any]] , optional
-            The input vertices or vertex indices. Default is None.
+            The input vertices or vertex indices. If set to None, face boundary
+            vertices are used. Default is None.
         obstacles : Optional[List[Any]] , optional
-            The input obstacles value. Default is None.
+            The input obstacle topologies. Their edges are treated as visibility
+            blockers. Default is None.
         bidirectional : bool , optional
-            The input bidirectional value. Default is True.
+            If set to True, an undirected graph is returned. If set to False, a
+            directed graph is returned with both directions explicitly inserted
+            for every accepted visibility pair. Default is True.
+        maxDistance : Optional[float] , optional
+            Optional maximum visibility edge length. Candidate pairs longer than
+            this value are skipped. Default is None.
+        maxNeighbors : Optional[int] , optional
+            Optional maximum number of visible neighbours retained per source
+            vertex. If None, the full visibility graph is built. Default is None.
+        includeBoundaryVertices : bool , optional
+            If set to True, face and obstacle boundary vertices are added to the
+            candidate visibility vertices. This is usually desirable for navigation
+            because shortest paths around obstacles need obstacle corner vertices.
+            Default is True.
+        leafSize : int , optional
+            The angular divide-and-conquer leaf size. Smaller values reduce exact
+            checks per leaf but increase recursion overhead. Default is 24.
+        allowBoundaryPaths : bool , optional
+            If set to True, collinear travel along face/obstacle boundary segments
+            is allowed. This is useful for shortest-path visibility graphs where
+            paths may graze obstacle boundaries. Default is True.
+        trim : bool , optional
+            If set to True, visibility edges whose interiors leave the host face
+            are rejected. This is useful for concave faces or faces with holes,
+            where two vertices may see each other geometrically but the connecting
+            segment lies partly outside the navigable face. Default is False.
+        approximateMaxNeighbors : bool , optional
+            If set to True and maxNeighbors is not None, only the nearest
+            maxNeighbors*neighborCandidateFactor candidate vertices are tested
+            per source. This is faster but no longer builds the exact sparse
+            nearest-visible-neighbour graph. Default is False.
+        neighborCandidateFactor : int , optional
+            Candidate multiplier used when approximateMaxNeighbors is True.
+            Default is 8.
         tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
+            The desired geometric tolerance. Default is 0.0001.
         silent : bool , optional
             If set to True, error and warning messages are suppressed. Default is False.
 
@@ -22907,63 +24146,848 @@ class TGraph:
         """
 
         try:
+            import math
             from topologicpy.Topology import Topology
             from topologicpy.Vertex import Vertex
             from topologicpy.Edge import Edge
         except Exception:
             if not silent:
-                print("TGraph.VisibilityGraph - Error: Could not import TopologicPy classes. Returning None.")
+                print("TGraph.VisibilityGraph - Error: Could not import required modules. Returning None.")
             return None
+
+        tol = max(float(tolerance), 1e-12)
+        tol2 = tol * tol
+        pi = math.pi
+        two_pi = 2.0 * math.pi
+
+        # ---------------------------------------------------------------------
+        # Topologic extraction helpers. These are used only before/after the hot
+        # numeric visibility loop.
+        # ---------------------------------------------------------------------
+
+        def _topology_vertices(topology):
+            if topology is None:
+                return []
+            try:
+                return Topology.Vertices(topology, silent=True) or []
+            except TypeError:
+                try:
+                    return Topology.Vertices(topology) or []
+                except Exception:
+                    return []
+            except Exception:
+                return []
+
+        def _topology_edges(topology):
+            if topology is None:
+                return []
+            try:
+                return Topology.Edges(topology, silent=True) or []
+            except TypeError:
+                try:
+                    return Topology.Edges(topology) or []
+                except Exception:
+                    return []
+            except Exception:
+                return []
+
+        def _edge_end_vertices(edge):
+            if edge is None:
+                return None, None
+
+            try:
+                sv = Edge.StartVertex(edge)
+                ev = Edge.EndVertex(edge)
+                if sv is not None and ev is not None:
+                    return sv, ev
+            except Exception:
+                pass
+
+            try:
+                evs = Topology.Vertices(edge, silent=True) or []
+            except TypeError:
+                try:
+                    evs = Topology.Vertices(edge) or []
+                except Exception:
+                    evs = []
+            except Exception:
+                evs = []
+
+            if len(evs) < 2:
+                return None, None
+
+            return evs[0], evs[-1]
+
+        def _xyz(v):
+            try:
+                return (float(Vertex.X(v)), float(Vertex.Y(v)), float(Vertex.Z(v)))
+            except Exception:
+                pass
+
+            try:
+                return (float(v.X()), float(v.Y()), float(v.Z()))
+            except Exception:
+                pass
+
+            if isinstance(v, (list, tuple)) and len(v) >= 3:
+                try:
+                    return (float(v[0]), float(v[1]), float(v[2]))
+                except Exception:
+                    return None
+
+            return None
+
+        # ---------------------------------------------------------------------
+        # 3D local frame construction and 3D -> 2D projection.
+        # ---------------------------------------------------------------------
+
+        def _sub3(a, b):
+            return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+        def _dot3(a, b):
+            return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+        def _cross3(a, b):
+            return (
+                a[1]*b[2] - a[2]*b[1],
+                a[2]*b[0] - a[0]*b[2],
+                a[0]*b[1] - a[1]*b[0],
+            )
+
+        def _norm3(a):
+            return math.sqrt(max(_dot3(a, a), 0.0))
+
+        def _unit3(a):
+            n = _norm3(a)
+            if n <= tol:
+                return None
+            return (a[0]/n, a[1]/n, a[2]/n)
+
+        def _build_frame(seed_vertices):
+            pts = []
+            for v in seed_vertices:
+                p = _xyz(v)
+                if p is not None:
+                    pts.append(p)
+
+            if len(pts) < 3:
+                return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+
+            origin = pts[0]
+            x_axis = None
+            normal = None
+
+            for i in range(1, len(pts)):
+                u = _unit3(_sub3(pts[i], origin))
+                if u is None:
+                    continue
+
+                for j in range(i + 1, len(pts)):
+                    w = _sub3(pts[j], origin)
+                    n = _unit3(_cross3(u, w))
+                    if n is not None:
+                        x_axis = u
+                        normal = n
+                        break
+
+                if x_axis is not None:
+                    break
+
+            if x_axis is None or normal is None:
+                return origin, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+
+            y_axis = _unit3(_cross3(normal, x_axis))
+            if y_axis is None:
+                return origin, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+
+            return origin, x_axis, y_axis
+
+        base_vertices = _topology_vertices(face)
 
         if vertices is None:
-            try:
-                vertices = Topology.Vertices(face, silent=True) or []
-            except Exception:
-                vertices = []
-        if not isinstance(vertices, list):
+            vertices = list(base_vertices)
+        elif not isinstance(vertices, list):
+            if not silent:
+                print("TGraph.VisibilityGraph - Error: vertices is not a list. Returning None.")
             return None
-        obstacles = obstacles or []
-        g = TGraph(directed=not bidirectional, allowSelfLoops=False, allowParallelEdges=False,
-                   dictionary={"generated_by": "TGraph.VisibilityGraph"})
-        for v in vertices:
-            d = TGraph._TopologyDictionary(v, mantissa=6, tolerance=tolerance)
-            d["role"] = "viewpoint"
-            g.AddVertex(dictionary=d, representation=v)
+        else:
+            converted_vertices = []
+            for v in vertices:
+                if isinstance(v, int) and not isinstance(v, bool):
+                    if 0 <= v < len(base_vertices):
+                        converted_vertices.append(base_vertices[v])
+                else:
+                    converted_vertices.append(v)
+            vertices = converted_vertices
 
-        def visible(a: Any, b: Any) -> Tuple[bool, Any]:
+        obstacles = obstacles or []
+        if not isinstance(obstacles, list):
+            obstacles = [obstacles]
+
+        if includeBoundaryVertices:
+            vertices = list(vertices) + list(base_vertices)
+            for obstacle in obstacles:
+                vertices.extend(_topology_vertices(obstacle))
+
+        origin, x_axis, y_axis = _build_frame(base_vertices or vertices)
+
+        def _project(v):
+            p = _xyz(v)
+            if p is None:
+                return None
+            vec = _sub3(p, origin)
+            return (_dot3(vec, x_axis), _dot3(vec, y_axis))
+
+        # ---------------------------------------------------------------------
+        # 2D geometry predicates.
+        # ---------------------------------------------------------------------
+
+        def _dist2_xy(ax, ay, bx, by):
+            dx = ax - bx
+            dy = ay - by
+            return dx*dx + dy*dy
+
+        def _same_xy(ax, ay, bx, by):
+            return _dist2_xy(ax, ay, bx, by) <= tol2
+
+        def _orient(ax, ay, bx, by, cx, cy):
+            return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+
+        def _on_segment(ax, ay, bx, by, px, py):
+            if abs(_orient(ax, ay, bx, by, px, py)) > tol:
+                return False
+            return (
+                min(ax, bx) - tol <= px <= max(ax, bx) + tol and
+                min(ay, by) - tol <= py <= max(ay, by) + tol
+            )
+
+        def _bbox_overlap(a_minx, a_miny, a_maxx, a_maxy, b_minx, b_miny, b_maxx, b_maxy):
+            return not (
+                a_maxx < b_minx - tol or
+                b_maxx < a_minx - tol or
+                a_maxy < b_miny - tol or
+                b_maxy < a_miny - tol
+            )
+
+        def _collinear_overlap_length(ax, ay, bx, by, cx, cy, dx, dy):
+            if abs(bx - ax) >= abs(by - ay):
+                a0, a1 = sorted((ax, bx))
+                c0, c1 = sorted((cx, dx))
+            else:
+                a0, a1 = sorted((ay, by))
+                c0, c1 = sorted((cy, dy))
+
+            return min(a1, c1) - max(a0, c0)
+
+        def _segments_block(ax, ay, bx, by, blocker):
+            _, cx, cy, dx, dy, minx, miny, maxx, maxy, _kind = blocker
+
+            a_minx = ax if ax < bx else bx
+            a_miny = ay if ay < by else by
+            a_maxx = bx if ax < bx else ax
+            a_maxy = by if ay < by else ay
+
+            if not _bbox_overlap(a_minx, a_miny, a_maxx, a_maxy, minx, miny, maxx, maxy):
+                return False
+
+            # Same candidate as blocker: boundary travel is allowed when requested.
+            if allowBoundaryPaths:
+                if (_same_xy(ax, ay, cx, cy) and _same_xy(bx, by, dx, dy)) or \
+                    (_same_xy(ax, ay, dx, dy) and _same_xy(bx, by, cx, cy)):
+                    return False
+
+            o1 = _orient(ax, ay, bx, by, cx, cy)
+            o2 = _orient(ax, ay, bx, by, dx, dy)
+            o3 = _orient(cx, cy, dx, dy, ax, ay)
+            o4 = _orient(cx, cy, dx, dy, bx, by)
+
+            # Proper crossing.
+            if ((o1 > tol and o2 < -tol) or (o1 < -tol and o2 > tol)) and \
+                ((o3 > tol and o4 < -tol) or (o3 < -tol and o4 > tol)):
+                return True
+
+            # Collinear case.
+            if abs(o1) <= tol and abs(o2) <= tol and abs(o3) <= tol and abs(o4) <= tol:
+                overlap = _collinear_overlap_length(ax, ay, bx, by, cx, cy, dx, dy)
+                if overlap <= tol:
+                    return False
+                return not allowBoundaryPaths
+
+            # Candidate endpoint touching a blocker is allowed.
+            if abs(o3) <= tol and _on_segment(cx, cy, dx, dy, ax, ay):
+                return False
+            if abs(o4) <= tol and _on_segment(cx, cy, dx, dy, bx, by):
+                return False
+
+            # Blocker endpoint lying in the interior of the candidate segment is
+            # conservatively blocked. This avoids passing through obstacle corners
+            # unless that corner is the actual source or target.
+            if abs(o1) <= tol and _on_segment(ax, ay, bx, by, cx, cy):
+                if _same_xy(cx, cy, ax, ay) or _same_xy(cx, cy, bx, by):
+                    return False
+                return True
+
+            if abs(o2) <= tol and _on_segment(ax, ay, bx, by, dx, dy):
+                if _same_xy(dx, dy, ax, ay) or _same_xy(dx, dy, bx, by):
+                    return False
+                return True
+
+            return False
+
+        # ---------------------------------------------------------------------
+        # Deduplicate candidate vertices.
+        # ---------------------------------------------------------------------
+
+        clean_vertices = []
+        xs = []
+        ys = []
+        seen_vertex_keys = set()
+        inv_tol = 1.0 / tol
+
+        for v in vertices:
+            p = _project(v)
+            if p is None:
+                continue
+
+            x, y = p
+            key = (round(x * inv_tol), round(y * inv_tol))
+            if key in seen_vertex_keys:
+                continue
+
+            seen_vertex_keys.add(key)
+            clean_vertices.append(v)
+            xs.append(float(x))
+            ys.append(float(y))
+
+        vertices = clean_vertices
+        n = len(vertices)
+
+        # ---------------------------------------------------------------------
+        # Extract blocker segments once.
+        # Each blocker is:
+        # (id, ax, ay, bx, by, minx, miny, maxx, maxy, kind)
+        # ---------------------------------------------------------------------
+
+        blockers = []
+        seen_blockers = set()
+
+        def _add_blocker_from_edge(edge, kind):
+            sv, ev = _edge_end_vertices(edge)
+            if sv is None or ev is None:
+                return
+
+            sp = _project(sv)
+            ep = _project(ev)
+
+            if sp is None or ep is None:
+                return
+
+            ax, ay = float(sp[0]), float(sp[1])
+            bx, by = float(ep[0]), float(ep[1])
+
+            if _same_xy(ax, ay, bx, by):
+                return
+
+            ka = (round(ax * inv_tol), round(ay * inv_tol))
+            kb = (round(bx * inv_tol), round(by * inv_tol))
+            key = (ka, kb) if ka <= kb else (kb, ka)
+
+            if key in seen_blockers:
+                return
+
+            seen_blockers.add(key)
+
+            minx = ax if ax < bx else bx
+            miny = ay if ay < by else by
+            maxx = bx if ax < bx else ax
+            maxy = by if ay < by else ay
+
+            idx = len(blockers)
+            blockers.append((idx, ax, ay, bx, by, minx, miny, maxx, maxy, kind))
+
+        for edge in _topology_edges(face):
+            _add_blocker_from_edge(edge, "face")
+
+        for obstacle in obstacles:
+            for edge in _topology_edges(obstacle):
+                _add_blocker_from_edge(edge, "obstacle")
+
+        face_blockers = [b for b in blockers if b[9] == "face"]
+
+        # ---------------------------------------------------------------------
+        # Host-face trimming helpers.
+        # ---------------------------------------------------------------------
+
+        def _point_on_face_boundary(px, py):
+            for blocker in face_blockers:
+                _, ax, ay, bx, by, *_ = blocker
+                if _on_segment(ax, ay, bx, by, px, py):
+                    return True
+            return False
+
+        def _point_inside_host_face(px, py):
+            """
+            Even-odd point-in-polygon test over all host face boundary segments.
+
+            This works for concave faces and usually also for faces with holes,
+            assuming Topology.Edges(face) returns both external and internal
+            boundary edges.
+            """
+            if not face_blockers:
+                return True
+
+            if _point_on_face_boundary(px, py):
+                return True
+
+            inside = False
+
+            for blocker in face_blockers:
+                _, ax, ay, bx, by, *_ = blocker
+
+                # Ignore horizontal edges for ray casting.
+                if (ay > py) == (by > py):
+                    continue
+
+                x_intersection = ax + (py - ay) * (bx - ax) / ((by - ay) or 1e-300)
+
+                if x_intersection > px + tol:
+                    inside = not inside
+
+            return inside
+
+        def _face_boundary_blocks_trim(ax, ay, bx, by, blocker):
+            """
+            Strict host-face crossing test used only by trim=True.
+
+            Endpoint touches are allowed. Proper crossings are rejected.
+            Collinear overlap is controlled by allowBoundaryPaths.
+            """
+            _, cx, cy, dx, dy, minx, miny, maxx, maxy, _kind = blocker
+
+            a_minx = ax if ax < bx else bx
+            a_miny = ay if ay < by else by
+            a_maxx = bx if ax < bx else ax
+            a_maxy = by if ay < by else ay
+
+            if not _bbox_overlap(a_minx, a_miny, a_maxx, a_maxy, minx, miny, maxx, maxy):
+                return False
+
+            if allowBoundaryPaths:
+                if (_same_xy(ax, ay, cx, cy) and _same_xy(bx, by, dx, dy)) or \
+                    (_same_xy(ax, ay, dx, dy) and _same_xy(bx, by, cx, cy)):
+                    return False
+
+            o1 = _orient(ax, ay, bx, by, cx, cy)
+            o2 = _orient(ax, ay, bx, by, dx, dy)
+            o3 = _orient(cx, cy, dx, dy, ax, ay)
+            o4 = _orient(cx, cy, dx, dy, bx, by)
+
+            # Proper crossing through the face boundary means the segment leaves
+            # or enters the host face interior.
+            if ((o1 > tol and o2 < -tol) or (o1 < -tol and o2 > tol)) and \
+                ((o3 > tol and o4 < -tol) or (o3 < -tol and o4 > tol)):
+                return True
+
+            # Collinear overlap with a face boundary.
+            if abs(o1) <= tol and abs(o2) <= tol and abs(o3) <= tol and abs(o4) <= tol:
+                overlap = _collinear_overlap_length(ax, ay, bx, by, cx, cy, dx, dy)
+                if overlap <= tol:
+                    return False
+                return not allowBoundaryPaths
+
+            # Candidate endpoint on face boundary is allowed.
+            if abs(o3) <= tol and _on_segment(cx, cy, dx, dy, ax, ay):
+                return False
+            if abs(o4) <= tol and _on_segment(cx, cy, dx, dy, bx, by):
+                return False
+
+            # Face boundary endpoint lying inside the candidate segment is
+            # conservatively rejected, because this is commonly where a chord
+            # leaves/re-enters a concave face.
+            if abs(o1) <= tol and _on_segment(ax, ay, bx, by, cx, cy):
+                if _same_xy(cx, cy, ax, ay) or _same_xy(cx, cy, bx, by):
+                    return False
+                return True
+
+            if abs(o2) <= tol and _on_segment(ax, ay, bx, by, dx, dy):
+                if _same_xy(dx, dy, ax, ay) or _same_xy(dx, dy, bx, by):
+                    return False
+                return True
+
+            return False
+
+        def _segment_inside_host_face(ax, ay, bx, by):
+            """
+            Returns True only if the segment from A to B stays inside the host face.
+
+            This combines:
+            1. sample-point containment;
+            2. face-boundary crossing rejection.
+
+            The sample tests catch outside chords in concave faces. The crossing
+            test catches segments that leave and re-enter the face.
+            """
+            if not trim:
+                return True
+
+            if not face_blockers:
+                return True
+
+            # Sample multiple points. The midpoint catches most concave outside
+            # chords; the quarter points catch common leave/re-enter cases.
+            q1x = ax + 0.25 * (bx - ax)
+            q1y = ay + 0.25 * (by - ay)
+            mx = ax + 0.50 * (bx - ax)
+            my = ay + 0.50 * (by - ay)
+            q3x = ax + 0.75 * (bx - ax)
+            q3y = ay + 0.75 * (by - ay)
+
+            if not _point_inside_host_face(q1x, q1y):
+                return False
+            if not _point_inside_host_face(mx, my):
+                return False
+            if not _point_inside_host_face(q3x, q3y):
+                return False
+
+            for blocker in face_blockers:
+                if _face_boundary_blocks_trim(ax, ay, bx, by, blocker):
+                    return False
+
+            return True
+
+        # ---------------------------------------------------------------------
+        # Angular interval helpers.
+        # A blocker can only block target rays whose angles fall inside the
+        # angular interval subtended by that blocker from the source.
+        # ---------------------------------------------------------------------
+
+        def _angular_intervals_from_source(px, py, blocker):
+            _, ax, ay, bx, by, *_ = blocker
+
+            # If source lies on blocker, keep it active for all angles. Exact
+            # segment checks will allow legitimate endpoint/boundary cases.
+            if _on_segment(ax, ay, bx, by, px, py):
+                return [(-pi, pi)]
+
+            a1 = math.atan2(ay - py, ax - px)
+            a2 = math.atan2(by - py, bx - px)
+
+            lo = a1 if a1 < a2 else a2
+            hi = a2 if a1 < a2 else a1
+
+            if hi - lo <= pi:
+                return [(max(-pi, lo - 1e-14), min(pi, hi + 1e-14))]
+
+            # Shorter angular span crosses the -pi/pi seam.
+            return [
+                (-pi, min(pi, lo + 1e-14)),
+                (max(-pi, hi - 1e-14), pi),
+            ]
+
+        def _intervals_overlap(a_lo, a_hi, b_lo, b_hi):
+            return not (a_hi < b_lo - 1e-14 or b_hi < a_lo - 1e-14)
+
+        # ---------------------------------------------------------------------
+        # Visibility from one source using recursive angular divide-and-conquer.
+        # ---------------------------------------------------------------------
+
+        max_distance2 = None
+        if maxDistance is not None:
             try:
-                if Vertex.Distance(a, b) <= tolerance:
-                    return False, None
-                e = Edge.ByStartVertexEndVertex(a, b, tolerance=tolerance)
-                if e is None:
-                    return False, None
+                max_distance2 = float(maxDistance) * float(maxDistance)
+            except Exception:
+                max_distance2 = None
+
+        leaf_size = max(4, int(leafSize or 24))
+
+        def _visible_against_interval_blockers(source_index, target_index, intervals):
+            ax = xs[source_index]
+            ay = ys[source_index]
+            bx = xs[target_index]
+            by = ys[target_index]
+
+            if _same_xy(ax, ay, bx, by):
+                return False
+
+            if max_distance2 is not None and _dist2_xy(ax, ay, bx, by) > max_distance2:
+                return False
+
+            # Critical trim check. This must run even when no angular blockers
+            # are active, otherwise outside-face chords can be accepted.
+            if not _segment_inside_host_face(ax, ay, bx, by):
+                return False
+
+            if not intervals:
+                return True
+
+            seen = set()
+
+            for _lo, _hi, blocker_id in intervals:
+                if blocker_id in seen:
+                    continue
+
+                seen.add(blocker_id)
+                blocker = blockers[blocker_id]
+
+                if _segments_block(ax, ay, bx, by, blocker):
+                    return False
+
+            return True
+
+        def _source_visibility(source_index, target_indices):
+            px = xs[source_index]
+            py = ys[source_index]
+
+            target_records = []
+
+            for j in target_indices:
+                if j == source_index:
+                    continue
+
+                d2 = _dist2_xy(px, py, xs[j], ys[j])
+                if d2 <= tol2:
+                    continue
+
+                if max_distance2 is not None and d2 > max_distance2:
+                    continue
+
+                target_records.append((d2, math.atan2(ys[j] - py, xs[j] - px), j))
+
+            if not target_records:
+                return []
+
+            if maxNeighbors is not None and approximateMaxNeighbors:
                 try:
-                    clipped = Topology.Intersect(e, face)
-                    if clipped is None:
-                        return False, None
+                    k = max(1, int(maxNeighbors))
+                    f = max(1, int(neighborCandidateFactor))
+                    limit = k * f
+                    if len(target_records) > limit:
+                        target_records.sort(key=lambda item: item[0])
+                        target_records = target_records[:limit]
                 except Exception:
                     pass
-                for obstacle in obstacles:
-                    try:
-                        inter = Topology.Intersect(e, obstacle)
-                        if inter is not None:
-                            return False, None
-                    except Exception:
-                        continue
-                return True, e
-            except Exception:
-                return False, None
 
-        for i in range(len(vertices)):
-            for j in range(i + 1, len(vertices)):
-                ok, rep = visible(vertices[i], vertices[j])
-                if ok:
-                    g.AddEdge(i, j, directed=not bidirectional, dictionary={"relationship": "visibility"}, representation=rep)
-                    if not bidirectional and g._directed:
-                        g.AddEdge(j, i, directed=True, dictionary={"relationship": "visibility"}, representation=rep)
-        return TGraph._OntologyAnnotateGraph(
-            g, graphClass="top:VisibilityGraph", vertexClass="top:Node", edgeClass="top:Relationship",
-            generatedBy="TGraph.VisibilityGraph", ontology=True, silent=silent)
+            # Divide-and-conquer works over angularly ordered targets.
+            target_records.sort(key=lambda item: item[1])
+
+            intervals = []
+
+            for blocker in blockers:
+                bid = blocker[0]
+                for lo, hi in _angular_intervals_from_source(px, py, blocker):
+                    intervals.append((lo, hi, bid))
+
+            visible = []
+
+            def _emit_all(lo_index, hi_index):
+                # If trim=True, even an empty active interval set cannot be blindly
+                # accepted, because face-containment has to be checked separately.
+                if trim:
+                    _exact_leaf(lo_index, hi_index, [])
+                    return
+
+                for k in range(lo_index, hi_index):
+                    d2, _ang, j = target_records[k]
+                    visible.append((d2, j))
+
+            def _exact_leaf(lo_index, hi_index, active_intervals):
+                for k in range(lo_index, hi_index):
+                    d2, _ang, j = target_records[k]
+                    if _visible_against_interval_blockers(source_index, j, active_intervals):
+                        visible.append((d2, j))
+
+            def _dc(lo_index, hi_index, active_intervals):
+                if lo_index >= hi_index:
+                    return
+
+                if not active_intervals:
+                    _emit_all(lo_index, hi_index)
+                    return
+
+                count = hi_index - lo_index
+                if count <= leaf_size or len(active_intervals) <= leaf_size:
+                    _exact_leaf(lo_index, hi_index, active_intervals)
+                    return
+
+                mid = (lo_index + hi_index) // 2
+
+                left_lo = target_records[lo_index][1]
+                left_hi = target_records[mid - 1][1]
+                right_lo = target_records[mid][1]
+                right_hi = target_records[hi_index - 1][1]
+
+                left_intervals = []
+                right_intervals = []
+
+                for interval in active_intervals:
+                    i_lo, i_hi, _bid = interval
+
+                    if _intervals_overlap(i_lo, i_hi, left_lo, left_hi):
+                        left_intervals.append(interval)
+
+                    if _intervals_overlap(i_lo, i_hi, right_lo, right_hi):
+                        right_intervals.append(interval)
+
+                _dc(lo_index, mid, left_intervals)
+                _dc(mid, hi_index, right_intervals)
+
+            _dc(0, len(target_records), intervals)
+
+            if maxNeighbors is not None:
+                try:
+                    k = max(0, int(maxNeighbors))
+                except Exception:
+                    k = 0
+
+                if k > 0 and len(visible) > k:
+                    visible.sort(key=lambda item: item[0])
+                    visible = visible[:k]
+
+            return visible
+
+        # ---------------------------------------------------------------------
+        # Create the TGraph.
+        # ---------------------------------------------------------------------
+
+        try:
+            g = TGraph(
+                directed=not bidirectional,
+                allowSelfLoops=False,
+                allowParallelEdges=False,
+                dictionary={
+                    "generated_by": "TGraph.VisibilityGraph",
+                    "visibility_engine": "divide_and_conquer_angular_sweep",
+                    "vertex_count": n,
+                    "blocker_segment_count": len(blockers),
+                    "max_distance": maxDistance,
+                    "max_neighbors": maxNeighbors,
+                    "include_boundary_vertices": includeBoundaryVertices,
+                    "allow_boundary_paths": allowBoundaryPaths,
+                    "trim": trim,
+                    "approximate_max_neighbors": approximateMaxNeighbors,
+                },
+            )
+        except Exception:
+            if not silent:
+                print("TGraph.VisibilityGraph - Error: Could not instantiate TGraph. Returning None.")
+            return None
+
+        for v in vertices:
+            try:
+                d = TGraph._TopologyDictionary(v, mantissa=6, tolerance=tolerance)
+            except Exception:
+                d = {}
+
+            if not isinstance(d, dict):
+                d = {}
+
+            d["role"] = "viewpoint"
+
+            try:
+                g.AddVertex(dictionary=d, representation=v)
+            except Exception:
+                pass
+
+        if n < 2:
+            try:
+                return TGraph._OntologyAnnotateGraph(
+                    g,
+                    graphClass="top:VisibilityGraph",
+                    vertexClass="top:Node",
+                    edgeClass="top:Relationship",
+                    generatedBy="TGraph.VisibilityGraph",
+                    ontology=True,
+                    silent=silent,
+                )
+            except Exception:
+                return g
+
+        added_pairs = set()
+
+        def _add_visibility_edge(i, j):
+            if i == j:
+                return False
+
+            pair = (i, j) if i < j else (j, i)
+            if pair in added_pairs:
+                return False
+
+            try:
+                rep = Edge.ByStartVertexEndVertex(vertices[i], vertices[j], tolerance=tolerance)
+            except Exception:
+                rep = None
+
+            if rep is None:
+                return False
+
+            try:
+                dx = xs[i] - xs[j]
+                dy = ys[i] - ys[j]
+                length = math.sqrt(dx*dx + dy*dy)
+
+                edge_dict = {
+                    "relationship": "visibility",
+                    "length": length,
+                }
+
+                g.AddEdge(
+                    i,
+                    j,
+                    directed=not bidirectional,
+                    dictionary=edge_dict,
+                    representation=rep,
+                )
+
+                # Preserve previous behaviour: if a directed graph is requested,
+                # insert both directions explicitly.
+                if (not bidirectional) and getattr(g, "_directed", True):
+                    g.AddEdge(
+                        j,
+                        i,
+                        directed=True,
+                        dictionary=edge_dict.copy(),
+                        representation=rep,
+                    )
+
+                added_pairs.add(pair)
+                return True
+
+            except Exception:
+                return False
+
+        # ---------------------------------------------------------------------
+        # Exact full visibility graph:
+        # only evaluate j > i.
+        #
+        # Sparse maxNeighbors graph:
+        # evaluate every source against all other vertices so neighbour selection
+        # is source-local. Duplicate undirected pairs are suppressed by added_pairs.
+        # ---------------------------------------------------------------------
+
+        if maxNeighbors is None:
+            for i in range(n - 1):
+                visible = _source_visibility(i, range(i + 1, n))
+                for _d2, j in visible:
+                    _add_visibility_edge(i, j)
+        else:
+            all_indices = list(range(n))
+            for i in range(n):
+                visible = _source_visibility(i, all_indices)
+                for _d2, j in visible:
+                    _add_visibility_edge(i, j)
+
+        try:
+            return TGraph._OntologyAnnotateGraph(
+                g,
+                graphClass="top:VisibilityGraph",
+                vertexClass="top:Node",
+                edgeClass="top:Relationship",
+                generatedBy="TGraph.VisibilityGraph",
+                ontology=True,
+                silent=silent,
+            )
+        except Exception:
+            return g
 
     @staticmethod
     def WarmUpAcceleration(graph: "TGraph", mode: str = "all", useNumba: bool = True) -> Dict[str, Any]:

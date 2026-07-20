@@ -15697,6 +15697,128 @@ class Topology():
             _ = Topology.SetDictionary(sinks[i], newDict)
         return {"sources": sources, "sinks": sinks}
 
+
+    @staticmethod
+    def TransferDictionariesByKey(topologies, dictionaries, key: str, silent: bool = False):
+        """
+        Transfers dictionaries to input topologies by matching a shared dictionary key.
+
+        This method reads the dictionary of each input topology and indexes the topology
+        by the value stored at the input key. It then reads each input dictionary and,
+        when the same key value is found, transfers that dictionary to the matching
+        topology.
+
+        Parameters
+        ----------
+        topologies : list
+            The target topologies that will receive dictionaries.
+        dictionaries : list
+            The source dictionaries. Each item can be either a Topologic dictionary or
+            a Python dictionary. Nested dictionaries are not extracted or handled.
+        key : str
+            The dictionary key whose value is used to match source dictionaries to
+            target topologies.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        list
+            The updated list of topologies. Topologies without a matching dictionary
+            are returned unchanged.
+
+        Examples
+        --------
+        updated_faces = Topology.TransferByKey(faces, face_dictionaries, "id")
+
+        updated_spaces = Topology.TransferByKey(spaces, room_dictionaries, "GlobalId")
+        """
+
+        from topologicpy.Dictionary import Dictionary
+
+        if topologies is None:
+            if not silent:
+                print("Topology.TransferByKey - Error: The input topologies parameter is None. Returning None.")
+            return None
+
+        if dictionaries is None:
+            if not silent:
+                print("Topology.TransferByKey - Error: The input dictionaries parameter is None. Returning None.")
+            return None
+
+        if not isinstance(key, str) or len(key.strip()) < 1:
+            if not silent:
+                print("Topology.TransferByKey - Error: The input key parameter is not a valid string. Returning None.")
+            return None
+
+        if not isinstance(topologies, (list, tuple)):
+            topologies = [topologies]
+        else:
+            topologies = list(topologies)
+
+        if not isinstance(dictionaries, (list, tuple)):
+            dictionaries = [dictionaries]
+        else:
+            dictionaries = list(dictionaries)
+
+        value_to_indices = {}
+
+        for i, topology in enumerate(topologies):
+            if topology is None:
+                continue
+
+            topology_dictionary = Topology.Dictionary(topology)
+            if topology_dictionary is None:
+                continue
+
+            value = Dictionary.ValueAtKey(topology_dictionary, key, None)
+
+            # Do not use `if value:` because valid values such as 0 or False
+            # should still be usable for matching.
+            if value is None:
+                continue
+
+            value_to_indices.setdefault(str(value), []).append(i)
+
+        if len(value_to_indices) < 1:
+            if not silent:
+                print("Topology.TransferByKey - Warning: No target topology contains the input key. Returning the original topologies.")
+            return topologies
+
+        transfer_count = 0
+
+        for dictionary in dictionaries:
+            if dictionary is None:
+                continue
+
+            source_dictionary = None
+
+            if isinstance(dictionary, dict):
+                source_dictionary = Dictionary.ByPythonDictionary(dictionary)
+            elif dictionary.__class__.__name__ == "Dictionary":
+                source_dictionary = dictionary
+
+            if source_dictionary is None:
+                continue
+
+            value = Dictionary.ValueAtKey(source_dictionary, key, None)
+            if value is None:
+                continue
+
+            indices = value_to_indices.get(str(value), None)
+            if indices is None:
+                continue
+
+            for index in indices:
+                updated_topology = Topology.SetDictionary(topologies[index], source_dictionary)
+                if updated_topology is not None:
+                    topologies[index] = updated_topology
+                    transfer_count += 1
+
+        if transfer_count < 1 and not silent:
+            print("Topology.TransferByKey - Warning: No dictionaries were transferred. Returning the original topologies.")
+
+        return topologies
     
     @staticmethod
     def TransferDictionariesBySelectors(topology,

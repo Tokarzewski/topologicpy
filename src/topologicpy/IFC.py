@@ -338,6 +338,120 @@ class IFCFastTopology:
     # Public API
     # ------------------------------------------------------------------
 
+
+    @staticmethod
+    def OpeningElementsByFillingType(
+        entities: Dict[int, IFCFastEntity],
+        fillingTypes: list = None,
+        silent: bool = False,
+    ) -> list:
+        """
+        Returns IfcOpeningElement entities that are filled by the requested IFC element types.
+
+        Typical use:
+            OpeningElementsByFillingType(entities, ["IfcDoor"])
+            OpeningElementsByFillingType(entities, ["IfcWindow"])
+        """
+
+        if fillingTypes is None:
+            fillingTypes = ["IfcDoor"]
+
+        fillingTypes = {t.lower() for t in fillingTypes}
+        openings = []
+        seen = set()
+
+        def _get_attr(entity, name, default=None):
+            if entity is None:
+                return default
+
+            if hasattr(entity, name):
+                return getattr(entity, name)
+
+            attrs = getattr(entity, "attributes", None)
+            if isinstance(attrs, dict):
+                return attrs.get(name, default)
+
+            data = getattr(entity, "data", None)
+            if isinstance(data, dict):
+                return data.get(name, default)
+
+            if isinstance(entity, dict):
+                return entity.get(name, default)
+
+            return default
+
+        def _ref_id(value):
+            if value is None:
+                return None
+
+            if isinstance(value, int):
+                return value
+
+            if isinstance(value, str):
+                value = value.strip()
+                if value.startswith("#"):
+                    value = value[1:]
+                if value.isdigit():
+                    return int(value)
+                return None
+
+            entity_id = getattr(value, "id", None)
+            if isinstance(entity_id, int):
+                return entity_id
+
+            if callable(entity_id):
+                try:
+                    return entity_id()
+                except Exception:
+                    return None
+
+            return None
+
+        for rel in entities.values():
+            rel_type = getattr(rel, "type", None)
+            if not isinstance(rel_type, str):
+                continue
+
+            if rel_type.lower() != "ifcrelfillselement":
+                continue
+
+            opening_ref = _get_attr(rel, "RelatingOpeningElement")
+            filling_ref = _get_attr(rel, "RelatedBuildingElement")
+
+            opening_id = _ref_id(opening_ref)
+            filling_id = _ref_id(filling_ref)
+
+            if opening_id is None or filling_id is None:
+                continue
+
+            opening = entities.get(opening_id)
+            filling = entities.get(filling_id)
+
+            if opening is None or filling is None:
+                continue
+
+            opening_type = getattr(opening, "type", "").lower()
+            filling_type = getattr(filling, "type", "").lower()
+
+            if opening_type != "ifcopeningelement":
+                continue
+
+            if filling_type not in fillingTypes:
+                continue
+
+            if opening_id not in seen:
+                openings.append(opening)
+                seen.add(opening_id)
+
+        if not openings and not silent:
+            print(
+                "IFCFastTopology.OpeningElementsByFillingType - Warning: "
+                "No matching IfcOpeningElement entities were found. "
+                "The IFC file may not contain IfcRelFillsElement relationships."
+            )
+
+        return openings
+    
     @staticmethod
     def TopologiesByPath(path: str,
                          includeTypes: list = [],
@@ -4585,1296 +4699,2944 @@ class IFC:
             "summary": summary,
         }
 
+
+
+
+
+
     @staticmethod
-    def AccessGraph(file,
-                    importMode: str = "topology",
-                    useInternalVertex: bool = False,
-                    connectingElementTypes: list = None,
-                    useFillingElements: bool = True,
-                    includeIsolatedSpaces: bool = True,
-                    viaConnectingElements: bool = False,
-                    dictionaryMode: str = "basic",
-                    bidirectional: bool = True,
-                    ontology: bool = True,
-                    asTGraph: bool = False,
-                    tolerance: float = 0.0001,
-                    silent: bool = False):
+    def AccessGraph(
+        path: str,
+        viaConnectingElements: bool = False,
+        semanticConnections: bool = True,
+        spatialConnections: bool = False,
+        dictionaryMode: str = "Full",
+        scale: float = 1.0,
+        circleSides: int = 24,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ):
         """
-        Creates a TopologicPy Graph or TGraph representing space adjacency from an IFC file.
+        Creates an access TGraph from an IFC file.
 
-        The returned graph contains one vertex per IfcSpace. Edges are created
-        between spaces that share a boundary-related connector element.
+        Only IfcSpace entities become principal graph vertices.
 
-        IMPORTANT
-        ---------
-        Door/opening/window-like connector elements are local connectors and can
-        safely create adjacency by grouping the spaces that reference the same
-        connector. Wall-like connector elements are not local connectors. A long
-        wall may be referenced by several space boundaries, so this method does
-        not create all pairwise adjacencies among spaces that reference the same
-        wall. For IfcWall, IfcWallStandardCase, and IfcWallElementedCase, adjacency
-        is created only from IfcRelSpaceBoundary2ndLevel.CorrespondingBoundary.
+        The connecting elements are:
+
+        - unfilled IfcOpeningElement entities;
+        - IfcOpeningElement entities filled by IfcDoor or IfcDoorStandardCase;
+        - IfcStairFlight entities;
+        - IfcStair entities that are not decomposed into IfcStairFlight entities;
+        - IfcRampFlight entities;
+        - IfcRamp entities that are not decomposed into IfcRampFlight entities; and
+        - IfcTransportElement entities identified as elevators or lifts.
+
+        Door geometry is never imported. Door access uses the geometry of its
+        IfcOpeningElement. Vertical-circulation elements use their own geometry.
+
+        When semanticConnections is True, IfcRelSpaceBoundary relationships are
+        used first. For decomposed stairs and ramps, boundaries associated with the
+        parent assembly are also considered.
+
+        When spatialConnections is True, connecting elements with fewer than two
+        semantic space connections are tested geometrically against the IfcSpace
+        cells using only the "overlaps" and "touches" spatial relationships.
+        Completely isolated spaces are then tested directly against the other
+        spaces using the same relationships.
 
         Parameters
         ----------
-        file : dict, str, or ifcopenshell.file-like object
-            The input IFC source.
-        importMode : str , optional
-            Controls graph vertex placement. If set to "topology", vertices are
-            placed using a deterministic circular graph layout. If set to
-            "geometry", vertices are placed at the centre of their parent IFC
-            product representation when such representation data can be evaluated.
-            Objects without usable geometry fall back to deterministic placement.
-            Options are "topology" and "geometry". Default is "topology".
-        useInternalVertex : bool , optional
-            In geometry mode, if set to True, uses an internal vertex to represent
-            the subtopology. Otherwise, uses its centroid. Default is False.
-        connectingElementTypes : list , optional
-            IFC element types that are allowed to act as adjacency connectors.
-            If set to None, the default is ["IFCDOOR", "IFCDOORSTANDARDCASE",
-            "IFCOPENINGELEMENT"]. Wall types are supported, but they are handled
-            through IfcRelSpaceBoundary2ndLevel.CorrespondingBoundary rather than
-            simple shared-wall grouping. Default is None.
-        useFillingElements : bool , optional
-            If set to True, IfcOpeningElement references are resolved through
-            IfcRelFillsElement to their filling elements, usually doors/windows.
-            The opening is still retained and preferred as the via-vertex entity
-            when viaConnectingElements is True. Default is True.
-        includeIsolatedSpaces : bool , optional
-            If set to True, all IfcSpace entities are included as vertices even
-            when they have no detected adjacency. If False, only spaces involved
-            in at least one adjacency edge are included. Default is True.
+        path : str
+            The path to the input IFC file.
         viaConnectingElements : bool , optional
-            If set to False, adjacency edges are created directly between spaces.
-            If set to True, each adjacency is routed through a vertex representing
-            the connecting element, preferably the IfcOpeningElement when present,
-            otherwise the resolved connector element. For walls, a separate
-            connecting vertex is created per confirmed corresponding-boundary
-            pair to avoid turning long walls into artificial graph hubs. Default
-            is False.
-        dictionaryMode : str , optional
-            The dictionary mode to use for entity dictionaries. Currently supports
-            the same basic entity dictionary behaviour as the IFC parser.
-            Default is "basic".
-        bidirectional : bool , optional
-            If set to True, edge dictionaries record the edge as bidirectional.
-            Default is True.
-        asTGraph : bool , optional
-            If set to True, the method returns a topologicpy.TGraph. If set to
-            False, the method returns a legacy topologic_core.Graph. Default is False.
-        tolerance : float , optional
-            The desired tolerance. Default is 0.0001.
-        silent : bool , optional
-            If set to True, error and warning messages are suppressed.
+            If set to True, connecting elements become intermediate graph vertices.
+            Otherwise, they become direct graph edges between adjacent spaces.
             Default is False.
+        semanticConnections : bool , optional
+            If set to True, connections are first derived from IFC semantic
+            relationships. Default is True.
+        spatialConnections : bool , optional
+            If set to True, unresolved connecting elements and isolated spaces are
+            tested using spatial relationships. Default is False.
+        dictionaryMode : str , optional
+            The dictionary import mode. This can be "None", "Basic", or "Full".
+            It is case-insensitive. Default is "Full".
+        scale : float , optional
+            The scale factor applied to imported coordinates. Default is 1.0.
+        circleSides : int , optional
+            The number of sides used to approximate circular geometry. Default is
+            24.
+        tolerance : float , optional
+            The desired geometric tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is
+            False.
 
         Returns
         -------
-        topologic_core.Graph or topologicpy.TGraph
-            A TopologicPy graph whose vertices are IfcSpace entities and whose
-            edges represent inferred space adjacency through shared or
-            corresponding boundary elements. If asTGraph is True, a TGraph is
-            returned. Returns None if the IFC file cannot be parsed.
+        topologicpy.TGraph
+            The resulting access graph.
         """
-
-        import math
+        import os
         from itertools import combinations
 
-        from topologicpy.Vertex import Vertex
-        from topologicpy.Edge import Edge
-        from topologicpy.Topology import Topology
         from topologicpy.Dictionary import Dictionary
+        from topologicpy.TGraph import TGraph
+        from topologicpy.Topology import Topology
+        from topologicpy.Vertex import Vertex
 
-        try:
-            from topologicpy.TGraph import TGraph
-        except Exception:
-            TGraph = None
+        # ------------------------------------------------------------------
+        # Validate inputs
+        # ------------------------------------------------------------------
 
-        try:
-            from topologicpy.Graph import Graph
-        except Exception:
-            Graph = None
-
-        importMode = str(importMode).strip().lower() if importMode is not None else "topology"
-        if importMode not in ["topology", "geometry"]:
+        if not isinstance(path, str) or not os.path.isfile(path):
             if not silent:
-                print("IFC.AccessGraph - Error: The importMode parameter must be either 'topology' or 'geometry'. Returning None.")
+                print(
+                    "IFC.AccessGraph - Error: The input path is invalid. "
+                    "Returning None."
+                )
             return None
 
-        source_file = file if isinstance(file, str) else None
-
-        wall_connector_types = {
-            "IFCWALL",
-            "IFCWALLSTANDARDCASE",
-            "IFCWALLELEMENTEDCASE",
-        }
-
-        boundary_types = {
-            "IFCRELSPACEBOUNDARY",
-            "IFCRELSPACEBOUNDARY1STLEVEL",
-            "IFCRELSPACEBOUNDARY2NDLEVEL",
-        }
-
-        def _normalise_type(value):
-            if value is None:
-                return None
-            value = str(value).strip().upper()
-            return value if value else None
-
-        def _normalise_type_set(values):
-            if not values:
-                return set()
-            return set([_normalise_type(v) for v in values if _normalise_type(v)])
-
-        def _display_type(ifc_type):
-            return IFCFastTopology._ifc_display_class(ifc_type)
-
-        def _root_attr(entity, index):
-            try:
-                return IFCFastTopology._root_attr(entity, index)
-            except Exception:
-                return None
-
-        def _refs(value):
-            try:
-                return IFCFastTopology._refs_in_value(value)
-            except Exception:
-                return []
-
-        def _entity_from_ref(ref):
-            try:
-                return IFCFastTopology._entity_from_ref(ref, entities)
-            except Exception:
-                return None
-
-        def _entity_key(entity):
-            if entity is None:
-                return None
-            gid = _root_attr(entity, 0)
-            if gid not in [None, "", "*"]:
-                return str(gid)
-            return f"#{entity.id}"
-
-        def _entity_name(entity):
-            try:
-                name = _root_attr(entity, 2)
-                return name if name not in [None, "", "*"] else None
-            except Exception:
-                return None
-
-        def _is_wall_like(entity):
-            return entity is not None and _normalise_type(entity.type) in wall_connector_types
-
-        def _is_allowed(raw_element, connector, opening):
-            if not allowed_connector_types:
-                return True
-            for entity in [raw_element, connector, opening]:
-                if entity is not None and _normalise_type(entity.type) in allowed_connector_types:
-                    return True
-            return False
-
-        def _safe_dictionary_by_keys_values(keys, values):
-            clean_keys = []
-            clean_values = []
-            for k, v in zip(keys, values):
-                if k is None:
-                    continue
-                if v is None:
-                    v = ""
-                if isinstance(v, (list, tuple, set)):
-                    v = ", ".join([str(x) for x in v])
-                clean_keys.append(k)
-                clean_values.append(v)
-            try:
-                return Dictionary.ByKeysValues(clean_keys, clean_values)
-            except Exception:
-                d = None
-                for k, v in zip(clean_keys, clean_values):
-                    try:
-                        if d is None:
-                            d = Dictionary.ByKeyValue(k, v)
-                        else:
-                            d = Dictionary.SetValueAtKey(d, k, v)
-                    except Exception:
-                        pass
-                return d
-
-        def _set_values(dictionary, keys, values):
-            try:
-                return Dictionary.SetValuesAtKeys(dictionary, keys, values)
-            except Exception:
-                d = dictionary
-                for k, v in zip(keys, values):
-                    try:
-                        d = Dictionary.SetValueAtKey(d, k, v)
-                    except Exception:
-                        pass
-                return d
-
-        def _entity_dictionary(entity, index, role="ifc_entity"):
-            if entity is None:
-                return _safe_dictionary_by_keys_values(
-                    ["index", "label", "type", "vertex_role"],
-                    [index, f"Entity_{index}", role, role],
+        if not isinstance(semanticConnections, bool):
+            if not silent:
+                print(
+                    "IFC.AccessGraph - Error: semanticConnections must be a "
+                    "boolean. Returning None."
                 )
+            return None
 
-            try:
-                d = IFCFastTopology._entity_dictionary(
-                    entity,
-                    dictionaryMode=dictionaryMode,
-                    metadataCache=metadata_cache,
-                    ontology=ontology,
-                    source=source_file,
-                    generatedBy="IFC.AccessGraph",
+        if not isinstance(spatialConnections, bool):
+            if not silent:
+                print(
+                    "IFC.AccessGraph - Error: spatialConnections must be a "
+                    "boolean. Returning None."
                 )
-            except Exception:
-                d = None
+            return None
 
-            if d is None:
-                gid = _root_attr(entity, 0)
-                name = _entity_name(entity)
-                key = _entity_key(entity)
-                label = name if name not in [None, ""] else (key or f"Entity_{index}")
-                d = _safe_dictionary_by_keys_values(
-                    [
-                        "index",
-                        "IFC_id",
-                        "IFC_key",
-                        "IFC_type",
-                        "IFC_global_id",
-                        "IFC_name",
-                        "label",
-                        "type",
-                        "vertex_role",
-                    ],
-                    [
-                        index,
-                        entity.id,
-                        f"#{entity.id}",
-                        _display_type(entity.type),
-                        gid if gid not in [None, "", "*"] else "",
-                        name if name not in [None, "", "*"] else "",
-                        label,
-                        role,
-                        role,
-                    ],
+        if not isinstance(dictionaryMode, str):
+            if not silent:
+                print(
+                    "IFC.AccessGraph - Error: dictionaryMode must be a string. "
+                    "Returning None."
                 )
-            else:
-                d = _set_values(
-                    d,
-                    ["index", "vertex_role"],
-                    [index, role],
+            return None
+
+        dictionary_mode = dictionaryMode.strip().lower()
+
+        if dictionary_mode not in {"none", "basic", "full"}:
+            if not silent:
+                print(
+                    "IFC.AccessGraph - Error: dictionaryMode must be one of "
+                    "'None', 'Basic', or 'Full'. Returning None."
                 )
+            return None
 
-            return d
+        path = os.path.abspath(path)
+        entities = IFCFastTopology.Parse(path, silent=True)
 
-        def _space_dictionary(space_entity, index):
-            return _entity_dictionary(space_entity, index, role="space")
+        if not isinstance(entities, dict) or not entities:
+            if not silent:
+                print(
+                    "IFC.AccessGraph - Error: Could not parse the IFC file. "
+                    "Returning None."
+                )
+            return None
 
-        def _connecting_element_dictionary(entity,
-                                           index,
-                                           connector=None,
-                                           opening=None,
-                                           boundary_ids=None,
-                                           source=""):
-            d = _entity_dictionary(entity, index, role="connecting_element")
+        metadata_cache = {}
 
-            connector_gid = _root_attr(connector, 0) if connector is not None else None
-            connector_name = _entity_name(connector) if connector is not None else None
-            opening_gid = _root_attr(opening, 0) if opening is not None else None
-            opening_name = _entity_name(opening) if opening is not None else None
-
-            d = _set_values(
-                d,
-                [
-                    "connector_source",
-                    "connector_id",
-                    "connector_key",
-                    "connector_global_id",
-                    "connector_type",
-                    "connector_name",
-                    "opening_id",
-                    "opening_key",
-                    "opening_global_id",
-                    "opening_type",
-                    "opening_name",
-                    "space_boundary_ids",
-                ],
-                [
-                    source,
-                    connector.id if connector is not None else "",
-                    _entity_key(connector) or "",
-                    connector_gid if connector_gid not in [None, "", "*"] else "",
-                    _display_type(connector.type) if connector is not None else "",
-                    connector_name if connector_name not in [None, "", "*"] else "",
-                    opening.id if opening is not None else "",
-                    _entity_key(opening) or "",
-                    opening_gid if opening_gid not in [None, "", "*"] else "",
-                    _display_type(opening.type) if opening is not None else "",
-                    opening_name if opening_name not in [None, "", "*"] else "",
-                    sorted(list(boundary_ids or [])),
-                ],
-            )
-            return d
-
-        def _edge_dictionary(space_a, space_b, connector, boundary_ids, index_a, index_b, source=""):
-            connector_key = _entity_key(connector)
-            connector_gid = _root_attr(connector, 0)
-            connector_name = _entity_name(connector)
-
-            keys = [
-                "src",
-                "dst",
-                "IFC_type",
-                "relationship_type",
-                "predicate",
-                "edge_role",
-                "connector_source",
-                "connector_id",
-                "connector_key",
-                "connector_global_id",
-                "connector_type",
-                "connector_name",
-                "space_a",
-                "space_b",
-                "space_a_name",
-                "space_b_name",
-                "space_a_global_id",
-                "space_b_global_id",
-                "space_boundary_ids",
-                "bidirectional",
-                "weight",
-            ]
-            values = [
-                index_a,
-                index_b,
-                "IfcRelSpaceAdjacency",
-                "IfcRelSpaceAdjacency",
-                "adjacent_to",
-                "space_to_space",
-                source,
-                connector.id if connector is not None else "",
-                connector_key or "",
-                connector_gid if connector_gid not in [None, "", "*"] else "",
-                _display_type(connector.type) if connector is not None else "",
-                connector_name if connector_name not in [None, "", "*"] else "",
-                _entity_key(space_a) or "",
-                _entity_key(space_b) or "",
-                _entity_name(space_a) or "",
-                _entity_name(space_b) or "",
-                _root_attr(space_a, 0) or "",
-                _root_attr(space_b, 0) or "",
-                sorted(list(boundary_ids or [])),
-                bool(bidirectional),
-                1.0,
-            ]
-            if ontology:
-                keys.extend(["ontology_class", "category", "generated_by", "ontology_predicate", "inverse_predicate"])
-                values.extend(["top:Relationship", "relationship", "IFC.AccessGraph", "top:adjacentTo", "top:adjacentTo"])
-            return _safe_dictionary_by_keys_values(keys, values)
-
-        def _routed_edge_dictionary(src_index,
-                                    dst_index,
-                                    space_entity,
-                                    connecting_entity,
-                                    connector,
-                                    boundary_ids,
-                                    source=""):
-            connector_gid = _root_attr(connector, 0) if connector is not None else None
-            connecting_gid = _root_attr(connecting_entity, 0) if connecting_entity is not None else None
-
-            keys = [
-                "src",
-                "dst",
-                "IFC_type",
-                "relationship_type",
-                "predicate",
-                "edge_role",
-                "connector_source",
-                "space_id",
-                "space_key",
-                "space_global_id",
-                "space_name",
-                "connecting_element_id",
-                "connecting_element_key",
-                "connecting_element_global_id",
-                "connecting_element_type",
-                "connector_id",
-                "connector_key",
-                "connector_global_id",
-                "connector_type",
-                "space_boundary_ids",
-                "bidirectional",
-                "weight",
-            ]
-            values = [
-                src_index,
-                dst_index,
-                "IfcRelSpaceBoundaryAdjacency",
-                "IfcRelSpaceBoundaryAdjacency",
-                "connects_to",
-                "space_to_connecting_element",
-                source,
-                space_entity.id if space_entity is not None else "",
-                _entity_key(space_entity) or "",
-                _root_attr(space_entity, 0) or "",
-                _entity_name(space_entity) or "",
-                connecting_entity.id if connecting_entity is not None else "",
-                _entity_key(connecting_entity) or "",
-                connecting_gid if connecting_gid not in [None, "", "*"] else "",
-                _display_type(connecting_entity.type) if connecting_entity is not None else "",
-                connector.id if connector is not None else "",
-                _entity_key(connector) or "",
-                connector_gid if connector_gid not in [None, "", "*"] else "",
-                _display_type(connector.type) if connector is not None else "",
-                sorted(list(boundary_ids or [])),
-                bool(bidirectional),
-                1.0,
-            ]
-            if ontology:
-                keys.extend(["ontology_class", "category", "generated_by", "ontology_predicate", "inverse_predicate"])
-                values.extend(["top:Relationship", "relationship", "IFC.AccessGraph", "top:connectsTo", "top:isConnectedTo"])
-            return _safe_dictionary_by_keys_values(keys, values)
-
-        def _bbox_centre_by_fast_mesh(entity):
-            if entity is None:
-                return None
-
-            try:
-                bbox = IFCFastTopology.BoundingBoxDataByProduct(entity, entities)
-                if bbox is not None and bbox.get("center") is not None:
-                    c = bbox.get("center")
-                    return (float(c[0]), float(c[1]), float(c[2]))
-            except Exception:
-                pass
-
-            try:
-                mesh = IFCFastTopology.MeshDataByProduct(entity, entities)
-            except Exception:
-                mesh = None
-
-            if mesh is None:
-                return None
-
-            vertices = mesh.get("vertices", None)
-            if not vertices:
-                return None
-
-            xs = []
-            ys = []
-            zs = []
-            for v in vertices:
-                if v is None or len(v) < 3:
-                    continue
-                try:
-                    xs.append(float(v[0]))
-                    ys.append(float(v[1]))
-                    zs.append(float(v[2]))
-                except Exception:
-                    pass
-
-            if not xs:
-                return None
-
-            return (
-                0.5 * (min(xs) + max(xs)),
-                0.5 * (min(ys) + max(ys)),
-                0.5 * (min(zs) + max(zs)),
+        if dictionary_mode == "full":
+            metadata_cache = IFCFastTopology._entity_metadata_cache(
+                entities,
+                dictionaryMode="full",
             )
 
-        def _make_vertex(x, y, z, dictionary):
-            try:
-                vertex = Vertex.ByCoordinates(float(x), float(y), float(z))
-            except Exception:
+        # ------------------------------------------------------------------
+        # Minimal helpers
+        # ------------------------------------------------------------------
+
+        def first_entity(value):
+            references = IFCFastTopology._refs_in_value(value)
+            if not references:
+                return None
+            return IFCFastTopology._entity_from_ref(
+                references[0],
+                entities,
+            )
+
+        def topology_by_entity(entity):
+            mesh = IFCFastTopology.MeshDataByProduct(
+                entity,
+                entities,
+                circleSides=circleSides,
+                scale=scale,
+            )
+
+            if not mesh or not mesh.get("vertices"):
                 return None
 
+            return Topology.ByGeometry(
+                vertices=mesh.get("vertices") or [],
+                edges=mesh.get("edges") or [],
+                faces=mesh.get("faces") or [],
+                tolerance=tolerance,
+                silent=True,
+            )
+
+        def entity_dictionary(entity):
+            if dictionary_mode == "none":
+                return {}
+
+            dictionary = IFCFastTopology._entity_dictionary(
+                entity,
+                dictionaryMode=dictionary_mode,
+                metadataCache=metadata_cache,
+                ontology=False,
+                source=path,
+                generatedBy="IFC.AccessGraph",
+            )
+
+            if dictionary is None:
+                return {}
+
             try:
-                vertex = Topology.SetDictionary(vertex, dictionary, silent=True)
-            except TypeError:
-                try:
-                    vertex = Topology.SetDictionary(vertex, dictionary)
-                except Exception:
-                    pass
+                result = Dictionary.PythonDictionary(dictionary)
+                return result if isinstance(result, dict) else {}
             except Exception:
-                pass
+                return {}
 
-            return vertex
+        def spans_two_levels(space_ids):
+            elevations = []
 
-        def _make_edge(vertex_a, vertex_b, dictionary):
-            try:
-                edge = Edge.ByVertices([vertex_a, vertex_b], tolerance=tolerance, silent=True)
-            except TypeError:
-                try:
-                    edge = Edge.ByVertices(vertex_a, vertex_b)
-                except Exception:
-                    edge = None
-            except Exception:
-                edge = None
+            for space_id in space_ids:
+                elevation = space_data[space_id]["elevation"]
 
-            if edge is None:
-                return None
+                if not any(
+                    abs(elevation - existing) <= tolerance
+                    for existing in elevations
+                ):
+                    elevations.append(elevation)
 
-            try:
-                edge = Topology.SetDictionary(edge, dictionary, silent=True)
-            except TypeError:
-                try:
-                    edge = Topology.SetDictionary(edge, dictionary)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+            return len(elevations) >= 2
 
-            return edge
+        # ------------------------------------------------------------------
+        # Collect spaces
+        # ------------------------------------------------------------------
 
-        def _add_pair(pair_to_data,
-                      space_a,
-                      space_b,
-                      connector,
-                      connecting_entity,
-                      opening,
-                      boundary_ids,
-                      source):
-            key_a = _entity_key(space_a)
-            key_b = _entity_key(space_b)
+        spaces = [
+            entity
+            for entity in entities.values()
+            if entity.type == "IFCSPACE"
+        ]
 
-            if key_a is None or key_b is None or key_a == key_b:
-                return
+        # ------------------------------------------------------------------
+        # Read decomposition relationships
+        # ------------------------------------------------------------------
 
-            pair_key = tuple(sorted([key_a, key_b]))
+        parent_by_child = {}
+        child_types_by_parent = {}
 
-            if pair_key not in pair_to_data:
-                pair_to_data[pair_key] = {
-                    "space_a": space_a,
-                    "space_b": space_b,
-                    "connectors": [],
-                    "connecting_entities": [],
-                    "openings": [],
-                    "boundary_ids": set(),
-                    "sources": set(),
-                }
+        for relationship in entities.values():
+            if relationship.type not in {
+                "IFCRELAGGREGATES",
+                "IFCRELNESTS",
+            }:
+                continue
 
-            if connector is not None:
-                pair_to_data[pair_key]["connectors"].append(connector)
-            if connecting_entity is not None:
-                pair_to_data[pair_key]["connecting_entities"].append(connecting_entity)
-            if opening is not None:
-                pair_to_data[pair_key]["openings"].append(opening)
-            pair_to_data[pair_key]["boundary_ids"].update(set(boundary_ids or []))
-            pair_to_data[pair_key]["sources"].add(source)
-        
-        def _vertex_xyz(vertex):
-            try:
-                return [
-                    float(Vertex.X(vertex)),
-                    float(Vertex.Y(vertex)),
-                    float(Vertex.Z(vertex)),
-                ]
-            except Exception:
-                return None
+            if len(relationship.args) < 6:
+                continue
 
-        def _topology_by_fast_mesh(entity):
-            try:
-                from topologicpy.Topology import Topology
+            parent = first_entity(relationship.args[4])
 
-                mesh = IFCFastTopology.MeshDataByProduct(
-                    entity,
+            if parent is None:
+                continue
+
+            for reference in IFCFastTopology._refs_in_value(
+                relationship.args[5]
+            ):
+                child = IFCFastTopology._entity_from_ref(
+                    reference,
                     entities,
-                    circleSides=24,
-                    scale=1.0,
                 )
 
-                if mesh is None or not mesh.get("vertices"):
-                    return None
+                if child is None:
+                    continue
 
-                try:
-                    topology = Topology.ByGeometry(
-                        vertices=mesh.get("vertices") or [],
-                        edges=mesh.get("edges") or [],
-                        faces=mesh.get("faces") or [],
+                parent_by_child[child.id] = parent.id
+                child_types_by_parent.setdefault(
+                    parent.id,
+                    set(),
+                ).add(child.type)
+
+        # ------------------------------------------------------------------
+        # Map openings to filling elements
+        # ------------------------------------------------------------------
+
+        filling_by_opening = {}
+
+        for relationship in entities.values():
+            if relationship.type != "IFCRELFILLSELEMENT":
+                continue
+
+            if len(relationship.args) < 6:
+                continue
+
+            opening = first_entity(relationship.args[4])
+            filling = first_entity(relationship.args[5])
+
+            if opening is None or filling is None:
+                continue
+
+            if opening.type != "IFCOPENINGELEMENT":
+                continue
+
+            filling_by_opening[opening.id] = filling
+
+        # ------------------------------------------------------------------
+        # Build connecting-element records
+        # ------------------------------------------------------------------
+
+        connecting_elements = []
+
+        for entity in entities.values():
+            if entity.type != "IFCOPENINGELEMENT":
+                continue
+
+            filling = filling_by_opening.get(entity.id)
+
+            if filling is None:
+                connecting_elements.append({
+                    "entity": entity,
+                    "access_type": "unfilled_opening",
+                    "vertical": False,
+                    "maximum_spaces": 2,
+                    "filling": None,
+                })
+            elif filling.type in {
+                "IFCDOOR",
+                "IFCDOORSTANDARDCASE",
+            }:
+                connecting_elements.append({
+                    "entity": entity,
+                    "access_type": "door",
+                    "vertical": False,
+                    "maximum_spaces": 2,
+                    "filling": filling,
+                })
+
+        for entity in entities.values():
+            if entity.type == "IFCSTAIRFLIGHT":
+                connecting_elements.append({
+                    "entity": entity,
+                    "access_type": "stair_flight",
+                    "vertical": True,
+                    "maximum_spaces": 2,
+                    "filling": None,
+                })
+
+            elif (
+                entity.type == "IFCSTAIR"
+                and "IFCSTAIRFLIGHT"
+                not in child_types_by_parent.get(entity.id, set())
+            ):
+                connecting_elements.append({
+                    "entity": entity,
+                    "access_type": "stair",
+                    "vertical": True,
+                    "maximum_spaces": 2,
+                    "filling": None,
+                })
+
+            elif entity.type == "IFCRAMPFLIGHT":
+                connecting_elements.append({
+                    "entity": entity,
+                    "access_type": "ramp_flight",
+                    "vertical": True,
+                    "maximum_spaces": 2,
+                    "filling": None,
+                })
+
+            elif (
+                entity.type == "IFCRAMP"
+                and "IFCRAMPFLIGHT"
+                not in child_types_by_parent.get(entity.id, set())
+            ):
+                connecting_elements.append({
+                    "entity": entity,
+                    "access_type": "ramp",
+                    "vertical": True,
+                    "maximum_spaces": 2,
+                    "filling": None,
+                })
+
+            elif entity.type == "IFCTRANSPORTELEMENT":
+                predefined_type = (
+                    entity.args[8]
+                    if len(entity.args) > 8
+                    else None
+                )
+                name = IFCFastTopology._root_attr(entity, 2)
+                object_type = (
+                    entity.args[4]
+                    if len(entity.args) > 4
+                    else None
+                )
+                elevator_text = (
+                    f"{predefined_type} {name} {object_type}"
+                ).upper()
+
+                if (
+                    "ELEVATOR" in elevator_text
+                    or "LIFT" in elevator_text
+                ):
+                    connecting_elements.append({
+                        "entity": entity,
+                        "access_type": "elevator",
+                        "vertical": True,
+                        "maximum_spaces": None,
+                        "filling": None,
+                    })
+
+        # ------------------------------------------------------------------
+        # Read semantic space boundaries
+        # ------------------------------------------------------------------
+
+        spaces_by_element = {}
+
+        if semanticConnections:
+            boundary_types = {
+                "IFCRELSPACEBOUNDARY",
+                "IFCRELSPACEBOUNDARY1STLEVEL",
+                "IFCRELSPACEBOUNDARY2NDLEVEL",
+            }
+
+            for relationship in entities.values():
+                if relationship.type not in boundary_types:
+                    continue
+
+                if len(relationship.args) < 6:
+                    continue
+
+                space = first_entity(relationship.args[4])
+                element = first_entity(relationship.args[5])
+
+                if space is None or element is None:
+                    continue
+
+                if space.type != "IFCSPACE":
+                    continue
+
+                spaces_by_element.setdefault(
+                    element.id,
+                    set(),
+                ).add(space.id)
+
+        # ------------------------------------------------------------------
+        # Create graph
+        # ------------------------------------------------------------------
+
+        graph = TGraph(
+            directed=False,
+            allowSelfLoops=False,
+            allowParallelEdges=True,
+            dictionary={
+                "type": "AccessGraph",
+                "source": path,
+                "viaConnectingElements": viaConnectingElements,
+                "semanticConnections": semanticConnections,
+                "spatialConnections": spatialConnections,
+                "dictionaryMode": dictionary_mode.title(),
+            },
+        )
+
+        # ------------------------------------------------------------------
+        # Convert spaces and create principal vertices
+        # ------------------------------------------------------------------
+
+        space_data = {}
+
+        for space in spaces:
+            topology = topology_by_entity(space)
+
+            if not Topology.IsInstance(topology, "Topology"):
+                if not silent:
+                    print(
+                        "IFC.AccessGraph - Warning: Could not import "
+                        f"geometry for IfcSpace #{space.id}. Skipping."
+                    )
+                continue
+
+            cell = Topology.SelfMerge(
+                topology,
+                tolerance=tolerance,
+                silent=True,
+            )
+
+            if not Topology.IsInstance(cell, "Cell"):
+                if not silent:
+                    print(
+                        "IFC.AccessGraph - Warning: SelfMerge could not "
+                        f"produce a Cell for IfcSpace #{space.id}."
+                    )
+
+            vertex = Topology.InternalVertex(
+                cell,
+                tolerance=tolerance,
+                silent=True,
+            )
+
+            if not Topology.IsInstance(vertex, "Vertex"):
+                if not silent:
+                    print(
+                        "IFC.AccessGraph - Warning: Could not find an "
+                        f"internal vertex for IfcSpace #{space.id}. Skipping."
+                    )
+                continue
+
+            try:
+                elevation = float(Vertex.Z(vertex))
+            except Exception:
+                elevation = 0.0
+
+            dictionary = entity_dictionary(space)
+            dictionary.update({
+                "type": "space",
+                "role": "space",
+            })
+
+            graph_index = graph.AddVertex(
+                dictionary=dictionary,
+                representation=vertex,
+            )
+
+            space_data[space.id] = {
+                "entity": space,
+                "cell": cell,
+                "elevation": elevation,
+                "graph_index": graph_index,
+            }
+
+        connected_space_ids = set()
+
+        spatial_relationship_types = [
+            "contains",
+            "coveredBy",
+            "covers",
+            "crosses",
+            "overlaps",
+            "touches",
+            "within"
+        ]
+
+        # ------------------------------------------------------------------
+        # Process all connecting elements
+        # ------------------------------------------------------------------
+
+        for connector in connecting_elements:
+            entity = connector["entity"]
+            filling = connector["filling"]
+            access_type = connector["access_type"]
+            vertical = connector["vertical"]
+            maximum_spaces = connector["maximum_spaces"]
+
+            connector_type = IFCFastTopology._ifc_display_class(
+                entity.type
+            )
+
+            semantic_element_ids = {entity.id}
+
+            if filling is not None:
+                semantic_element_ids.add(filling.id)
+
+            parent_id = parent_by_child.get(entity.id)
+            while parent_id is not None:
+                if parent_id in semantic_element_ids:
+                    break
+                semantic_element_ids.add(parent_id)
+                parent_id = parent_by_child.get(parent_id)
+
+            adjacent_space_ids = set()
+
+            if semanticConnections:
+                for element_id in semantic_element_ids:
+                    adjacent_space_ids.update(
+                        spaces_by_element.get(element_id, set())
+                    )
+
+                adjacent_space_ids.intersection_update(
+                    space_data.keys()
+                )
+
+            semantic_count = len(adjacent_space_ids)
+            connector_topology = None
+            needs_spatial_test = (
+                len(adjacent_space_ids) < 2
+                or (
+                    vertical
+                    and not spans_two_levels(adjacent_space_ids)
+                )
+            )
+
+            if (
+                viaConnectingElements
+                or (
+                    spatialConnections
+                    and needs_spatial_test
+                )
+            ):
+                connector_topology = topology_by_entity(entity)
+
+            spatial_relationships = {}
+
+            if (
+                spatialConnections
+                and needs_spatial_test
+                and Topology.IsInstance(
+                    connector_topology,
+                    "Topology",
+                )
+            ):
+                for space_id, data in space_data.items():
+                    if space_id in adjacent_space_ids:
+                        continue
+
+                    relationship = Topology.SpatialRelationship(
+                        data["cell"],
+                        connector_topology,
+                        include=spatial_relationship_types,
                         tolerance=tolerance,
                         silent=True,
                     )
-                except TypeError:
-                    topology = Topology.ByGeometry(
-                        vertices=mesh.get("vertices") or [],
-                        edges=mesh.get("edges") or [],
-                        faces=mesh.get("faces") or [],
-                        tolerance=tolerance,
-                    )
 
-                if topology is None:
-                    return None
-
-                return topology
-            except Exception:
-                return None
-
-
-        def _bbox_data_by_fast_mesh(entity):
-            try:
-                mesh = IFCFastTopology.MeshDataByProduct(
-                    entity,
-                    entities,
-                    circleSides=24,
-                    scale=1.0,
-                )
-            except Exception:
-                return None
-
-            if mesh is None:
-                return None
-
-            vertices = mesh.get("vertices", None)
-
-            if not vertices:
-                return None
-
-            xs = []
-            ys = []
-            zs = []
-
-            for v in vertices:
-                if v is None or len(v) < 3:
-                    continue
-                try:
-                    xs.append(float(v[0]))
-                    ys.append(float(v[1]))
-                    zs.append(float(v[2]))
-                except Exception:
-                    continue
-
-            if not xs:
-                return None
-
-            x_min = min(xs)
-            y_min = min(ys)
-            z_min = min(zs)
-
-            x_max = max(xs)
-            y_max = max(ys)
-            z_max = max(zs)
-
-            return {
-                "min": [x_min, y_min, z_min],
-                "max": [x_max, y_max, z_max],
-                "center": [
-                    0.5 * (x_min + x_max),
-                    0.5 * (y_min + y_max),
-                    0.5 * (z_min + z_max),
-                ],
-            }
-
-
-        def _is_internal_xyz(x, y, z, topology):
-            if topology is None:
-                return False
-
-            try:
-                candidate = Vertex.ByCoordinates(float(x), float(y), float(z))
-            except Exception:
-                return False
-
-            try:
-                return bool(Vertex.IsInternal(candidate, topology, tolerance=tolerance))
-            except TypeError:
-                try:
-                    return bool(Vertex.IsInternal(candidate, topology))
-                except Exception:
-                    return False
-            except Exception:
-                return False
-
-
-        def _internal_point_by_space_geometry(space):
-            """
-            Returns a point guaranteed, as far as TopologicPy can test, to be inside
-            the space geometry.
-
-            The returned tuple is:
-
-                (x, y, z, placement_label)
-
-            Returns None if no valid internal point can be found.
-            """
-
-            bbox = _bbox_data_by_fast_mesh(space)
-
-            if bbox is None:
-                return None
-
-            topology = _topology_by_fast_mesh(space)
-            if topology is None:
-                return None
-            if Topology.IsInstance(topology, "cluster"):
-                topology = Topology.SelfMerge(topology)
-            if Topology.IsInstance(topology, "cluster"):
-                cells = Topology.Cells(topology)
-                if len(cells) > 0:
-                    iv = Topology.InternalVertex(cells[0])
-                    return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
-                faces = Topology.Faces(topology)
-                if len(faces) > 0:
-                    iv = Topology.InternalVertex(faces[0])
-                    return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
-                edges = Topology.Edges(topology)
-                if len(edges) > 0:
-                    iv = Topology.InternalVertex(edges[0])
-                    return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
-                vertices = Topology.Vertices(topology)
-                if len(vertices) > 0:
-                    iv = vertices[0]
-                    return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
-
-            iv = Topology.InternalVertex(topology)
-            return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
-
-        # --------------------------------------------------------------
-        # Parse IFC once.
-        # --------------------------------------------------------------
-
-        try:
-            entities = IFC.Entities(file, silent=silent)
-        except Exception:
-            entities = IFC._entities_from_input(file, silent=silent)
-
-        if entities is None or not isinstance(entities, dict):
-            if not silent:
-                print("IFC.AccessGraph - Error: Could not read or parse the input IFC file. Returning None.")
-            return None
-
-        metadata_cache = IFCFastTopology._entity_metadata_cache(entities, dictionaryMode=dictionaryMode)
-
-        if connectingElementTypes is None:
-            connectingElementTypes = ["IFCDOOR", "IFCDOORSTANDARDCASE", "IFCOPENINGELEMENT"]
-
-        allowed_connector_types = _normalise_type_set(connectingElementTypes)
-
-        # --------------------------------------------------------------
-        # Collect spaces.
-        # --------------------------------------------------------------
-
-        spaces = []
-        for entity in entities.values():
-            if _normalise_type(entity.type) == "IFCSPACE":
-                spaces.append(entity)
-
-        spaces.sort(key=lambda e: e.id)
-
-        if len(spaces) < 1:
-            if not silent:
-                print("IFC.AccessGraph - Warning: No IfcSpace entities were found. Returning None.")
-            return None
-
-        # --------------------------------------------------------------
-        # Resolve openings and fillings.
-        # IfcRelFillsElement args:
-        #   4 = RelatingOpeningElement
-        #   5 = RelatedBuildingElement
-        # --------------------------------------------------------------
-
-        opening_to_filling = {}
-        filling_to_opening = {}
-
-        if useFillingElements:
-            for rel in entities.values():
-                if _normalise_type(rel.type) != "IFCRELFILLSELEMENT":
-                    continue
-                if len(rel.args) <= 5:
-                    continue
-
-                opening_refs = _refs(rel.args[4])
-                filling_refs = _refs(rel.args[5])
-
-                for opening_ref in opening_refs:
-                    opening = _entity_from_ref(opening_ref)
-                    if opening is None:
+                    if relationship is None:
                         continue
 
-                    for filling_ref in filling_refs:
-                        filling = _entity_from_ref(filling_ref)
-                        if filling is not None:
-                            opening_to_filling[opening.id] = filling
-                            filling_to_opening[filling.id] = opening
+                    adjacent_space_ids.add(space_id)
+                    spatial_relationships[space_id] = relationship
 
-        # --------------------------------------------------------------
-        # Collect boundary records.
-        # Local connectors are grouped by connector entity.
-        # Wall-like connectors are NOT grouped into pairwise combinations.
-        # They are handled later using CorrespondingBoundary.
-        #
-        # IfcRelSpaceBoundary args:
-        #   4  = RelatingSpace
-        #   5  = RelatedBuildingElement
-        #   10 = CorrespondingBoundary for IfcRelSpaceBoundary2ndLevel
-        # --------------------------------------------------------------
+                    if maximum_spaces is not None:
+                        if (
+                            not vertical
+                            and len(adjacent_space_ids) >= maximum_spaces
+                        ):
+                            break
 
-        boundary_records = {}
-        connector_to_spaces = {}
-        connector_to_boundary_ids = {}
+                        if (
+                            vertical
+                            and len(adjacent_space_ids) >= maximum_spaces
+                            and spans_two_levels(adjacent_space_ids)
+                        ):
+                            break
 
-        for rel in entities.values():
-            rel_type = _normalise_type(rel.type)
-
-            if rel_type not in boundary_types:
-                continue
-            if len(rel.args) <= 5:
-                continue
-
-            space_refs = _refs(rel.args[4])
-            element_refs = _refs(rel.args[5])
-
-            if len(space_refs) < 1 or len(element_refs) < 1:
-                continue
-
-            for space_ref in space_refs:
-                space_entity = _entity_from_ref(space_ref)
-
-                if space_entity is None or _normalise_type(space_entity.type) != "IFCSPACE":
-                    continue
-
-                for element_ref in element_refs:
-                    raw_element = _entity_from_ref(element_ref)
-
-                    if raw_element is None:
-                        continue
-
-                    raw_type = _normalise_type(raw_element.type)
-                    opening_entity = raw_element if raw_type == "IFCOPENINGELEMENT" else filling_to_opening.get(raw_element.id, None)
-                    connector_entity = raw_element
-
-                    if useFillingElements and raw_type == "IFCOPENINGELEMENT":
-                        connector_entity = opening_to_filling.get(raw_element.id, raw_element)
-
-                    if not _is_allowed(raw_element, connector_entity, opening_entity):
-                        continue
-
-                    is_wall = _is_wall_like(raw_element) or _is_wall_like(connector_entity)
-                    connector_key = _entity_key(connector_entity)
-
-                    if connector_key is None:
-                        continue
-
-                    rec = {
-                        "rel": rel,
-                        "rel_type": rel_type,
-                        "space": space_entity,
-                        "raw_element": raw_element,
-                        "connector": connector_entity,
-                        "opening": opening_entity,
-                        "connecting_entity": opening_entity if opening_entity is not None else connector_entity,
-                        "is_wall": is_wall,
-                    }
-                    boundary_records[rel.id] = rec
-
-                    if is_wall:
-                        continue
-
-                    if connector_key not in connector_to_spaces:
-                        connector_to_spaces[connector_key] = {
-                            "connector": connector_entity,
-                            "opening": opening_entity,
-                            "connecting_entity": rec["connecting_entity"],
-                            "spaces": {},
-                        }
-
-                    connector_to_spaces[connector_key]["spaces"][_entity_key(space_entity)] = space_entity
-                    connector_to_boundary_ids.setdefault(connector_key, set()).add(rel.id)
-
-        # --------------------------------------------------------------
-        # Build adjacency pairs.
-        # 1. Local connectors: pairwise grouping is acceptable.
-        # 2. Walls: only CorrespondingBoundary pairs are accepted.
-        # --------------------------------------------------------------
-
-        pair_to_data = {}
-
-        # 1. Local connectors such as doors/openings/windows.
-        for connector_key, data in connector_to_spaces.items():
-            connector = data.get("connector")
-            opening = data.get("opening")
-            connecting_entity = data.get("connecting_entity")
-            connector_spaces = list(data.get("spaces", {}).values())
-
-            if len(connector_spaces) < 2:
-                continue
-
-            connector_spaces.sort(key=lambda e: e.id)
-
-            for space_a, space_b in combinations(connector_spaces, 2):
-                _add_pair(
-                    pair_to_data,
-                    space_a,
-                    space_b,
-                    connector,
-                    connecting_entity,
-                    opening,
-                    connector_to_boundary_ids.get(connector_key, set()),
-                    "shared_local_connector",
-                )
-
-        # 2. Wall-like connectors through IfcRelSpaceBoundary2ndLevel.CorrespondingBoundary.
-        for rec in list(boundary_records.values()):
-            if not rec.get("is_wall"):
-                continue
-
-            rel = rec.get("rel")
-            if rel is None or _normalise_type(rel.type) != "IFCRELSPACEBOUNDARY2NDLEVEL":
-                continue
-            if len(rel.args) <= 10:
-                continue
-
-            corresponding_refs = _refs(rel.args[10])
-            if not corresponding_refs:
-                continue
-
-            for corresponding_ref in corresponding_refs:
-                corresponding_rel = _entity_from_ref(corresponding_ref)
-                if corresponding_rel is None:
-                    continue
-
-                corr_rec = boundary_records.get(corresponding_rel.id)
-                if corr_rec is None or not corr_rec.get("is_wall"):
-                    continue
-
-                space_a = rec.get("space")
-                space_b = corr_rec.get("space")
-
-                if space_a is None or space_b is None:
-                    continue
-
-                raw_a = rec.get("raw_element")
-                raw_b = corr_rec.get("raw_element")
-
-                # Be conservative: corresponding wall boundaries should refer to
-                # the same wall/building element. If not, skip the pair rather
-                # than risk false adjacency.
-                if _entity_key(raw_a) != _entity_key(raw_b):
-                    continue
-
-                connector = rec.get("connector") or raw_a
-                connecting_entity = rec.get("connecting_entity") or connector
-                opening = rec.get("opening")
-                boundary_ids = {rel.id, corresponding_rel.id}
-
-                _add_pair(
-                    pair_to_data,
-                    space_a,
-                    space_b,
-                    connector,
-                    connecting_entity,
-                    opening,
-                    boundary_ids,
-                    "corresponding_wall_boundary",
-                )
-
-        # --------------------------------------------------------------
-        # Decide which spaces become vertices.
-        # --------------------------------------------------------------
-
-        if includeIsolatedSpaces:
-            graph_spaces = spaces
-        else:
-            used_space_keys = set()
-            for pair_key in pair_to_data.keys():
-                used_space_keys.update(pair_key)
-            graph_spaces = [space for space in spaces if _entity_key(space) in used_space_keys]
-
-        graph_spaces.sort(key=lambda e: e.id)
-
-        # --------------------------------------------------------------
-        # Create IfcSpace vertices.
-        # --------------------------------------------------------------
-
-        vertices = []
-        edges = []
-        space_key_to_index = {}
-        space_key_to_xyz = {}
-
-        n = max(len(graph_spaces), 1)
-        radius = max(1.0, float(n) / (2.0 * math.pi))
-
-        for i, space in enumerate(graph_spaces):
-            angle = (2.0 * math.pi * float(i)) / float(n)
-            fallback_x = radius * math.cos(angle)
-            fallback_y = radius * math.sin(angle)
-            fallback_z = 0.0
-
-            x = fallback_x
-            y = fallback_y
-            z = fallback_z
-            vertex_placement = "topology_layout"
-
-            if importMode == "geometry":
-                if useInternalVertex == True:
-                    centre = _internal_point_by_space_geometry(space)
-
-                    if centre is not None:
-                        x, y, z = centre
-                        vertex_placement = "geometry_internal_vertex"
-                    else:
-                        centre = _bbox_centre_by_fast_mesh(space)
-
-                        if centre is not None:
-                            x, y, z = centre
-                            vertex_placement = "geometry_bbox_centre_unverified"
-                        else:
-                            vertex_placement = "topology_layout_fallback"
-                else:
-                    centre = _bbox_centre_by_fast_mesh(space)
-                    if centre is not None:
-                        x, y, z = centre
-                        vertex_placement = "geometry_bbox_centre_unverified"
-                    else:
-                        vertex_placement = "topology_layout_fallback"
-
-
-            d = _space_dictionary(space, len(vertices))
-            d = _set_values(
-                d,
-                ["import_mode", "vertex_placement", "x", "y", "z"],
-                [importMode, vertex_placement, float(x), float(y), float(z)],
-            )
-
-            vertex = _make_vertex(x, y, z, d)
-            if vertex is None:
-                if not silent:
-                    print(f"IFC.AccessGraph - Warning: Could not create vertex for IfcSpace #{space.id}. Skipping.")
-                continue
-
-            key = _entity_key(space)
-            space_key_to_index[key] = len(vertices)
-            space_key_to_xyz[key] = (float(x), float(y), float(z))
-            vertices.append(vertex)
-
-        # --------------------------------------------------------------
-        # Create edges, optionally routed through connecting elements.
-        # --------------------------------------------------------------
-
-        connecting_key_to_index = {}
-        connecting_key_to_xyz = {}
-
-        for pair_key, data in pair_to_data.items():
-            key_a, key_b = pair_key
-
-            if key_a not in space_key_to_index or key_b not in space_key_to_index:
-                continue
-
-            index_a = space_key_to_index[key_a]
-            index_b = space_key_to_index[key_b]
-
-            if index_a == index_b:
-                continue
-
-            vertex_a = vertices[index_a]
-            vertex_b = vertices[index_b]
-
-            connectors = data.get("connectors", [])
-            connecting_entities = data.get("connecting_entities", [])
-            openings = data.get("openings", [])
-            connector = connectors[0] if connectors else None
-            opening = openings[0] if openings else None
-            connecting_entity = connecting_entities[0] if connecting_entities else (opening if opening is not None else connector)
-            boundary_ids = data.get("boundary_ids", set())
-            source = ", ".join(sorted(list(data.get("sources", set()))))
-
-            if not viaConnectingElements:
-                d = _edge_dictionary(
-                    data.get("space_a"),
-                    data.get("space_b"),
-                    connector,
-                    boundary_ids,
-                    index_a,
-                    index_b,
-                    source=source,
-                )
-
-                if len(connectors) > 1:
-                    connector_keys = [_entity_key(c) for c in connectors if c is not None]
-                    connector_types = [_display_type(c.type) for c in connectors if c is not None]
-                    d = _set_values(
-                        d,
-                        ["connector_count", "connector_keys", "connector_types"],
-                        [len(connectors), connector_keys, connector_types],
-                    )
-
-                edge = _make_edge(vertex_a, vertex_b, d)
-                if edge is not None:
-                    edges.append(edge)
-                continue
-
-            # For wall corresponding-boundary pairs, do NOT reuse one wall vertex
-            # across all pairs. Doing so would create a high-degree wall hub and
-            # would again imply implausible cross-wall connectivity. For local
-            # connectors, reuse the door/opening/window vertex.
-            if "corresponding_wall_boundary" in data.get("sources", set()):
-                connecting_key = "boundary_pair::" + "::".join([str(x) for x in sorted(list(boundary_ids))])
+            if semantic_count > 0 and spatial_relationships:
+                relationship_source = "semantic+spatial"
+            elif semantic_count > 0:
+                relationship_source = "semantic"
+            elif spatial_relationships:
+                relationship_source = "spatial"
             else:
-                connecting_key = _entity_key(connecting_entity) or _entity_key(connector) or ("connector::" + "::".join([str(x) for x in sorted(list(boundary_ids))]))
+                relationship_source = "none"
 
-            if connecting_key not in connecting_key_to_index:
-                
-                if importMode == "geometry":
-                    if useInternalVertex == True:
-                        centre = _internal_point_by_space_geometry(connecting_entity)
+            adjacent_space_ids = sorted(adjacent_space_ids)
 
-                        if centre is not None:
-                            x, y, z = centre
-                            vertex_placement = "geometry_internal_vertex"
-                        else:
-                            centre = _bbox_centre_by_fast_mesh(connecting_entity)
+            if vertical:
+                if not spans_two_levels(adjacent_space_ids):
+                    if not silent:
+                        print(
+                            "IFC.AccessGraph - Warning: "
+                            f"{connector_type} #{entity.id} does not connect "
+                            "IfcSpace entities at two different elevations. "
+                            "Not Skipping to Debug."
+                        )
+                    #continue
 
-                            if centre is not None:
-                                x, y, z = centre
-                                vertex_placement = "geometry_bbox_centre_unverified"
-                            else:
-                                vertex_placement = "topology_layout_fallback"
-                    else:
-                        centre = _bbox_centre_by_fast_mesh(connecting_entity)
-                        if centre is not None:
-                            x, y, z = centre
-                            vertex_placement = "geometry_bbox_centre_unverified"
-                        else:
-                            vertex_placement = "topology_layout_fallback"
-                if centre is not None:
-                    cx, cy, cz = centre
-                    vertex_placement = "geometry_bbox_centre"
-                else:
-                    ax, ay, az = space_key_to_xyz.get(key_a, (0.0, 0.0, 0.0))
-                    bx, by, bz = space_key_to_xyz.get(key_b, (0.0, 0.0, 0.0))
-                    cx = 0.5 * (ax + bx)
-                    cy = 0.5 * (ay + by)
-                    cz = 0.5 * (az + bz)
-                    vertex_placement = "incident_space_midpoint" if importMode == "geometry" else "topology_layout_midpoint"
+            filling_id = filling.id if filling is not None else None
+            filling_type = (
+                IFCFastTopology._ifc_display_class(filling.type)
+                if filling is not None
+                else None
+            )
 
-                d = _connecting_element_dictionary(
-                    connecting_entity,
-                    len(vertices),
-                    connector=connector,
-                    opening=opening,
-                    boundary_ids=boundary_ids,
-                    source=source,
-                )
-                d = _set_values(
-                    d,
-                    ["import_mode", "vertex_placement", "x", "y", "z"],
-                    [importMode, vertex_placement, float(cx), float(cy), float(cz)],
+            if viaConnectingElements:
+                if not adjacent_space_ids: # Still add an isolated vertex
+                    if not silent:
+                        print(
+                            "IFC.AccessGraph - Warning: No adjacent "
+                            f"IfcSpace found for {connector_type} "
+                            f"#{entity.id}. Adding an isolated graph vertex."
+                        )
+
+                if not Topology.IsInstance(
+                    connector_topology,
+                    "Topology",
+                ):
+                    if not silent:
+                        print(
+                            "IFC.AccessGraph - Warning: Could not import "
+                            f"geometry for {connector_type} "
+                            f"#{entity.id}. Skipping."
+                        )
+                    continue
+
+                connector_vertex = Topology.InternalVertex(
+                    connector_topology,
+                    tolerance=tolerance,
+                    silent=True,
                 )
 
-                connecting_vertex = _make_vertex(cx, cy, cz, d)
-                if connecting_vertex is None:
+                if not Topology.IsInstance(
+                    connector_vertex,
+                    "Vertex",
+                ):
+                    connector_vertex = Topology.Centroid(
+                        connector_topology,
+                        silent=True,
+                    )
+
+                if not Topology.IsInstance(
+                    connector_vertex,
+                    "Vertex",
+                ):
+                    if not silent:
+                        print(
+                            "IFC.AccessGraph - Warning: Could not create a "
+                            f"representative vertex for {connector_type} "
+                            f"#{entity.id}. Skipping."
+                        )
                     continue
 
-                connecting_key_to_index[connecting_key] = len(vertices)
-                connecting_key_to_xyz[connecting_key] = (float(cx), float(cy), float(cz))
-                vertices.append(connecting_vertex)
+                dictionary = entity_dictionary(entity)
+                dictionary.update({
+                    "type": "connecting_element",
+                    "role": "connecting_element",
+                    "access_type": access_type,
+                    "filling_id": filling_id,
+                    "filling_type": filling_type,
+                    "vertical": vertical,
+                })
 
-            index_c = connecting_key_to_index[connecting_key]
-            vertex_c = vertices[index_c]
+                connector_index = graph.AddVertex(
+                    dictionary=dictionary,
+                    representation=connector_vertex,
+                )
 
-            d_ac = _routed_edge_dictionary(
-                index_a,
-                index_c,
-                data.get("space_a"),
-                connecting_entity,
-                connector,
-                boundary_ids,
-                source=source,
-            )
-            edge_ac = _make_edge(vertex_a, vertex_c, d_ac)
-            if edge_ac is not None:
-                edges.append(edge_ac)
+                for space_id in adjacent_space_ids:
+                    graph.AddEdge(
+                        space_data[space_id]["graph_index"],
+                        connector_index,
+                        directed=False,
+                        dictionary={
+                            "type": "access",
+                            "connector_id": entity.id,
+                            "connector_type": connector_type,
+                            "access_type": access_type,
+                            "filling_id": filling_id,
+                            "filling_type": filling_type,
+                            "vertical": vertical,
+                            "relationship_source": relationship_source,
+                            "spatial_relationship":
+                                spatial_relationships.get(space_id),
+                        },
+                    )
 
-            d_cb = _routed_edge_dictionary(
-                index_c,
-                index_b,
-                data.get("space_b"),
-                connecting_entity,
-                connector,
-                boundary_ids,
-                source=source,
-            )
-            edge_cb = _make_edge(vertex_c, vertex_b, d_cb)
-            if edge_cb is not None:
-                edges.append(edge_cb)
+                    connected_space_ids.add(space_id)
 
-        def _legacy_graph_by_vertices_edges():
-            if Graph is None:
-                return None
-            try:
-                return Graph.ByVerticesEdges(vertices, edges, index=True)
-            except TypeError:
-                try:
-                    return Graph.ByVerticesEdges(vertices, edges)
-                except Exception:
-                    return None
-            except Exception:
-                return None
-
-        def _tgraph_by_vertices_edges():
-            if TGraph is None:
-                return None
-
-            call_patterns = (
-                lambda: TGraph.ByVerticesEdges(
-                    vertices=vertices,
-                    edges=edges,
-                    index=True,
-                    ontology=ontology,
-                    tolerance=tolerance,
-                    silent=silent,
-                ),
-                lambda: TGraph.ByVerticesEdges(
-                    vertices=vertices,
-                    edges=edges,
-                    ontology=ontology,
-                    tolerance=tolerance,
-                    silent=silent,
-                ),
-                lambda: TGraph.ByVerticesEdges(
-                    vertices=vertices,
-                    edges=edges,
-                    tolerance=tolerance,
-                    silent=silent,
-                ),
-                lambda: TGraph.ByVerticesEdges(vertices, edges),
-            )
-
-            for call in call_patterns:
-                try:
-                    graph_candidate = call()
-                    if graph_candidate is not None:
-                        return graph_candidate
-                except TypeError:
-                    continue
-                except Exception:
+            else:
+                if len(adjacent_space_ids) < 2:
+                    if not silent:
+                        print(
+                            "IFC.AccessGraph - Warning: "
+                            f"{connector_type} #{entity.id} found only "
+                            f"{len(adjacent_space_ids)} adjacent IfcSpace. "
+                            "Skipping."
+                        )
                     continue
 
-            legacy_graph = _legacy_graph_by_vertices_edges()
-            if legacy_graph is not None:
-                try:
-                    return TGraph.ByGraph(legacy_graph, ontology=ontology, silent=silent)
-                except TypeError:
-                    try:
-                        return TGraph.ByGraph(legacy_graph)
-                    except Exception:
-                        return None
-                except Exception:
-                    return None
+                edge_dictionary = entity_dictionary(entity)
+                edge_dictionary.update({
+                    "type": "access",
+                    "connector_id": entity.id,
+                    "connector_type": connector_type,
+                    "access_type": access_type,
+                    "filling_id": filling_id,
+                    "filling_type": filling_type,
+                    "vertical": vertical,
+                    "relationship_source": relationship_source,
+                })
 
-            return None
+                for space_a, space_b in combinations(
+                    adjacent_space_ids,
+                    2,
+                ):
+                    if (
+                        vertical
+                        and abs(
+                            space_data[space_a]["elevation"]
+                            - space_data[space_b]["elevation"]
+                        ) <= tolerance
+                    ):
+                        continue
 
-        if asTGraph:
-            graph = _tgraph_by_vertices_edges()
-        else:
-            graph = _legacy_graph_by_vertices_edges()
+                    graph.AddEdge(
+                        space_data[space_a]["graph_index"],
+                        space_data[space_b]["graph_index"],
+                        directed=False,
+                        dictionary=dict(edge_dictionary),
+                        representation=connector_topology,
+                    )
 
-        if graph is None:
-            if not silent:
-                graph_type = "TGraph" if asTGraph else "Graph"
-                print(f"IFC.AccessGraph - Error: Could not create {graph_type}. Returning None.")
-            return None
+                    connected_space_ids.add(space_a)
+                    connected_space_ids.add(space_b)
+
+        # ------------------------------------------------------------------
+        # Spatial fallback for completely isolated spaces
+        # ------------------------------------------------------------------
+
+        if spatialConnections:
+            isolated_space_ids = [
+                space_id
+                for space_id in space_data
+                if space_id not in connected_space_ids
+            ]
+
+            tested_pairs = set()
+
+            for space_a in isolated_space_ids:
+                cell_a = space_data[space_a]["cell"]
+
+                for space_b, data_b in space_data.items():
+                    if space_a == space_b:
+                        continue
+
+                    pair = tuple(sorted((space_a, space_b)))
+
+                    if pair in tested_pairs:
+                        continue
+
+                    tested_pairs.add(pair)
+
+                    relationship = Topology.SpatialRelationship(
+                        cell_a,
+                        data_b["cell"],
+                        include=spatial_relationship_types,
+                        tolerance=tolerance,
+                        silent=True,
+                    )
+
+                    if relationship is None:
+                        continue
+
+                    graph.AddEdge(
+                        space_data[space_a]["graph_index"],
+                        data_b["graph_index"],
+                        directed=False,
+                        dictionary={
+                            "type": "spatial_connection",
+                            "relationship_source": "spatial",
+                            "spatial_relationship": relationship,
+                        },
+                    )
+
+                    connected_space_ids.add(space_a)
+                    connected_space_ids.add(space_b)
 
         return graph
+
+
+
+
+
+
+
+
+
+    # @staticmethod
+    # def AccessGraph(
+    #     path: str,
+    #     viaConnectingElements: bool = False,
+    #     semanticConnections: bool = True,
+    #     spatialConnections: bool = False,
+    #     dictionaryMode: str = "Full",
+    #     scale: float = 1.0,
+    #     circleSides: int = 24,
+    #     tolerance: float = 0.0001,
+    #     silent: bool = False,
+    # ):
+    #     """
+    #     Creates an access TGraph from an IFC file.
+
+    #     Only IfcSpace entities become principal graph vertices.
+
+    #     Connecting elements are limited to IfcOpeningElement entities that are
+    #     either unfilled or filled by an IfcDoor or IfcDoorStandardCase. Door and
+    #     window geometry is never imported. Only eligible opening geometry is used.
+
+    #     When semanticConnections is True, IfcRelSpaceBoundary relationships are
+    #     used to connect eligible openings to spaces.
+
+    #     When spatialConnections is True:
+
+    #     - eligible openings with fewer than two semantic space connections are
+    #     tested geometrically against the spaces; and
+    #     - spaces that remain completely unconnected are tested geometrically
+    #     against the other spaces.
+
+    #     Parameters
+    #     ----------
+    #     path : str
+    #         The path to the input IFC file.
+    #     viaConnectingElements : bool , optional
+    #         If set to True, eligible IfcOpeningElement entities become intermediate
+    #         graph vertices. Otherwise, each eligible opening becomes a direct graph
+    #         edge between its adjacent spaces. Default is False.
+    #     semanticConnections : bool , optional
+    #         If set to True, connections are first derived from IFC semantic
+    #         relationships. Default is True.
+    #     spatialConnections : bool , optional
+    #         If set to True, unresolved openings and isolated spaces are tested using
+    #         spatial relationships. Default is False.
+    #     dictionaryMode : str , optional
+    #         The dictionary import mode. This can be "None", "Basic", or "Full".
+    #         It is case-insensitive. Default is "Basic".
+    #     scale : float , optional
+    #         The scale factor applied to imported coordinates. Default is 1.0.
+    #     circleSides : int , optional
+    #         The number of sides used to approximate circular geometry. Default is
+    #         24.
+    #     tolerance : float , optional
+    #         The desired geometric tolerance. Default is 0.0001.
+    #     silent : bool , optional
+    #         If set to True, debugging and warning messages are suppressed.
+    #         Default is False.
+
+    #     Returns
+    #     -------
+    #     topologicpy.TGraph
+    #         The resulting access graph.
+    #     """
+    #     import os
+    #     from itertools import combinations
+
+    #     from topologicpy.Dictionary import Dictionary
+    #     from topologicpy.TGraph import TGraph
+    #     from topologicpy.Topology import Topology
+
+    #     # ------------------------------------------------------------------
+    #     # Validate inputs
+    #     # ------------------------------------------------------------------
+
+    #     if not isinstance(path, str) or not os.path.isfile(path):
+    #         if not silent:
+    #             print(
+    #                 "IFC.AccessGraph - Error: The input path is invalid. "
+    #                 "Returning None."
+    #             )
+    #         return None
+
+    #     if not isinstance(semanticConnections, bool):
+    #         if not silent:
+    #             print(
+    #                 "IFC.AccessGraph - Error: semanticConnections must be a "
+    #                 "boolean. Returning None."
+    #             )
+    #         return None
+
+    #     if not isinstance(spatialConnections, bool):
+    #         if not silent:
+    #             print(
+    #                 "IFC.AccessGraph - Error: spatialConnections must be a "
+    #                 "boolean. Returning None."
+    #             )
+    #         return None
+
+    #     if not isinstance(dictionaryMode, str):
+    #         if not silent:
+    #             print(
+    #                 "IFC.AccessGraph - Error: dictionaryMode must be a string. "
+    #                 "Returning None."
+    #             )
+    #         return None
+
+    #     dictionary_mode = dictionaryMode.strip().lower()
+
+    #     if dictionary_mode not in {"none", "basic", "full"}:
+    #         if not silent:
+    #             print(
+    #                 "IFC.AccessGraph - Error: dictionaryMode must be one of "
+    #                 "'None', 'Basic', or 'Full'. Returning None."
+    #             )
+    #         return None
+
+    #     path = os.path.abspath(path)
+
+    #     entities = IFCFastTopology.Parse(path, silent=True)
+
+    #     if not isinstance(entities, dict) or not entities:
+    #         if not silent:
+    #             print(
+    #                 "IFC.AccessGraph - Error: Could not parse the IFC file. "
+    #                 "Returning None."
+    #             )
+    #         return None
+
+    #     # Full mode is the only mode that builds the expensive relationship and
+    #     # property metadata cache.
+    #     metadata_cache = {}
+
+    #     if dictionary_mode == "full":
+    #         metadata_cache = IFCFastTopology._entity_metadata_cache(
+    #             entities,
+    #             dictionaryMode="full",
+    #         )
+
+    #     # ------------------------------------------------------------------
+    #     # Minimal helpers
+    #     # ------------------------------------------------------------------
+
+    #     def first_entity(value):
+    #         references = IFCFastTopology._refs_in_value(value)
+
+    #         if not references:
+    #             return None
+
+    #         return IFCFastTopology._entity_from_ref(
+    #             references[0],
+    #             entities,
+    #         )
+
+    #     def topology_by_entity(entity):
+    #         mesh = IFCFastTopology.MeshDataByProduct(
+    #             entity,
+    #             entities,
+    #             circleSides=circleSides,
+    #             scale=scale,
+    #         )
+
+    #         if not mesh or not mesh.get("vertices"):
+    #             return None
+
+    #         return Topology.ByGeometry(
+    #             vertices=mesh.get("vertices") or [],
+    #             edges=mesh.get("edges") or [],
+    #             faces=mesh.get("faces") or [],
+    #             tolerance=tolerance,
+    #             silent=True,
+    #         )
+
+    #     def entity_dictionary(entity):
+    #         if dictionary_mode == "none":
+    #             return {}
+
+    #         dictionary = IFCFastTopology._entity_dictionary(
+    #             entity,
+    #             dictionaryMode=dictionary_mode,
+    #             metadataCache=metadata_cache,
+    #             ontology=False,
+    #             source=path,
+    #             generatedBy="IFC.AccessGraph",
+    #         )
+
+    #         if dictionary is None:
+    #             return {}
+
+    #         try:
+    #             result = Dictionary.PythonDictionary(dictionary)
+    #             return result if isinstance(result, dict) else {}
+    #         except Exception:
+    #             return {}
+
+    #     # ------------------------------------------------------------------
+    #     # Collect spaces
+    #     # ------------------------------------------------------------------
+
+    #     spaces = [
+    #         entity
+    #         for entity in entities.values()
+    #         if entity.type == "IFCSPACE"
+    #     ]
+
+    #     # ------------------------------------------------------------------
+    #     # Map openings to filling elements
+    #     # ------------------------------------------------------------------
+
+    #     filling_by_opening = {}
+
+    #     for relationship in entities.values():
+    #         if relationship.type != "IFCRELFILLSELEMENT":
+    #             continue
+
+    #         if len(relationship.args) < 6:
+    #             continue
+
+    #         opening = first_entity(relationship.args[4])
+    #         filling = first_entity(relationship.args[5])
+
+    #         if opening is None or filling is None:
+    #             continue
+
+    #         if opening.type != "IFCOPENINGELEMENT":
+    #             continue
+
+    #         filling_by_opening[opening.id] = filling
+
+    #     # ------------------------------------------------------------------
+    #     # Retain only unfilled or door-filled openings
+    #     # ------------------------------------------------------------------
+
+    #     eligible_openings = []
+
+    #     for entity in entities.values():
+    #         if entity.type != "IFCOPENINGELEMENT":
+    #             continue
+
+    #         filling = filling_by_opening.get(entity.id)
+
+    #         if filling is None:
+    #             eligible_openings.append(entity)
+    #             continue
+
+    #         if filling.type in {
+    #             "IFCDOOR",
+    #             "IFCDOORSTANDARDCASE",
+    #         }:
+    #             eligible_openings.append(entity)
+
+    #     # ------------------------------------------------------------------
+    #     # Read semantic space boundaries only when requested
+    #     # ------------------------------------------------------------------
+
+    #     spaces_by_element = {}
+
+    #     if semanticConnections:
+    #         boundary_types = {
+    #             "IFCRELSPACEBOUNDARY",
+    #             "IFCRELSPACEBOUNDARY1STLEVEL",
+    #             "IFCRELSPACEBOUNDARY2NDLEVEL",
+    #         }
+
+    #         for relationship in entities.values():
+    #             if relationship.type not in boundary_types:
+    #                 continue
+
+    #             if len(relationship.args) < 6:
+    #                 continue
+
+    #             space = first_entity(relationship.args[4])
+    #             element = first_entity(relationship.args[5])
+
+    #             if space is None or element is None:
+    #                 continue
+
+    #             if space.type != "IFCSPACE":
+    #                 continue
+
+    #             spaces_by_element.setdefault(
+    #                 element.id,
+    #                 set(),
+    #             ).add(space.id)
+
+    #     # ------------------------------------------------------------------
+    #     # Create graph
+    #     # ------------------------------------------------------------------
+
+    #     graph = TGraph(
+    #         directed=False,
+    #         allowSelfLoops=False,
+    #         allowParallelEdges=True,
+    #         dictionary={
+    #             "type": "AccessGraph",
+    #             "source": path,
+    #             "viaConnectingElements": viaConnectingElements,
+    #             "semanticConnections": semanticConnections,
+    #             "spatialConnections": spatialConnections,
+    #             "dictionaryMode": dictionary_mode.title(),
+    #         },
+    #     )
+
+    #     # ------------------------------------------------------------------
+    #     # Convert spaces and create principal vertices
+    #     # ------------------------------------------------------------------
+
+    #     space_data = {}
+
+    #     for space in spaces:
+    #         topology = topology_by_entity(space)
+
+    #         if not Topology.IsInstance(topology, "Topology"):
+    #             if not silent:
+    #                 print(
+    #                     f"IFC.AccessGraph - Warning. Could not import geometry for IfcSpace #{space.id}. "
+    #                     "Skipping"
+    #                 )
+    #             continue
+
+    #         cell = Topology.SelfMerge(
+    #             topology,
+    #             tolerance=tolerance,
+    #             silent=True,
+    #         )
+
+    #         if not Topology.IsInstance(cell, "Cell"):
+    #             if not silent:
+    #                 print(
+    #                     f"IFC.AccessGraph - Warning: SelfMerge did not produce a Cell for IfcSpace #{space.id}. "
+    #                     "Skipping"
+    #                 )
+    #             continue
+
+    #         vertex = Topology.InternalVertex(
+    #             cell,
+    #             tolerance=tolerance,
+    #             silent=True,
+    #         )
+
+    #         if not Topology.IsInstance(vertex, "Vertex"):
+    #             if not silent:
+    #                 print(
+    #                     f"IFC.AccessGraph - Warning: Could not find an internal vertex for IfcSpace #{space.id}. "
+    #                     "Skipping."
+    #                 )
+    #             continue
+
+    #         name = IFCFastTopology._root_attr(space, 2)
+
+    #         dictionary = entity_dictionary(space)
+    #         dictionary.update({
+    #             "type": "space",
+    #             "role": "space",
+    #         })
+
+    #         graph_index = graph.AddVertex(
+    #             dictionary=dictionary,
+    #             representation=vertex,
+    #         )
+
+    #         space_data[space.id] = {
+    #             "entity": space,
+    #             "cell": cell,
+    #             "graph_index": graph_index,
+    #         }
+
+    #     # Track spaces that receive at least one semantic or spatial connection.
+    #     connected_space_ids = set()
+
+    #     spatial_relationship_types = [
+    #         "overlaps",
+    #         "touches",
+    #     ]
+
+    #     # ------------------------------------------------------------------
+    #     # Process eligible openings
+    #     # ------------------------------------------------------------------
+
+    #     for opening in eligible_openings:
+    #         filling = filling_by_opening.get(opening.id)
+
+    #         if filling is None:
+    #             access_type = "unfilled_opening"
+    #             filling_id = None
+    #             filling_type = None
+    #         else:
+    #             access_type = "door"
+    #             filling_id = filling.id
+    #             filling_type = IFCFastTopology._ifc_display_class(
+    #                 filling.type
+    #             )
+
+    #         adjacent_space_ids = set()
+
+    #         # --------------------------------------------------------------
+    #         # Semantic connections
+    #         # --------------------------------------------------------------
+
+    #         if semanticConnections:
+    #             adjacent_space_ids.update(
+    #                 spaces_by_element.get(opening.id, set())
+    #             )
+
+    #             # Some exporters reference the filling door rather than the
+    #             # opening in IfcRelSpaceBoundary.
+    #             if filling is not None:
+    #                 adjacent_space_ids.update(
+    #                     spaces_by_element.get(filling.id, set())
+    #                 )
+
+    #             adjacent_space_ids.intersection_update(
+    #                 space_data.keys()
+    #             )
+
+    #         semantic_count = len(adjacent_space_ids)
+
+    #         # --------------------------------------------------------------
+    #         # Load opening geometry only when needed
+    #         # --------------------------------------------------------------
+
+    #         opening_topology = None
+
+    #         if (
+    #             viaConnectingElements
+    #             or (
+    #                 spatialConnections
+    #                 and len(adjacent_space_ids) < 2
+    #             )
+    #         ):
+    #             opening_topology = topology_by_entity(opening)
+
+    #         # --------------------------------------------------------------
+    #         # Spatial fallback for unresolved openings
+    #         # --------------------------------------------------------------
+
+    #         spatial_relationships = {}
+
+    #         if (
+    #             spatialConnections
+    #             and len(adjacent_space_ids) < 2
+    #             and Topology.IsInstance(
+    #                 opening_topology,
+    #                 "Topology",
+    #             )
+    #         ):
+    #             for space_id, data in space_data.items():
+    #                 if space_id in adjacent_space_ids:
+    #                     continue
+
+    #                 relationship = Topology.SpatialRelationship(
+    #                     data["cell"],
+    #                     opening_topology,
+    #                     include=spatial_relationship_types,
+    #                     tolerance=tolerance,
+    #                     silent=True,
+    #                 )
+
+    #                 if relationship is None:
+    #                     continue
+
+    #                 adjacent_space_ids.add(space_id)
+    #                 spatial_relationships[space_id] = relationship
+
+    #                 # A normal opening is expected to connect no more than two
+    #                 # spaces. Stop as soon as the missing connection is recovered.
+    #                 if len(adjacent_space_ids) >= 2:
+    #                     break
+
+    #         if semantic_count > 0 and spatial_relationships:
+    #             relationship_source = "semantic+spatial"
+    #         elif semantic_count > 0:
+    #             relationship_source = "semantic"
+    #         elif spatial_relationships:
+    #             relationship_source = "spatial"
+    #         else:
+    #             relationship_source = "none"
+
+    #         adjacent_space_ids = sorted(adjacent_space_ids)
+
+    #         # --------------------------------------------------------------
+    #         # Opening becomes an intermediate vertex
+    #         # --------------------------------------------------------------
+
+    #         if viaConnectingElements:
+    #             if not adjacent_space_ids:
+    #                 if not silent:
+    #                     print(
+    #                         "IFC.AccessGraph - Warning: No adjacent IfcSpace found for "
+    #                         f"IfcOpeningElement #{opening.id}: "
+    #                         "Skipping."
+    #                     )
+    #                 continue
+
+    #             if not Topology.IsInstance(
+    #                 opening_topology,
+    #                 "Topology",
+    #             ):
+    #                 if not silent:
+    #                     print(
+    #                         "IFC.AccessGraph - Warning: Could not import opening geometry for "
+    #                         f"IfcOpeningElement #{opening.id}: "
+    #                         "Skipping."
+    #                     )
+    #                 continue
+
+    #             opening_vertex = Topology.InternalVertex(
+    #                 opening_topology,
+    #                 tolerance=tolerance,
+    #                 silent=True,
+    #             )
+
+    #             if not Topology.IsInstance(
+    #                 opening_vertex,
+    #                 "Vertex",
+    #             ):
+    #                 opening_vertex = Topology.Centroid(
+    #                     opening_topology,
+    #                     silent=True,
+    #                 )
+
+    #             if not Topology.IsInstance(
+    #                 opening_vertex,
+    #                 "Vertex",
+    #             ):
+    #                 if not silent:
+    #                     print(
+    #                         "IFC.AccessGraph - Warning: COuld not create a representative vertex for "
+    #                         f"IfcOpeningElement #{opening.id}. "
+    #                         "Skipping."
+    #                     )
+    #                 continue
+
+    #             dictionary = entity_dictionary(opening)
+    #             dictionary.update({
+    #                 "type": "connecting_element",
+    #                 "role": "connecting_element",
+    #                 "access_type": access_type,
+    #                 "filling_id": filling_id,
+    #                 "filling_type": filling_type,
+    #             })
+
+    #             name = IFCFastTopology._root_attr(opening, 2)
+
+    #             opening_index = graph.AddVertex(
+    #                 dictionary=dictionary,
+    #                 representation=opening_vertex,
+    #             )
+
+    #             for space_id in adjacent_space_ids:
+    #                 edge_dictionary = {
+    #                     "type": "access",
+    #                     "opening_id": opening.id,
+    #                     "access_type": access_type,
+    #                     "filling_id": filling_id,
+    #                     "filling_type": filling_type,
+    #                     "relationship_source": relationship_source,
+    #                     "spatial_relationship":
+    #                         spatial_relationships.get(space_id),
+    #                 }
+
+    #                 graph.AddEdge(
+    #                     space_data[space_id]["graph_index"],
+    #                     opening_index,
+    #                     directed=False,
+    #                     dictionary=edge_dictionary,
+    #                 )
+
+    #                 connected_space_ids.add(space_id)
+
+    #         # --------------------------------------------------------------
+    #         # Opening becomes a direct edge
+    #         # --------------------------------------------------------------
+
+    #         else:
+    #             if len(adjacent_space_ids) < 2:
+    #                 if not silent:
+    #                     print(
+    #                         "IFC.AccessGraph - Warning: "
+    #                         f"IfcOpeningElement #{opening.id}: "
+    #                         f"found only {len(adjacent_space_ids)} "
+    #                         "adjacent IfcSpace. Skipping."
+    #                     )
+    #                 continue
+
+    #             for space_a, space_b in combinations(
+    #                 adjacent_space_ids,
+    #                 2,
+    #             ):
+    #                 edge_dictionary = entity_dictionary(opening)
+    #                 edge_dictionary.update({
+    #                     "type": "access",
+    #                     "opening_id": opening.id,
+    #                     "access_type": access_type,
+    #                     "filling_id": filling_id,
+    #                     "filling_type": filling_type,
+    #                     "relationship_source": relationship_source,
+    #                 })
+
+    #                 graph.AddEdge(
+    #                     space_data[space_a]["graph_index"],
+    #                     space_data[space_b]["graph_index"],
+    #                     directed=False,
+    #                     dictionary=edge_dictionary,
+    #                     representation=opening_topology,
+    #                 )
+
+    #                 connected_space_ids.add(space_a)
+    #                 connected_space_ids.add(space_b)
+
+    #     # ------------------------------------------------------------------
+    #     # Spatial fallback for completely isolated spaces
+    #     # ------------------------------------------------------------------
+
+    #     if spatialConnections:
+    #         isolated_space_ids = [
+    #             space_id
+    #             for space_id in space_data
+    #             if space_id not in connected_space_ids
+    #         ]
+
+    #         tested_pairs = set()
+
+    #         for space_a in isolated_space_ids:
+    #             cell_a = space_data[space_a]["cell"]
+
+    #             for space_b, data_b in space_data.items():
+    #                 if space_a == space_b:
+    #                     continue
+
+    #                 pair = tuple(sorted((space_a, space_b)))
+
+    #                 if pair in tested_pairs:
+    #                     continue
+
+    #                 tested_pairs.add(pair)
+
+    #                 relationship = Topology.SpatialRelationship(
+    #                     cell_a,
+    #                     data_b["cell"],
+    #                     include=spatial_relationship_types,
+    #                     tolerance=tolerance,
+    #                     silent=True,
+    #                 )
+
+    #                 if relationship is None:
+    #                     continue
+
+    #                 graph.AddEdge(
+    #                     space_data[space_a]["graph_index"],
+    #                     data_b["graph_index"],
+    #                     directed=False,
+    #                     dictionary={
+    #                         "type": "spatial_connection",
+    #                         "relationship_source": "spatial",
+    #                         "spatial_relationship": relationship,
+    #                     },
+    #                 )
+
+    #                 connected_space_ids.add(space_a)
+    #                 connected_space_ids.add(space_b)
+
+    #     return graph
+
+
+
+
+    # @staticmethod
+    # def AccessGraph(file,
+    #                 importMode: str = "topology",
+    #                 useInternalVertex: bool = False,
+    #                 connectingElementTypes: list = None,
+    #                 useFillingElements: bool = True,
+    #                 passableOpeningFillingTypes: list = None,
+    #                 passableOpeningFillingKeywords: list = None,
+    #                 includeUnfilledOpenings: bool = True,
+    #                 includeIsolatedSpaces: bool = True,
+    #                 viaConnectingElements: bool = False,
+    #                 dictionaryMode: str = "basic",
+    #                 bidirectional: bool = True,
+    #                 ontology: bool = True,
+    #                 tolerance: float = 0.0001,
+    #                 silent: bool = False):
+    #     """
+    #     Creates a TopologicPy Graph or TGraph representing space adjacency from an IFC file.
+
+    #     The returned graph contains one vertex per IfcSpace. Edges are created
+    #     between spaces that share a boundary-related connector element.
+
+    #     IMPORTANT
+    #     ---------
+    #     Door/opening/window-like connector elements are local connectors and can
+    #     safely create adjacency by grouping the spaces that reference the same
+    #     connector. Wall-like connector elements are not local connectors. A long
+    #     wall may be referenced by several space boundaries, so this method does
+    #     not create all pairwise adjacencies among spaces that reference the same
+    #     wall. For IfcWall, IfcWallStandardCase, and IfcWallElementedCase, adjacency
+    #     is created only from IfcRelSpaceBoundary2ndLevel.CorrespondingBoundary.
+
+    #     Parameters
+    #     ----------
+    #     file : dict, str, or ifcopenshell.file-like object
+    #         The input IFC source.
+    #     importMode : str , optional
+    #         Controls graph vertex placement. If set to "topology", vertices are
+    #         placed using a deterministic circular graph layout. If set to
+    #         "geometry", vertices are placed at the centre of their parent IFC
+    #         product representation when such representation data can be evaluated.
+    #         Objects without usable geometry fall back to deterministic placement.
+    #         Options are "topology" and "geometry". Default is "topology".
+    #     useInternalVertex : bool , optional
+    #         In geometry mode, if set to True, uses an internal vertex to represent
+    #         the subtopology. Otherwise, uses its centroid. Default is False.
+    #     connectingElementTypes : list , optional
+    #         IFC element types that are allowed to act as adjacency connectors.
+    #         If set to None, the default is ["IFCDOOR", "IFCDOORSTANDARDCASE",
+    #         "IFCOPENINGELEMENT"]. Wall types are supported, but they are handled
+    #         through IfcRelSpaceBoundary2ndLevel.CorrespondingBoundary rather than
+    #         simple shared-wall grouping. Default is None.
+    #     useFillingElements : bool , optional
+    #         If set to True, IfcOpeningElement references are resolved through
+    #         IfcRelFillsElement to their filling elements, usually doors/windows.
+    #         The opening is still retained and preferred as the via-vertex entity
+    #         when viaConnectingElements is True. Default is True.
+    #     passableOpeningFillingTypes : list , optional
+    #         IFC filling element types that make an IfcOpeningElement passable.
+    #         Default is ["IFCDOOR", "IFCDOORSTANDARDCASE"]. Interior windows are
+    #         explicitly excluded even though they fill openings.
+    #     passableOpeningFillingKeywords : list , optional
+    #         Case-insensitive keywords in the filling/opening name, object type,
+    #         predefined type, or description that mark an opening as passable.
+    #         Default is ["CURTAIN"] to catch curtain-like soft partitions that
+    #         are not modelled as IfcDoor.
+    #     includeUnfilledOpenings : bool , optional
+    #         If set to True, IfcOpeningElement objects without an
+    #         IfcRelFillsElement filling are treated as passable openings.
+    #         Default is True.
+    #     includeIsolatedSpaces : bool , optional
+    #         If set to True, all IfcSpace entities are included as vertices even
+    #         when they have no detected adjacency. If False, only spaces involved
+    #         in at least one adjacency edge are included. Default is True.
+    #     viaConnectingElements : bool , optional
+    #         If set to False, adjacency edges are created directly between spaces.
+    #         If set to True, each adjacency is routed through a vertex representing
+    #         the connecting element, preferably the IfcOpeningElement when present,
+    #         otherwise the resolved connector element. For walls, a separate
+    #         connecting vertex is created per confirmed corresponding-boundary
+    #         pair to avoid turning long walls into artificial graph hubs. Default
+    #         is False.
+    #     dictionaryMode : str , optional
+    #         The dictionary mode to use for entity dictionaries. Currently supports
+    #         the same basic entity dictionary behaviour as the IFC parser.
+    #         Default is "basic".
+    #     bidirectional : bool , optional
+    #         If set to True, edge dictionaries record the edge as bidirectional.
+    #         Default is True.
+    #     tolerance : float , optional
+    #         The desired tolerance. Default is 0.0001.
+    #     silent : bool , optional
+    #         If set to True, error and warning messages are suppressed.
+    #         Default is False.
+
+    #     Returns
+    #     -------
+    #     topologicpy.TGraph
+    #         A TopologicPy graph whose vertices are IfcSpace entities and whose
+    #         edges represent inferred space adjacency through shared or
+    #         corresponding boundary elements. Returns None if the IFC file cannot be parsed.
+    #     """
+
+    #     import math
+    #     from itertools import combinations
+
+    #     from topologicpy.Vertex import Vertex
+    #     from topologicpy.Edge import Edge
+    #     from topologicpy.Topology import Topology
+    #     from topologicpy.Dictionary import Dictionary
+
+    #     try:
+    #         from topologicpy.TGraph import TGraph
+    #     except Exception:
+    #         TGraph = None
+
+    #     try:
+    #         from topologicpy.Graph import Graph
+    #     except Exception:
+    #         Graph = None
+
+    #     importMode = str(importMode).strip().lower() if importMode is not None else "topology"
+    #     if importMode not in ["topology", "geometry"]:
+    #         if not silent:
+    #             print("IFC.AccessGraph - Error: The importMode parameter must be either 'topology' or 'geometry'. Returning None.")
+    #         return None
+
+    #     source_file = file if isinstance(file, str) else None
+
+    #     wall_connector_types = {
+    #         "IFCWALL",
+    #         "IFCWALLSTANDARDCASE",
+    #         "IFCWALLELEMENTEDCASE",
+    #     }
+
+    #     boundary_types = {
+    #         "IFCRELSPACEBOUNDARY",
+    #         "IFCRELSPACEBOUNDARY1STLEVEL",
+    #         "IFCRELSPACEBOUNDARY2NDLEVEL",
+    #     }
+
+    #     def _normalise_type(value):
+    #         if value is None:
+    #             return None
+    #         value = str(value).strip().upper()
+    #         return value if value else None
+
+    #     def _normalise_type_set(values):
+    #         if not values:
+    #             return set()
+    #         return set([_normalise_type(v) for v in values if _normalise_type(v)])
+
+    #     def _display_type(ifc_type):
+    #         return IFCFastTopology._ifc_display_class(ifc_type)
+
+    #     def _root_attr(entity, index):
+    #         try:
+    #             return IFCFastTopology._root_attr(entity, index)
+    #         except Exception:
+    #             return None
+
+    #     def _refs(value):
+    #         try:
+    #             return IFCFastTopology._refs_in_value(value)
+    #         except Exception:
+    #             return []
+
+    #     def _entity_from_ref(ref):
+    #         try:
+    #             return IFCFastTopology._entity_from_ref(ref, entities)
+    #         except Exception:
+    #             return None
+
+    #     def _entity_key(entity):
+    #         if entity is None:
+    #             return None
+    #         gid = _root_attr(entity, 0)
+    #         if gid not in [None, "", "*"]:
+    #             return str(gid)
+    #         return f"#{entity.id}"
+
+    #     def _entity_name(entity):
+    #         try:
+    #             name = _root_attr(entity, 2)
+    #             return name if name not in [None, "", "*"] else None
+    #         except Exception:
+    #             return None
+
+    #     def _is_wall_like(entity):
+    #         return entity is not None and _normalise_type(entity.type) in wall_connector_types
+
+    #     def _is_allowed(raw_element, connector, opening):
+    #         if not allowed_connector_types:
+    #             return True
+    #         for entity in [raw_element, connector, opening]:
+    #             if entity is not None and _normalise_type(entity.type) in allowed_connector_types:
+    #                 return True
+    #         return False
+
+    #     def _entity_text_blob(entity):
+    #         if entity is None:
+    #             return ""
+
+    #         parts = []
+
+    #         try:
+    #             parts.append(str(entity.type))
+    #         except Exception:
+    #             pass
+
+    #         for attr_name in ("Name", "ObjectType", "PredefinedType", "LongName", "Description"):
+    #             try:
+    #                 value = getattr(entity, attr_name, None)
+    #                 if callable(value):
+    #                     value = value()
+    #                 if value not in [None, "", "*"]:
+    #                     parts.append(str(value))
+    #             except Exception:
+    #                 pass
+
+    #         try:
+    #             name = _entity_name(entity)
+    #             if name not in [None, "", "*"]:
+    #                 parts.append(str(name))
+    #         except Exception:
+    #             pass
+
+    #         try:
+    #             for value in list(getattr(entity, "args", []) or [])[:12]:
+    #                 if isinstance(value, str) and value not in ["", "*", "$"]:
+    #                     parts.append(value)
+    #         except Exception:
+    #             pass
+
+    #         return " ".join(parts).upper()
+
+    #     def _has_any_keyword(entity, keywords):
+    #         if entity is None or not keywords:
+    #             return False
+    #         blob = _entity_text_blob(entity)
+    #         for keyword in keywords:
+    #             if keyword is None:
+    #                 continue
+    #             keyword = str(keyword).strip().upper()
+    #             if keyword and keyword in blob:
+    #                 return True
+    #         return False
+
+    #     def _is_human_passable_opening(opening, connector=None):
+    #         """
+    #         Returns True only when an IfcOpeningElement can reasonably be treated
+    #         as an access opening for people.
+
+    #         Accepted by default:
+    #         - unfilled IfcOpeningElement, if includeUnfilledOpenings is True;
+    #         - openings filled by IfcDoor / IfcDoorStandardCase;
+    #         - openings/fillings whose semantic text contains a passable keyword
+    #           such as CURTAIN.
+
+    #         Rejected by default:
+    #         - openings filled by IfcWindow / IfcWindowStandardCase;
+    #         - openings filled by any other unknown element type unless explicitly
+    #           allowed by type or keyword.
+    #         """
+
+    #         if opening is None or _normalise_type(opening.type) != "IFCOPENINGELEMENT":
+    #             return True
+
+    #         filling = opening_to_filling.get(opening.id, None)
+
+    #         if filling is None:
+    #             if connector is not None and _normalise_type(connector.type) != "IFCOPENINGELEMENT":
+    #                 filling = connector
+
+    #         if filling is None or _normalise_type(filling.type) == "IFCOPENINGELEMENT":
+    #             return bool(includeUnfilledOpenings)
+
+    #         filling_type = _normalise_type(filling.type)
+
+    #         # Interior windows and window-like fillings do not create access.
+    #         if filling_type in non_passable_opening_filling_types:
+    #             return False
+
+    #         if filling_type in passable_opening_filling_types:
+    #             return True
+
+    #         # Catch soft partitions such as curtains if the exporter models them
+    #         # as IfcCovering, IfcBuildingElementProxy, or another generic type.
+    #         if _has_any_keyword(filling, passable_opening_filling_keywords):
+    #             return True
+
+    #         if _has_any_keyword(opening, passable_opening_filling_keywords):
+    #             return True
+
+    #         return False
+
+    #     def _safe_dictionary_by_keys_values(keys, values):
+    #         clean_keys = []
+    #         clean_values = []
+    #         for k, v in zip(keys, values):
+    #             if k is None:
+    #                 continue
+    #             if v is None:
+    #                 v = ""
+    #             if isinstance(v, (list, tuple, set)):
+    #                 v = ", ".join([str(x) for x in v])
+    #             clean_keys.append(k)
+    #             clean_values.append(v)
+    #         try:
+    #             return Dictionary.ByKeysValues(clean_keys, clean_values)
+    #         except Exception:
+    #             d = None
+    #             for k, v in zip(clean_keys, clean_values):
+    #                 try:
+    #                     if d is None:
+    #                         d = Dictionary.ByKeyValue(k, v)
+    #                     else:
+    #                         d = Dictionary.SetValueAtKey(d, k, v)
+    #                 except Exception:
+    #                     pass
+    #             return d
+
+    #     def _set_values(dictionary, keys, values):
+    #         try:
+    #             return Dictionary.SetValuesAtKeys(dictionary, keys, values)
+    #         except Exception:
+    #             d = dictionary
+    #             for k, v in zip(keys, values):
+    #                 try:
+    #                     d = Dictionary.SetValueAtKey(d, k, v)
+    #                 except Exception:
+    #                     pass
+    #             return d
+
+    #     def _entity_dictionary(entity, index, role="ifc_entity"):
+    #         if entity is None:
+    #             return _safe_dictionary_by_keys_values(
+    #                 ["index", "label", "type", "vertex_role"],
+    #                 [index, f"Entity_{index}", role, role],
+    #             )
+
+    #         try:
+    #             d = IFCFastTopology._entity_dictionary(
+    #                 entity,
+    #                 dictionaryMode=dictionaryMode,
+    #                 metadataCache=metadata_cache,
+    #                 ontology=ontology,
+    #                 source=source_file,
+    #                 generatedBy="IFC.AccessGraph",
+    #             )
+    #         except Exception:
+    #             d = None
+
+    #         if d is None:
+    #             gid = _root_attr(entity, 0)
+    #             name = _entity_name(entity)
+    #             key = _entity_key(entity)
+    #             label = name if name not in [None, ""] else (key or f"Entity_{index}")
+    #             d = _safe_dictionary_by_keys_values(
+    #                 [
+    #                     "index",
+    #                     "IFC_id",
+    #                     "IFC_key",
+    #                     "IFC_type",
+    #                     "IFC_global_id",
+    #                     "IFC_name",
+    #                     "label",
+    #                     "type",
+    #                     "vertex_role",
+    #                 ],
+    #                 [
+    #                     index,
+    #                     entity.id,
+    #                     f"#{entity.id}",
+    #                     _display_type(entity.type),
+    #                     gid if gid not in [None, "", "*"] else "",
+    #                     name if name not in [None, "", "*"] else "",
+    #                     label,
+    #                     role,
+    #                     role,
+    #                 ],
+    #             )
+    #         else:
+    #             d = _set_values(
+    #                 d,
+    #                 ["index", "vertex_role"],
+    #                 [index, role],
+    #             )
+
+    #         return d
+
+    #     def _space_dictionary(space_entity, index):
+    #         return _entity_dictionary(space_entity, index, role="space")
+
+    #     def _connecting_element_dictionary(entity,
+    #                                        index,
+    #                                        connector=None,
+    #                                        opening=None,
+    #                                        boundary_ids=None,
+    #                                        source=""):
+    #         d = _entity_dictionary(entity, index, role="connecting_element")
+
+    #         connector_gid = _root_attr(connector, 0) if connector is not None else None
+    #         connector_name = _entity_name(connector) if connector is not None else None
+    #         opening_gid = _root_attr(opening, 0) if opening is not None else None
+    #         opening_name = _entity_name(opening) if opening is not None else None
+
+    #         d = _set_values(
+    #             d,
+    #             [
+    #                 "connector_source",
+    #                 "connector_id",
+    #                 "connector_key",
+    #                 "connector_global_id",
+    #                 "connector_type",
+    #                 "connector_name",
+    #                 "opening_id",
+    #                 "opening_key",
+    #                 "opening_global_id",
+    #                 "opening_type",
+    #                 "opening_name",
+    #                 "space_boundary_ids",
+    #             ],
+    #             [
+    #                 source,
+    #                 connector.id if connector is not None else "",
+    #                 _entity_key(connector) or "",
+    #                 connector_gid if connector_gid not in [None, "", "*"] else "",
+    #                 _display_type(connector.type) if connector is not None else "",
+    #                 connector_name if connector_name not in [None, "", "*"] else "",
+    #                 opening.id if opening is not None else "",
+    #                 _entity_key(opening) or "",
+    #                 opening_gid if opening_gid not in [None, "", "*"] else "",
+    #                 _display_type(opening.type) if opening is not None else "",
+    #                 opening_name if opening_name not in [None, "", "*"] else "",
+    #                 sorted(list(boundary_ids or [])),
+    #             ],
+    #         )
+    #         return d
+
+    #     def _edge_dictionary(space_a, space_b, connector, boundary_ids, index_a, index_b, source=""):
+    #         connector_key = _entity_key(connector)
+    #         connector_gid = _root_attr(connector, 0)
+    #         connector_name = _entity_name(connector)
+
+    #         keys = [
+    #             "src",
+    #             "dst",
+    #             "IFC_type",
+    #             "relationship_type",
+    #             "predicate",
+    #             "edge_role",
+    #             "connector_source",
+    #             "connector_id",
+    #             "connector_key",
+    #             "connector_global_id",
+    #             "connector_type",
+    #             "connector_name",
+    #             "space_a",
+    #             "space_b",
+    #             "space_a_name",
+    #             "space_b_name",
+    #             "space_a_global_id",
+    #             "space_b_global_id",
+    #             "space_boundary_ids",
+    #             "bidirectional",
+    #             "weight",
+    #         ]
+    #         values = [
+    #             index_a,
+    #             index_b,
+    #             "IfcRelSpaceAdjacency",
+    #             "IfcRelSpaceAdjacency",
+    #             "adjacent_to",
+    #             "space_to_space",
+    #             source,
+    #             connector.id if connector is not None else "",
+    #             connector_key or "",
+    #             connector_gid if connector_gid not in [None, "", "*"] else "",
+    #             _display_type(connector.type) if connector is not None else "",
+    #             connector_name if connector_name not in [None, "", "*"] else "",
+    #             _entity_key(space_a) or "",
+    #             _entity_key(space_b) or "",
+    #             _entity_name(space_a) or "",
+    #             _entity_name(space_b) or "",
+    #             _root_attr(space_a, 0) or "",
+    #             _root_attr(space_b, 0) or "",
+    #             sorted(list(boundary_ids or [])),
+    #             bool(bidirectional),
+    #             1.0,
+    #         ]
+    #         if ontology:
+    #             keys.extend(["ontology_class", "category", "generated_by", "ontology_predicate", "inverse_predicate"])
+    #             values.extend(["top:Relationship", "relationship", "IFC.AccessGraph", "top:adjacentTo", "top:adjacentTo"])
+    #         return _safe_dictionary_by_keys_values(keys, values)
+
+    #     def _routed_edge_dictionary(src_index,
+    #                                 dst_index,
+    #                                 space_entity,
+    #                                 connecting_entity,
+    #                                 connector,
+    #                                 boundary_ids,
+    #                                 source=""):
+    #         connector_gid = _root_attr(connector, 0) if connector is not None else None
+    #         connecting_gid = _root_attr(connecting_entity, 0) if connecting_entity is not None else None
+
+    #         keys = [
+    #             "src",
+    #             "dst",
+    #             "IFC_type",
+    #             "relationship_type",
+    #             "predicate",
+    #             "edge_role",
+    #             "connector_source",
+    #             "space_id",
+    #             "space_key",
+    #             "space_global_id",
+    #             "space_name",
+    #             "connecting_element_id",
+    #             "connecting_element_key",
+    #             "connecting_element_global_id",
+    #             "connecting_element_type",
+    #             "connector_id",
+    #             "connector_key",
+    #             "connector_global_id",
+    #             "connector_type",
+    #             "space_boundary_ids",
+    #             "bidirectional",
+    #             "weight",
+    #         ]
+    #         values = [
+    #             src_index,
+    #             dst_index,
+    #             "IfcRelSpaceBoundaryAdjacency",
+    #             "IfcRelSpaceBoundaryAdjacency",
+    #             "connects_to",
+    #             "space_to_connecting_element",
+    #             source,
+    #             space_entity.id if space_entity is not None else "",
+    #             _entity_key(space_entity) or "",
+    #             _root_attr(space_entity, 0) or "",
+    #             _entity_name(space_entity) or "",
+    #             connecting_entity.id if connecting_entity is not None else "",
+    #             _entity_key(connecting_entity) or "",
+    #             connecting_gid if connecting_gid not in [None, "", "*"] else "",
+    #             _display_type(connecting_entity.type) if connecting_entity is not None else "",
+    #             connector.id if connector is not None else "",
+    #             _entity_key(connector) or "",
+    #             connector_gid if connector_gid not in [None, "", "*"] else "",
+    #             _display_type(connector.type) if connector is not None else "",
+    #             sorted(list(boundary_ids or [])),
+    #             bool(bidirectional),
+    #             1.0,
+    #         ]
+    #         if ontology:
+    #             keys.extend(["ontology_class", "category", "generated_by", "ontology_predicate", "inverse_predicate"])
+    #             values.extend(["top:Relationship", "relationship", "IFC.AccessGraph", "top:connectsTo", "top:isConnectedTo"])
+    #         return _safe_dictionary_by_keys_values(keys, values)
+
+    #     def _bbox_centre_by_fast_mesh(entity):
+    #         if entity is None:
+    #             return None
+
+    #         try:
+    #             bbox = IFCFastTopology.BoundingBoxDataByProduct(entity, entities)
+    #             if bbox is not None and bbox.get("center") is not None:
+    #                 c = bbox.get("center")
+    #                 return (float(c[0]), float(c[1]), float(c[2]))
+    #         except Exception:
+    #             pass
+
+    #         try:
+    #             mesh = IFCFastTopology.MeshDataByProduct(entity, entities)
+    #         except Exception:
+    #             mesh = None
+
+    #         if mesh is None:
+    #             return None
+
+    #         vertices = mesh.get("vertices", None)
+    #         if not vertices:
+    #             return None
+
+    #         xs = []
+    #         ys = []
+    #         zs = []
+    #         for v in vertices:
+    #             if v is None or len(v) < 3:
+    #                 continue
+    #             try:
+    #                 xs.append(float(v[0]))
+    #                 ys.append(float(v[1]))
+    #                 zs.append(float(v[2]))
+    #             except Exception:
+    #                 pass
+
+    #         if not xs:
+    #             return None
+
+    #         return (
+    #             0.5 * (min(xs) + max(xs)),
+    #             0.5 * (min(ys) + max(ys)),
+    #             0.5 * (min(zs) + max(zs)),
+    #         )
+
+    #     def _make_vertex(x, y, z, dictionary):
+    #         try:
+    #             vertex = Vertex.ByCoordinates(float(x), float(y), float(z))
+    #         except Exception:
+    #             return None
+
+    #         try:
+    #             vertex = Topology.SetDictionary(vertex, dictionary, silent=True)
+    #         except TypeError:
+    #             try:
+    #                 vertex = Topology.SetDictionary(vertex, dictionary)
+    #             except Exception:
+    #                 pass
+    #         except Exception:
+    #             pass
+
+    #         return vertex
+
+    #     def _make_edge(vertex_a, vertex_b, dictionary):
+    #         try:
+    #             edge = Edge.ByVertices([vertex_a, vertex_b], tolerance=tolerance, silent=True)
+    #         except TypeError:
+    #             try:
+    #                 edge = Edge.ByVertices(vertex_a, vertex_b)
+    #             except Exception:
+    #                 edge = None
+    #         except Exception:
+    #             edge = None
+
+    #         if edge is None:
+    #             return None
+
+    #         try:
+    #             edge = Topology.SetDictionary(edge, dictionary, silent=True)
+    #         except TypeError:
+    #             try:
+    #                 edge = Topology.SetDictionary(edge, dictionary)
+    #             except Exception:
+    #                 pass
+    #         except Exception:
+    #             pass
+
+    #         return edge
+
+    #     def _add_pair(pair_to_data,
+    #                   space_a,
+    #                   space_b,
+    #                   connector,
+    #                   connecting_entity,
+    #                   opening,
+    #                   boundary_ids,
+    #                   source):
+    #         key_a = _entity_key(space_a)
+    #         key_b = _entity_key(space_b)
+
+    #         if key_a is None or key_b is None or key_a == key_b:
+    #             return
+
+    #         pair_key = tuple(sorted([key_a, key_b]))
+
+    #         if pair_key not in pair_to_data:
+    #             pair_to_data[pair_key] = {
+    #                 "space_a": space_a,
+    #                 "space_b": space_b,
+    #                 "connectors": [],
+    #                 "connecting_entities": [],
+    #                 "openings": [],
+    #                 "boundary_ids": set(),
+    #                 "sources": set(),
+    #             }
+
+    #         if connector is not None:
+    #             pair_to_data[pair_key]["connectors"].append(connector)
+    #         if connecting_entity is not None:
+    #             pair_to_data[pair_key]["connecting_entities"].append(connecting_entity)
+    #         if opening is not None:
+    #             pair_to_data[pair_key]["openings"].append(opening)
+    #         pair_to_data[pair_key]["boundary_ids"].update(set(boundary_ids or []))
+    #         pair_to_data[pair_key]["sources"].add(source)
+        
+    #     def _vertex_xyz(vertex):
+    #         try:
+    #             return [
+    #                 float(Vertex.X(vertex)),
+    #                 float(Vertex.Y(vertex)),
+    #                 float(Vertex.Z(vertex)),
+    #             ]
+    #         except Exception:
+    #             return None
+
+    #     def _topology_by_fast_mesh(entity):
+    #         try:
+    #             from topologicpy.Topology import Topology
+
+    #             mesh = IFCFastTopology.MeshDataByProduct(
+    #                 entity,
+    #                 entities,
+    #                 circleSides=24,
+    #                 scale=1.0,
+    #             )
+
+    #             if mesh is None or not mesh.get("vertices"):
+    #                 return None
+
+    #             try:
+    #                 topology = Topology.ByGeometry(
+    #                     vertices=mesh.get("vertices") or [],
+    #                     edges=mesh.get("edges") or [],
+    #                     faces=mesh.get("faces") or [],
+    #                     tolerance=tolerance,
+    #                     silent=True,
+    #                 )
+    #             except TypeError:
+    #                 topology = Topology.ByGeometry(
+    #                     vertices=mesh.get("vertices") or [],
+    #                     edges=mesh.get("edges") or [],
+    #                     faces=mesh.get("faces") or [],
+    #                     tolerance=tolerance,
+    #                 )
+
+    #             if topology is None:
+    #                 return None
+
+    #             return topology
+    #         except Exception:
+    #             return None
+
+
+    #     def _bbox_data_by_fast_mesh(entity):
+    #         try:
+    #             mesh = IFCFastTopology.MeshDataByProduct(
+    #                 entity,
+    #                 entities,
+    #                 circleSides=24,
+    #                 scale=1.0,
+    #             )
+    #         except Exception:
+    #             return None
+
+    #         if mesh is None:
+    #             return None
+
+    #         vertices = mesh.get("vertices", None)
+
+    #         if not vertices:
+    #             return None
+
+    #         xs = []
+    #         ys = []
+    #         zs = []
+
+    #         for v in vertices:
+    #             if v is None or len(v) < 3:
+    #                 continue
+    #             try:
+    #                 xs.append(float(v[0]))
+    #                 ys.append(float(v[1]))
+    #                 zs.append(float(v[2]))
+    #             except Exception:
+    #                 continue
+
+    #         if not xs:
+    #             return None
+
+    #         x_min = min(xs)
+    #         y_min = min(ys)
+    #         z_min = min(zs)
+
+    #         x_max = max(xs)
+    #         y_max = max(ys)
+    #         z_max = max(zs)
+
+    #         return {
+    #             "min": [x_min, y_min, z_min],
+    #             "max": [x_max, y_max, z_max],
+    #             "center": [
+    #                 0.5 * (x_min + x_max),
+    #                 0.5 * (y_min + y_max),
+    #                 0.5 * (z_min + z_max),
+    #             ],
+    #         }
+
+
+    #     def _is_internal_xyz(x, y, z, topology):
+    #         if topology is None:
+    #             return False
+
+    #         try:
+    #             candidate = Vertex.ByCoordinates(float(x), float(y), float(z))
+    #         except Exception:
+    #             return False
+
+    #         try:
+    #             return bool(Vertex.IsInternal(candidate, topology, tolerance=tolerance))
+    #         except TypeError:
+    #             try:
+    #                 return bool(Vertex.IsInternal(candidate, topology))
+    #             except Exception:
+    #                 return False
+    #         except Exception:
+    #             return False
+
+
+    #     def _internal_point_by_space_geometry(space):
+    #         """
+    #         Returns a point guaranteed, as far as TopologicPy can test, to be inside
+    #         the space geometry.
+
+    #         The returned tuple is:
+
+    #             (x, y, z, placement_label)
+
+    #         Returns None if no valid internal point can be found.
+    #         """
+
+    #         bbox = _bbox_data_by_fast_mesh(space)
+
+    #         if bbox is None:
+    #             return None
+
+    #         topology = _topology_by_fast_mesh(space)
+    #         if topology is None:
+    #             return None
+    #         if Topology.IsInstance(topology, "cluster"):
+    #             topology = Topology.SelfMerge(topology)
+    #         if Topology.IsInstance(topology, "cluster"):
+    #             cells = Topology.Cells(topology)
+    #             if len(cells) > 0:
+    #                 iv = Topology.InternalVertex(cells[0])
+    #                 return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
+    #             faces = Topology.Faces(topology)
+    #             if len(faces) > 0:
+    #                 iv = Topology.InternalVertex(faces[0])
+    #                 return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
+    #             edges = Topology.Edges(topology)
+    #             if len(edges) > 0:
+    #                 iv = Topology.InternalVertex(edges[0])
+    #                 return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
+    #             vertices = Topology.Vertices(topology)
+    #             if len(vertices) > 0:
+    #                 iv = vertices[0]
+    #                 return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
+
+    #         iv = Topology.InternalVertex(topology)
+    #         return Vertex.X(iv), Vertex.Y(iv), Vertex.Z(iv)
+
+    #     # --------------------------------------------------------------
+    #     # Parse IFC once.
+    #     # --------------------------------------------------------------
+
+    #     try:
+    #         entities = IFC.Entities(file, silent=silent)
+    #     except Exception:
+    #         entities = IFC._entities_from_input(file, silent=silent)
+
+    #     if entities is None or not isinstance(entities, dict):
+    #         if not silent:
+    #             print("IFC.AccessGraph - Error: Could not read or parse the input IFC file. Returning None.")
+    #         return None
+
+    #     metadata_cache = IFCFastTopology._entity_metadata_cache(entities, dictionaryMode=dictionaryMode)
+
+    #     if connectingElementTypes is None:
+    #         connectingElementTypes = ["IFCDOOR", "IFCDOORSTANDARDCASE", "IFCOPENINGELEMENT"]
+
+    #     allowed_connector_types = _normalise_type_set(connectingElementTypes)
+
+    #     if passableOpeningFillingTypes is None:
+    #         passableOpeningFillingTypes = ["IFCDOOR", "IFCDOORSTANDARDCASE"]
+    #     if passableOpeningFillingKeywords is None:
+    #         passableOpeningFillingKeywords = ["CURTAIN"]
+
+    #     passable_opening_filling_types = _normalise_type_set(passableOpeningFillingTypes)
+    #     passable_opening_filling_keywords = [
+    #         str(k).strip().upper()
+    #         for k in passableOpeningFillingKeywords
+    #         if k is not None and str(k).strip()
+    #     ]
+
+    #     non_passable_opening_filling_types = {
+    #         "IFCWINDOW",
+    #         "IFCWINDOWSTANDARDCASE",
+    #     }
+
+    #     # --------------------------------------------------------------
+    #     # Collect spaces.
+    #     # --------------------------------------------------------------
+
+    #     spaces = []
+    #     for entity in entities.values():
+    #         if _normalise_type(entity.type) == "IFCSPACE":
+    #             spaces.append(entity)
+
+    #     spaces.sort(key=lambda e: e.id)
+
+    #     if len(spaces) < 1:
+    #         if not silent:
+    #             print("IFC.AccessGraph - Warning: No IfcSpace entities were found. Returning None.")
+    #         return None
+
+    #     # --------------------------------------------------------------
+    #     # Resolve openings and fillings.
+    #     # IfcRelFillsElement args:
+    #     #   4 = RelatingOpeningElement
+    #     #   5 = RelatedBuildingElement
+    #     # --------------------------------------------------------------
+
+    #     opening_to_filling = {}
+    #     filling_to_opening = {}
+
+    #     # Always build these maps. They are needed not only for optionally
+    #     # replacing an IfcOpeningElement with its filling element, but also for
+    #     # deciding whether the opening is human-passable. For example, an
+    #     # IfcOpeningElement filled by an IfcWindow must not create access edges.
+    #     for rel in entities.values():
+    #         if _normalise_type(rel.type) != "IFCRELFILLSELEMENT":
+    #             continue
+    #         if len(rel.args) <= 5:
+    #             continue
+
+    #         opening_refs = _refs(rel.args[4])
+    #         filling_refs = _refs(rel.args[5])
+
+    #         for opening_ref in opening_refs:
+    #             opening = _entity_from_ref(opening_ref)
+    #             if opening is None:
+    #                 continue
+
+    #             for filling_ref in filling_refs:
+    #                 filling = _entity_from_ref(filling_ref)
+    #                 if filling is not None:
+    #                     opening_to_filling[opening.id] = filling
+    #                     filling_to_opening[filling.id] = opening
+
+    #     # --------------------------------------------------------------
+    #     # Collect boundary records.
+    #     # Local connectors are grouped by connector entity.
+    #     # Wall-like connectors are NOT grouped into pairwise combinations.
+    #     # They are handled later using CorrespondingBoundary.
+    #     #
+    #     # IfcRelSpaceBoundary args:
+    #     #   4  = RelatingSpace
+    #     #   5  = RelatedBuildingElement
+    #     #   10 = CorrespondingBoundary for IfcRelSpaceBoundary2ndLevel
+    #     # --------------------------------------------------------------
+
+    #     boundary_records = {}
+    #     connector_to_spaces = {}
+    #     connector_to_boundary_ids = {}
+
+    #     for rel in entities.values():
+    #         rel_type = _normalise_type(rel.type)
+
+    #         if rel_type not in boundary_types:
+    #             continue
+    #         if len(rel.args) <= 5:
+    #             continue
+
+    #         space_refs = _refs(rel.args[4])
+    #         element_refs = _refs(rel.args[5])
+
+    #         if len(space_refs) < 1 or len(element_refs) < 1:
+    #             continue
+
+    #         for space_ref in space_refs:
+    #             space_entity = _entity_from_ref(space_ref)
+
+    #             if space_entity is None or _normalise_type(space_entity.type) != "IFCSPACE":
+    #                 continue
+
+    #             for element_ref in element_refs:
+    #                 raw_element = _entity_from_ref(element_ref)
+
+    #                 if raw_element is None:
+    #                     continue
+
+    #                 raw_type = _normalise_type(raw_element.type)
+    #                 opening_entity = raw_element if raw_type == "IFCOPENINGELEMENT" else filling_to_opening.get(raw_element.id, None)
+    #                 connector_entity = raw_element
+
+    #                 if useFillingElements and raw_type == "IFCOPENINGELEMENT":
+    #                     connector_entity = opening_to_filling.get(raw_element.id, raw_element)
+
+    #                 # Access graph edges should only pass through openings that
+    #                 # humans can plausibly traverse. This prevents interior
+    #                 # windows from creating false room-to-room access while
+    #                 # retaining doors, curtains/soft partitions, and genuinely
+    #                 # unfilled openings.
+    #                 if opening_entity is not None and not _is_human_passable_opening(opening_entity, connector_entity):
+    #                     continue
+
+    #                 if not _is_allowed(raw_element, connector_entity, opening_entity):
+    #                     continue
+
+    #                 is_wall = _is_wall_like(raw_element) or _is_wall_like(connector_entity)
+    #                 connector_key = _entity_key(connector_entity)
+
+    #                 if connector_key is None:
+    #                     continue
+
+    #                 rec = {
+    #                     "rel": rel,
+    #                     "rel_type": rel_type,
+    #                     "space": space_entity,
+    #                     "raw_element": raw_element,
+    #                     "connector": connector_entity,
+    #                     "opening": opening_entity,
+    #                     "connecting_entity": opening_entity if opening_entity is not None else connector_entity,
+    #                     "is_wall": is_wall,
+    #                 }
+    #                 boundary_records[rel.id] = rec
+
+    #                 if is_wall:
+    #                     continue
+
+    #                 if connector_key not in connector_to_spaces:
+    #                     connector_to_spaces[connector_key] = {
+    #                         "connector": connector_entity,
+    #                         "opening": opening_entity,
+    #                         "connecting_entity": rec["connecting_entity"],
+    #                         "spaces": {},
+    #                     }
+
+    #                 connector_to_spaces[connector_key]["spaces"][_entity_key(space_entity)] = space_entity
+    #                 connector_to_boundary_ids.setdefault(connector_key, set()).add(rel.id)
+
+    #     # --------------------------------------------------------------
+    #     # Build adjacency pairs.
+    #     # 1. Local connectors: pairwise grouping is acceptable.
+    #     # 2. Walls: only CorrespondingBoundary pairs are accepted.
+    #     # --------------------------------------------------------------
+
+    #     pair_to_data = {}
+
+    #     # 1. Local connectors such as doors/openings/windows.
+    #     for connector_key, data in connector_to_spaces.items():
+    #         connector = data.get("connector")
+    #         opening = data.get("opening")
+    #         connecting_entity = data.get("connecting_entity")
+    #         connector_spaces = list(data.get("spaces", {}).values())
+
+    #         if len(connector_spaces) < 2:
+    #             continue
+
+    #         connector_spaces.sort(key=lambda e: e.id)
+
+    #         for space_a, space_b in combinations(connector_spaces, 2):
+    #             _add_pair(
+    #                 pair_to_data,
+    #                 space_a,
+    #                 space_b,
+    #                 connector,
+    #                 connecting_entity,
+    #                 opening,
+    #                 connector_to_boundary_ids.get(connector_key, set()),
+    #                 "shared_local_connector",
+    #             )
+
+    #     # 2. Wall-like connectors through IfcRelSpaceBoundary2ndLevel.CorrespondingBoundary.
+    #     for rec in list(boundary_records.values()):
+    #         if not rec.get("is_wall"):
+    #             continue
+
+    #         rel = rec.get("rel")
+    #         if rel is None or _normalise_type(rel.type) != "IFCRELSPACEBOUNDARY2NDLEVEL":
+    #             continue
+    #         if len(rel.args) <= 10:
+    #             continue
+
+    #         corresponding_refs = _refs(rel.args[10])
+    #         if not corresponding_refs:
+    #             continue
+
+    #         for corresponding_ref in corresponding_refs:
+    #             corresponding_rel = _entity_from_ref(corresponding_ref)
+    #             if corresponding_rel is None:
+    #                 continue
+
+    #             corr_rec = boundary_records.get(corresponding_rel.id)
+    #             if corr_rec is None or not corr_rec.get("is_wall"):
+    #                 continue
+
+    #             space_a = rec.get("space")
+    #             space_b = corr_rec.get("space")
+
+    #             if space_a is None or space_b is None:
+    #                 continue
+
+    #             raw_a = rec.get("raw_element")
+    #             raw_b = corr_rec.get("raw_element")
+
+    #             # Be conservative: corresponding wall boundaries should refer to
+    #             # the same wall/building element. If not, skip the pair rather
+    #             # than risk false adjacency.
+    #             if _entity_key(raw_a) != _entity_key(raw_b):
+    #                 continue
+
+    #             connector = rec.get("connector") or raw_a
+    #             connecting_entity = rec.get("connecting_entity") or connector
+    #             opening = rec.get("opening")
+    #             boundary_ids = {rel.id, corresponding_rel.id}
+
+    #             _add_pair(
+    #                 pair_to_data,
+    #                 space_a,
+    #                 space_b,
+    #                 connector,
+    #                 connecting_entity,
+    #                 opening,
+    #                 boundary_ids,
+    #                 "corresponding_wall_boundary",
+    #             )
+
+    #     # --------------------------------------------------------------
+    #     # Decide which spaces become vertices.
+    #     # --------------------------------------------------------------
+
+    #     if includeIsolatedSpaces:
+    #         graph_spaces = spaces
+    #     else:
+    #         used_space_keys = set()
+    #         for pair_key in pair_to_data.keys():
+    #             used_space_keys.update(pair_key)
+    #         graph_spaces = [space for space in spaces if _entity_key(space) in used_space_keys]
+
+    #     graph_spaces.sort(key=lambda e: e.id)
+
+    #     # --------------------------------------------------------------
+    #     # Create IfcSpace vertices.
+    #     # --------------------------------------------------------------
+
+    #     vertices = []
+    #     edges = []
+    #     space_key_to_index = {}
+    #     space_key_to_xyz = {}
+
+    #     n = max(len(graph_spaces), 1)
+    #     radius = max(1.0, float(n) / (2.0 * math.pi))
+
+    #     for i, space in enumerate(graph_spaces):
+    #         angle = (2.0 * math.pi * float(i)) / float(n)
+    #         fallback_x = radius * math.cos(angle)
+    #         fallback_y = radius * math.sin(angle)
+    #         fallback_z = 0.0
+
+    #         x = fallback_x
+    #         y = fallback_y
+    #         z = fallback_z
+    #         vertex_placement = "topology_layout"
+
+    #         if importMode == "geometry":
+    #             if useInternalVertex == True:
+    #                 centre = _internal_point_by_space_geometry(space)
+
+    #                 if centre is not None:
+    #                     x, y, z = centre
+    #                     vertex_placement = "geometry_internal_vertex"
+    #                 else:
+    #                     centre = _bbox_centre_by_fast_mesh(space)
+
+    #                     if centre is not None:
+    #                         x, y, z = centre
+    #                         vertex_placement = "geometry_bbox_centre_unverified"
+    #                     else:
+    #                         vertex_placement = "topology_layout_fallback"
+    #             else:
+    #                 centre = _bbox_centre_by_fast_mesh(space)
+    #                 if centre is not None:
+    #                     x, y, z = centre
+    #                     vertex_placement = "geometry_bbox_centre_unverified"
+    #                 else:
+    #                     vertex_placement = "topology_layout_fallback"
+
+
+    #         d = _space_dictionary(space, len(vertices))
+    #         d = _set_values(
+    #             d,
+    #             ["import_mode", "vertex_placement", "x", "y", "z"],
+    #             [importMode, vertex_placement, float(x), float(y), float(z)],
+    #         )
+
+    #         vertex = _make_vertex(x, y, z, d)
+    #         if vertex is None:
+    #             if not silent:
+    #                 print(f"IFC.AccessGraph - Warning: Could not create vertex for IfcSpace #{space.id}. Skipping.")
+    #             continue
+
+    #         key = _entity_key(space)
+    #         space_key_to_index[key] = len(vertices)
+    #         space_key_to_xyz[key] = (float(x), float(y), float(z))
+    #         vertices.append(vertex)
+
+    #     # --------------------------------------------------------------
+    #     # Create edges, optionally routed through connecting elements.
+    #     # --------------------------------------------------------------
+
+    #     connecting_key_to_index = {}
+    #     connecting_key_to_xyz = {}
+
+    #     for pair_key, data in pair_to_data.items():
+    #         key_a, key_b = pair_key
+
+    #         if key_a not in space_key_to_index or key_b not in space_key_to_index:
+    #             continue
+
+    #         index_a = space_key_to_index[key_a]
+    #         index_b = space_key_to_index[key_b]
+
+    #         if index_a == index_b:
+    #             continue
+
+    #         vertex_a = vertices[index_a]
+    #         vertex_b = vertices[index_b]
+
+    #         connectors = data.get("connectors", [])
+    #         connecting_entities = data.get("connecting_entities", [])
+    #         openings = data.get("openings", [])
+    #         connector = connectors[0] if connectors else None
+    #         opening = openings[0] if openings else None
+    #         connecting_entity = connecting_entities[0] if connecting_entities else (opening if opening is not None else connector)
+    #         boundary_ids = data.get("boundary_ids", set())
+    #         source = ", ".join(sorted(list(data.get("sources", set()))))
+
+    #         if not viaConnectingElements:
+    #             d = _edge_dictionary(
+    #                 data.get("space_a"),
+    #                 data.get("space_b"),
+    #                 connector,
+    #                 boundary_ids,
+    #                 index_a,
+    #                 index_b,
+    #                 source=source,
+    #             )
+
+    #             if len(connectors) > 1:
+    #                 connector_keys = [_entity_key(c) for c in connectors if c is not None]
+    #                 connector_types = [_display_type(c.type) for c in connectors if c is not None]
+    #                 d = _set_values(
+    #                     d,
+    #                     ["connector_count", "connector_keys", "connector_types"],
+    #                     [len(connectors), connector_keys, connector_types],
+    #                 )
+
+    #             edge = _make_edge(vertex_a, vertex_b, d)
+    #             if edge is not None:
+    #                 edges.append(edge)
+    #             continue
+
+    #         # For wall corresponding-boundary pairs, do NOT reuse one wall vertex
+    #         # across all pairs. Doing so would create a high-degree wall hub and
+    #         # would again imply implausible cross-wall connectivity. For local
+    #         # connectors, reuse the door/opening/window vertex.
+    #         if "corresponding_wall_boundary" in data.get("sources", set()):
+    #             connecting_key = "boundary_pair::" + "::".join([str(x) for x in sorted(list(boundary_ids))])
+    #         else:
+    #             connecting_key = _entity_key(connecting_entity) or _entity_key(connector) or ("connector::" + "::".join([str(x) for x in sorted(list(boundary_ids))]))
+
+    #         if connecting_key not in connecting_key_to_index:
+                
+    #             if importMode == "geometry":
+    #                 if useInternalVertex == True:
+    #                     centre = _internal_point_by_space_geometry(connecting_entity)
+
+    #                     if centre is not None:
+    #                         x, y, z = centre
+    #                         vertex_placement = "geometry_internal_vertex"
+    #                     else:
+    #                         centre = _bbox_centre_by_fast_mesh(connecting_entity)
+
+    #                         if centre is not None:
+    #                             x, y, z = centre
+    #                             vertex_placement = "geometry_bbox_centre_unverified"
+    #                         else:
+    #                             vertex_placement = "topology_layout_fallback"
+    #                 else:
+    #                     centre = _bbox_centre_by_fast_mesh(connecting_entity)
+    #                     if centre is not None:
+    #                         x, y, z = centre
+    #                         vertex_placement = "geometry_bbox_centre_unverified"
+    #                     else:
+    #                         vertex_placement = "topology_layout_fallback"
+    #             if centre is not None:
+    #                 cx, cy, cz = centre
+    #                 vertex_placement = "geometry_bbox_centre"
+    #             else:
+    #                 ax, ay, az = space_key_to_xyz.get(key_a, (0.0, 0.0, 0.0))
+    #                 bx, by, bz = space_key_to_xyz.get(key_b, (0.0, 0.0, 0.0))
+    #                 cx = 0.5 * (ax + bx)
+    #                 cy = 0.5 * (ay + by)
+    #                 cz = 0.5 * (az + bz)
+    #                 vertex_placement = "incident_space_midpoint" if importMode == "geometry" else "topology_layout_midpoint"
+
+    #             d = _connecting_element_dictionary(
+    #                 connecting_entity,
+    #                 len(vertices),
+    #                 connector=connector,
+    #                 opening=opening,
+    #                 boundary_ids=boundary_ids,
+    #                 source=source,
+    #             )
+    #             d = _set_values(
+    #                 d,
+    #                 ["import_mode", "vertex_placement", "x", "y", "z"],
+    #                 [importMode, vertex_placement, float(cx), float(cy), float(cz)],
+    #             )
+
+    #             connecting_vertex = _make_vertex(cx, cy, cz, d)
+    #             if connecting_vertex is None:
+    #                 continue
+
+    #             connecting_key_to_index[connecting_key] = len(vertices)
+    #             connecting_key_to_xyz[connecting_key] = (float(cx), float(cy), float(cz))
+    #             vertices.append(connecting_vertex)
+
+    #         index_c = connecting_key_to_index[connecting_key]
+    #         vertex_c = vertices[index_c]
+
+    #         d_ac = _routed_edge_dictionary(
+    #             index_a,
+    #             index_c,
+    #             data.get("space_a"),
+    #             connecting_entity,
+    #             connector,
+    #             boundary_ids,
+    #             source=source,
+    #         )
+    #         edge_ac = _make_edge(vertex_a, vertex_c, d_ac)
+    #         if edge_ac is not None:
+    #             edges.append(edge_ac)
+
+    #         d_cb = _routed_edge_dictionary(
+    #             index_c,
+    #             index_b,
+    #             data.get("space_b"),
+    #             connecting_entity,
+    #             connector,
+    #             boundary_ids,
+    #             source=source,
+    #         )
+    #         edge_cb = _make_edge(vertex_c, vertex_b, d_cb)
+    #         if edge_cb is not None:
+    #             edges.append(edge_cb)
+
+    #     def _legacy_graph_by_vertices_edges():
+    #         if Graph is None:
+    #             return None
+    #         try:
+    #             return Graph.ByVerticesEdges(vertices, edges, index=True)
+    #         except TypeError:
+    #             try:
+    #                 return Graph.ByVerticesEdges(vertices, edges)
+    #             except Exception:
+    #                 return None
+    #         except Exception:
+    #             return None
+
+    #     def _tgraph_by_vertices_edges():
+    #         if TGraph is None:
+    #             return None
+
+    #         call_patterns = (
+    #             lambda: TGraph.ByVerticesEdges(
+    #                 vertices=vertices,
+    #                 edges=edges,
+    #                 index=True,
+    #                 ontology=ontology,
+    #                 tolerance=tolerance,
+    #                 silent=silent,
+    #             ),
+    #             lambda: TGraph.ByVerticesEdges(
+    #                 vertices=vertices,
+    #                 edges=edges,
+    #                 ontology=ontology,
+    #                 tolerance=tolerance,
+    #                 silent=silent,
+    #             ),
+    #             lambda: TGraph.ByVerticesEdges(
+    #                 vertices=vertices,
+    #                 edges=edges,
+    #                 tolerance=tolerance,
+    #                 silent=silent,
+    #             ),
+    #             lambda: TGraph.ByVerticesEdges(vertices, edges),
+    #         )
+
+    #         for call in call_patterns:
+    #             try:
+    #                 graph_candidate = call()
+    #                 if graph_candidate is not None:
+    #                     return graph_candidate
+    #             except TypeError:
+    #                 continue
+    #             except Exception:
+    #                 continue
+
+    #         legacy_graph = _legacy_graph_by_vertices_edges()
+    #         if legacy_graph is not None:
+    #             try:
+    #                 return TGraph.ByGraph(legacy_graph, ontology=ontology, silent=silent)
+    #             except TypeError:
+    #                 try:
+    #                     return TGraph.ByGraph(legacy_graph)
+    #                 except Exception:
+    #                     return None
+    #             except Exception:
+    #                 return None
+
+    #         return None
+        
+    #     graph = _tgraph_by_vertices_edges()
+    #     if graph is None:
+    #         if not silent:
+    #             print(f"IFC.AccessGraph - Error: Could not create access graph. Returning None.")
+    #         return None
+
+    #     return graph
 
 
     @staticmethod

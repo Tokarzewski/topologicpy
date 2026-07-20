@@ -1335,6 +1335,575 @@ class Face():
         dirA = Face.Normal(face, outputType="xyz", mantissa=mantissa)
         return Vector.CompassAngle(vectorA=dirA, vectorB=north, mantissa=mantissa, tolerance=tolerance)
 
+
+    @staticmethod
+    def _CornerVerticesByMaterialAngle(
+        face,
+        includeInternalBoundaries: bool = False,
+        cornerType: str = "convex",
+        angTolerance: float = 0.01,
+        mantissa: int = 6,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ) -> list:
+        """
+        Returns convex or concave corner vertices of the input face based on the
+        actual face-material angle.
+
+        External-boundary angles are used directly. Internal-boundary angles are
+        complemented using 360 - boundary_loop_angle so that the returned angle
+        represents the material around the hole.
+        """
+
+        import math
+        import inspect
+
+        from topologicpy.Vertex import Vertex
+        from topologicpy.Edge import Edge
+        from topologicpy.Topology import Topology
+
+        if not Topology.IsInstance(face, "Face"):
+            if not silent:
+                print("Face._CornerVerticesByMaterialAngle - Error: The input face parameter is not a valid face. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print("caller name:", calframe[1][3])
+            return None
+
+        cornerType = str(cornerType).strip().lower()
+        if cornerType not in ["convex", "concave"]:
+            if not silent:
+                print("Face._CornerVerticesByMaterialAngle - Error: The cornerType parameter must be either 'convex' or 'concave'. Returning None.")
+            return None
+
+        def _xyz(vertex):
+            try:
+                return [
+                    float(Vertex.X(vertex)),
+                    float(Vertex.Y(vertex)),
+                    float(Vertex.Z(vertex)),
+                ]
+            except Exception:
+                return None
+
+        def _sub(a, b):
+            return [
+                a[0] - b[0],
+                a[1] - b[1],
+                a[2] - b[2],
+            ]
+
+        def _dot(a, b):
+            return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+        def _cross(a, b):
+            return [
+                a[1]*b[2] - a[2]*b[1],
+                a[2]*b[0] - a[0]*b[2],
+                a[0]*b[1] - a[1]*b[0],
+            ]
+
+        def _length(v):
+            return math.sqrt(_dot(v, v))
+
+        def _normalise(v):
+            length = _length(v)
+            if length <= max(float(tolerance), 1e-12):
+                return None
+            return [
+                v[0] / length,
+                v[1] / length,
+                v[2] / length,
+            ]
+
+        def _distance_squared(a, b):
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+            dz = a[2] - b[2]
+            return dx*dx + dy*dy + dz*dz
+
+        def _same_point(a, b):
+            return _distance_squared(a, b) <= tolerance*tolerance
+
+        def _edge_vertices(edge):
+            sv = None
+            ev = None
+
+            try:
+                sv = Edge.StartVertex(edge)
+                ev = Edge.EndVertex(edge)
+            except Exception:
+                pass
+
+            if sv is not None and ev is not None:
+                return sv, ev
+
+            try:
+                sv = edge.StartVertex()
+                ev = edge.EndVertex()
+            except Exception:
+                pass
+
+            if sv is not None and ev is not None:
+                return sv, ev
+
+            try:
+                vertices = Topology.Vertices(edge)
+                if isinstance(vertices, list) and len(vertices) >= 2:
+                    return vertices[0], vertices[1]
+            except Exception:
+                pass
+
+            return None, None
+
+        def _edges_from_wire(wire):
+            try:
+                edges = Topology.Edges(wire)
+                if isinstance(edges, list):
+                    return edges
+            except Exception:
+                pass
+
+            try:
+                edges = wire.Edges()
+                if isinstance(edges, list):
+                    return edges
+            except Exception:
+                pass
+
+            return []
+
+        def _ordered_vertices_from_wire(wire):
+            """
+            Orders a closed wire's vertices using a tolerance-based endpoint graph.
+            This avoids assuming that Topology.Edges(wire) returns sequentially
+            ordered and consistently oriented edges.
+            """
+
+            edges = _edges_from_wire(wire)
+
+            if len(edges) < 3:
+                return []
+
+            nodes = []
+            node_vertices = []
+            edge_node_pairs = []
+
+            def _node_index(point, vertex):
+                for i, existing_point in enumerate(nodes):
+                    if _same_point(point, existing_point):
+                        if node_vertices[i] is None and vertex is not None:
+                            node_vertices[i] = vertex
+                        return i
+
+                nodes.append(point)
+                node_vertices.append(vertex)
+                return len(nodes) - 1
+
+            for edge in edges:
+                sv, ev = _edge_vertices(edge)
+
+                if sv is None or ev is None:
+                    continue
+
+                p1 = _xyz(sv)
+                p2 = _xyz(ev)
+
+                if p1 is None or p2 is None:
+                    continue
+
+                if _same_point(p1, p2):
+                    continue
+
+                n1 = _node_index(p1, sv)
+                n2 = _node_index(p2, ev)
+
+                if n1 == n2:
+                    continue
+
+                edge_node_pairs.append((n1, n2))
+
+            if len(edge_node_pairs) < 3 or len(nodes) < 3:
+                return []
+
+            adjacency = {}
+            for edge_index, (n1, n2) in enumerate(edge_node_pairs):
+                adjacency.setdefault(n1, []).append((n2, edge_index))
+                adjacency.setdefault(n2, []).append((n1, edge_index))
+
+            start = None
+            for node_index in sorted(adjacency.keys()):
+                if len(adjacency[node_index]) == 2:
+                    start = node_index
+                    break
+
+            if start is None:
+                start = sorted(adjacency.keys())[0]
+
+            ordered_node_indices = [start]
+            used_edges = set()
+            previous_node = None
+            current_node = start
+
+            while True:
+                candidates = adjacency.get(current_node, [])
+
+                next_node = None
+                next_edge_index = None
+
+                for candidate_node, candidate_edge_index in candidates:
+                    if candidate_edge_index in used_edges:
+                        continue
+
+                    if previous_node is not None and candidate_node == previous_node and len(candidates) > 1:
+                        continue
+
+                    next_node = candidate_node
+                    next_edge_index = candidate_edge_index
+                    break
+
+                if next_node is None:
+                    break
+
+                used_edges.add(next_edge_index)
+
+                if next_node == start:
+                    break
+
+                ordered_node_indices.append(next_node)
+                previous_node = current_node
+                current_node = next_node
+
+                if len(ordered_node_indices) > len(edge_node_pairs) + 1:
+                    break
+
+            if len(ordered_node_indices) < 3:
+                return []
+
+            ordered_vertices = []
+            for node_index in ordered_node_indices:
+                vertex = node_vertices[node_index]
+                if vertex is not None:
+                    ordered_vertices.append(vertex)
+
+            if len(ordered_vertices) > 1:
+                p_first = _xyz(ordered_vertices[0])
+                p_last = _xyz(ordered_vertices[-1])
+                if p_first is not None and p_last is not None and _same_point(p_first, p_last):
+                    ordered_vertices.pop()
+
+            return ordered_vertices
+
+        def _newell_normal(vertices):
+            points = [_xyz(v) for v in vertices]
+            points = [p for p in points if p is not None]
+
+            if len(points) < 3:
+                return None
+
+            nx = 0.0
+            ny = 0.0
+            nz = 0.0
+            n = len(points)
+
+            for i in range(n):
+                p1 = points[i]
+                p2 = points[(i + 1) % n]
+
+                nx += (p1[1] - p2[1]) * (p1[2] + p2[2])
+                ny += (p1[2] - p2[2]) * (p1[0] + p2[0])
+                nz += (p1[0] - p2[0]) * (p1[1] + p2[1])
+
+            normal = _normalise([nx, ny, nz])
+
+            if normal is not None:
+                return normal
+
+            # Fallback: search for any non-collinear triple.
+            for i in range(n):
+                a = points[i]
+                for j in range(i + 1, n):
+                    b = points[j]
+                    ab = _sub(b, a)
+
+                    if _length(ab) <= tolerance:
+                        continue
+
+                    for k in range(j + 1, n):
+                        c = points[k]
+                        ac = _sub(c, a)
+                        candidate = _normalise(_cross(ab, ac))
+
+                        if candidate is not None:
+                            return candidate
+
+            return None
+
+        def _boundary_loop_angles(vertices, normal):
+            """
+            Returns the interior angles of the boundary loop itself.
+
+            This is independent of whether the loop is an external boundary or an
+            internal hole. The caller converts internal-boundary loop angles to
+            material angles using 360 - angle.
+            """
+
+            if not isinstance(vertices, list) or len(vertices) < 3:
+                return []
+
+            points = [_xyz(v) for v in vertices]
+
+            if any(p is None for p in points):
+                return []
+
+            n = len(points)
+            angles = []
+
+            for i in range(n):
+                previous_point = points[i - 1]
+                current_point = points[i]
+                next_point = points[(i + 1) % n]
+
+                incoming = _sub(current_point, previous_point)
+                outgoing = _sub(next_point, current_point)
+
+                if _length(incoming) <= tolerance or _length(outgoing) <= tolerance:
+                    return []
+
+                cross_product = _cross(incoming, outgoing)
+                dot_product = _dot(incoming, outgoing)
+
+                turn_angle = math.degrees(
+                    math.atan2(
+                        _dot(normal, cross_product),
+                        dot_product,
+                    )
+                )
+
+                angle = 180.0 - turn_angle
+
+                while angle < 0.0:
+                    angle += 360.0
+
+                while angle > 360.0:
+                    angle -= 360.0
+
+                angles.append(round(angle, mantissa))
+
+            # Choose the angle set that behaves like polygon-loop interior angles.
+            expected_sum = float(n - 2) * 180.0
+            angle_sum = sum(angles)
+
+            complement_angles = [round(360.0 - a, mantissa) for a in angles]
+            complement_sum = sum(complement_angles)
+
+            sum_tolerance = max(
+                float(angTolerance) * max(n, 1),
+                (10.0 ** (-mantissa)) * max(n, 1) * 2.0,
+            )
+
+            if abs(complement_sum - expected_sum) + sum_tolerance < abs(angle_sum - expected_sum):
+                angles = complement_angles
+
+            return angles
+
+        def _corner_vertices_from_wire(wire, normal, isInternalBoundary=False):
+            vertices = _ordered_vertices_from_wire(wire)
+
+            if len(vertices) < 3:
+                return []
+
+            loop_angles = _boundary_loop_angles(vertices, normal)
+
+            if len(loop_angles) != len(vertices):
+                return []
+
+            result = []
+
+            for vertex, loop_angle in zip(vertices, loop_angles):
+                try:
+                    loop_angle = float(loop_angle)
+                except Exception:
+                    continue
+
+                if isInternalBoundary:
+                    material_angle = 360.0 - loop_angle
+                else:
+                    material_angle = loop_angle
+
+                material_angle = round(material_angle, mantissa)
+
+                if cornerType == "convex":
+                    if material_angle < 180.0 - angTolerance:
+                        result.append(vertex)
+                else:
+                    if material_angle > 180.0 + angTolerance:
+                        result.append(vertex)
+
+            return result
+
+        external_boundary = Face.ExternalBoundary(face)
+
+        if external_boundary is None:
+            if not silent:
+                print("Face._CornerVerticesByMaterialAngle - Error: Could not retrieve the external boundary. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print("caller name:", calframe[1][3])
+            return None
+
+        external_vertices = _ordered_vertices_from_wire(external_boundary)
+
+        if len(external_vertices) < 3:
+            if not silent:
+                print("Face._CornerVerticesByMaterialAngle - Error: Could not extract an ordered external boundary loop. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print("caller name:", calframe[1][3])
+            return None
+
+        normal = _newell_normal(external_vertices)
+
+        if normal is None:
+            if not silent:
+                print("Face._CornerVerticesByMaterialAngle - Error: Could not determine a valid face normal. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print("caller name:", calframe[1][3])
+            return None
+
+        corner_vertices = _corner_vertices_from_wire(
+            external_boundary,
+            normal,
+            isInternalBoundary=False,
+        )
+
+        if includeInternalBoundaries:
+            try:
+                internal_boundaries = Face.InternalBoundaries(face)
+            except Exception:
+                internal_boundaries = []
+
+            if isinstance(internal_boundaries, list):
+                for internal_boundary in internal_boundaries:
+                    corner_vertices.extend(
+                        _corner_vertices_from_wire(
+                            internal_boundary,
+                            normal,
+                            isInternalBoundary=True,
+                        )
+                    )
+
+        return corner_vertices
+
+
+    @staticmethod
+    def ConvexCornerVertices(
+        face,
+        includeInternalBoundaries: bool = False,
+        angTolerance: float = 0.01,
+        mantissa: int = 6,
+        silent: bool = False,
+        tolerance: float = 0.0001,
+    ) -> list:
+        """
+        Returns the convex corner vertices of the input face.
+
+        A vertex is considered convex if the actual face-material angle at that
+        vertex is less than 180 degrees, within the specified tolerance. Collinear
+        vertices with angles close to 180 degrees are not returned.
+
+        For internal boundaries, the returned classification is based on the material
+        angle around the hole, not the interior angle of the hole loop itself. Thus,
+        a rectangular hole contributes concave corners, not convex corners.
+
+        Parameters
+        ----------
+        face : topologic_core.Face
+            The input face.
+        includeInternalBoundaries : bool , optional
+            If set to True, internal boundary vertices are also checked using their
+            face-material angles. Default is False.
+        angTolerance : float , optional
+            The angular tolerance in degrees. Default is 0.01.
+        mantissa : int , optional
+            The number of decimal places to round computed angles to. Default is 6.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        tolerance : float , optional
+            The geometric tolerance used for ordering boundary vertices.
+            Default is 0.0001.
+
+        Returns
+        -------
+        list
+            The list of convex corner vertices.
+        """
+
+        return Face._CornerVerticesByMaterialAngle(
+            face,
+            includeInternalBoundaries=includeInternalBoundaries,
+            cornerType="convex",
+            angTolerance=angTolerance,
+            mantissa=mantissa,
+            tolerance=tolerance,
+            silent=silent,
+        )
+
+
+    @staticmethod
+    def ConcaveCornerVertices(
+        face,
+        includeInternalBoundaries: bool = False,
+        angTolerance: float = 0.01,
+        mantissa: int = 6,
+        silent: bool = False,
+        tolerance: float = 0.0001,
+    ) -> list:
+        """
+        Returns the concave corner vertices of the input face.
+
+        A vertex is considered concave if the actual face-material angle at that
+        vertex is greater than 180 degrees, within the specified tolerance. Collinear
+        vertices with angles close to 180 degrees are not returned.
+
+        For internal boundaries, the returned classification is based on the material
+        angle around the hole, not the interior angle of the hole loop itself. Thus,
+        a rectangular hole contributes concave corners.
+
+        Parameters
+        ----------
+        face : topologic_core.Face
+            The input face.
+        includeInternalBoundaries : bool , optional
+            If set to True, internal boundary vertices are also checked using their
+            face-material angles. Default is False.
+        angTolerance : float , optional
+            The angular tolerance in degrees. Default is 0.01.
+        mantissa : int , optional
+            The number of decimal places to round computed angles to. Default is 6.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+        tolerance : float , optional
+            The geometric tolerance used for ordering boundary vertices.
+            Default is 0.0001.
+
+        Returns
+        -------
+        list
+            The list of concave corner vertices.
+        """
+
+        return Face._CornerVerticesByMaterialAngle(
+            face,
+            includeInternalBoundaries=includeInternalBoundaries,
+            cornerType="concave",
+            angTolerance=angTolerance,
+            mantissa=mantissa,
+            tolerance=tolerance,
+            silent=silent,
+        )
+    
     @staticmethod
     def CrossShape(origin=None,
             width=1,
