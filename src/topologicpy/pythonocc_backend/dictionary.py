@@ -1,6 +1,37 @@
 from __future__ import annotations
 
 
+def _unwrap_attribute(value):
+    """
+    Unwraps an IntAttribute/DoubleAttribute/StringAttribute/ListAttribute
+    (attributes.py) to its plain Python value.
+
+    SetValueAtKey stores whatever it is given verbatim, and callers that go
+    through the algorithm layer (topologicpy.Dictionary._ConvertValue) always
+    wrap values before storing them -- so reader methods (Values,
+    ValueAtKey, PythonDictionary) must unwrap on the way out, or callers see
+    a raw StringAttribute object instead of a str (e.g. Topology.Apertures
+    doing `Dictionary.ValueAtKey(d, "type").lower()`). Values stored without
+    going through that wrapping (a plain str/int/float/list) pass through
+    unchanged, since none of the duck-type checks below match them.
+
+    The algorithm layer stores Python None as StringAttribute("__NONE__").
+    When reading back, we convert that sentinel back to Python None.
+    """
+    if hasattr(value, "StringValue"):
+        s = value.StringValue()
+        if s == "__NONE__":
+            return None
+        return s
+    if hasattr(value, "IntValue"):
+        return value.IntValue()
+    if hasattr(value, "DoubleValue"):
+        return value.DoubleValue()
+    if hasattr(value, "ListValue"):
+        return [_unwrap_attribute(v) for v in value.ListValue()]
+    return value
+
+
 class Dictionary:
     def __init__(self, data=None):
         if isinstance(data, Dictionary):
@@ -61,13 +92,13 @@ class Dictionary:
         if dictionary is None:
             return []
         if isinstance(dictionary, Dictionary):
-            return list(dictionary._data.values())
+            return [_unwrap_attribute(v) for v in dictionary._data.values()]
         if isinstance(dictionary, dict):
-            return list(dictionary.values())
+            return [_unwrap_attribute(v) for v in dictionary.values()]
         if hasattr(dictionary, "_data") and isinstance(dictionary._data, dict):
-            return list(dictionary._data.values())
+            return [_unwrap_attribute(v) for v in dictionary._data.values()]
         if hasattr(dictionary, "data") and isinstance(dictionary.data, dict):
-            return list(dictionary.data.values())
+            return [_unwrap_attribute(v) for v in dictionary.data.values()]
         if hasattr(dictionary, "PythonDictionary"):
             try:
                 d = dictionary.PythonDictionary()
@@ -82,13 +113,13 @@ class Dictionary:
         if dictionary is None or key is None:
             return None
         if isinstance(dictionary, Dictionary):
-            return dictionary._data.get(key)
+            return _unwrap_attribute(dictionary._data.get(key))
         if isinstance(dictionary, dict):
-            return dictionary.get(key)
+            return _unwrap_attribute(dictionary.get(key))
         if hasattr(dictionary, "_data") and isinstance(dictionary._data, dict):
-            return dictionary._data.get(key)
+            return _unwrap_attribute(dictionary._data.get(key))
         if hasattr(dictionary, "data") and isinstance(dictionary.data, dict):
-            return dictionary.data.get(key)
+            return _unwrap_attribute(dictionary.data.get(key))
         if hasattr(dictionary, "PythonDictionary"):
             try:
                 d = dictionary.PythonDictionary()
@@ -142,13 +173,13 @@ class Dictionary:
         if dictionary is None:
             return {}
         if isinstance(dictionary, Dictionary):
-            return dict(dictionary._data)
+            return {k: _unwrap_attribute(v) for k, v in dictionary._data.items()}
         if isinstance(dictionary, dict):
-            return dict(dictionary)
+            return {k: _unwrap_attribute(v) for k, v in dictionary.items()}
         if hasattr(dictionary, "_data") and isinstance(dictionary._data, dict):
-            return dict(dictionary._data)
+            return {k: _unwrap_attribute(v) for k, v in dictionary._data.items()}
         if hasattr(dictionary, "data") and isinstance(dictionary.data, dict):
-            return dict(dictionary.data)
+            return {k: _unwrap_attribute(v) for k, v in dictionary.data.items()}
         return {}
 
     def __repr__(self):

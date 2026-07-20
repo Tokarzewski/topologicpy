@@ -25,6 +25,58 @@ class Wire(Topology):
         return Wire(shape=make_occ_wire(ordered), edges=ordered)
 
     @staticmethod
+    def ByOcctShape(shape, dictionary=None, contents=None, contexts=None, apertures=None):
+        """
+        Generic TopExp_Explorer returns a wire's edges in arbitrary
+        creation/storage order, not connectivity (walk) order. Several
+        algorithm-layer callers (Wire.IsClosed/Wire.Close, and anything
+        chaining off them) naively check edges[0].start == edges[-1].end
+        rather than real OCCT connectivity, so an out-of-walk-order .edges
+        list makes a topologically closed wire look open. BRepTools_WireExplorer
+        is OCCT's dedicated connectivity-ordered wire walker -- use it so the
+        rebuilt .edges list is always in true head-to-tail order regardless
+        of the order the underlying edges were originally added in.
+        """
+        edges = []
+        try:
+            from OCC.Core.BRepTools import BRepTools_WireExplorer
+            from OCC.Core.TopoDS import topods
+            occ_wire = topods.Wire(shape)
+            wire_explorer = BRepTools_WireExplorer(occ_wire)
+            while wire_explorer.More():
+                occ_edge = wire_explorer.Current()
+                e = Edge.ByOcctShape(occ_edge)
+                if e is not None:
+                    if wire_explorer.Orientation() == 1:  # TopAbs_REVERSED
+                        flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
+                        e = flipped if flipped is not None else e
+                    edges.append(e)
+                wire_explorer.Next()
+        except Exception:
+            edges = []
+
+        if not edges:
+            try:
+                from OCC.Core.TopAbs import TopAbs_EDGE
+                from OCC.Core.TopExp import TopExp_Explorer
+                explorer = TopExp_Explorer(shape, TopAbs_EDGE)
+                while explorer.More():
+                    e = Edge.ByOcctShape(explorer.Current())
+                    if e is not None:
+                        edges.append(e)
+                    explorer.Next()
+            except Exception:
+                return None
+        if not edges:
+            return None
+        w = Wire(shape=shape, edges=edges)
+        w.dictionary = dictionary
+        w.contents = list(contents) if contents else []
+        w.contexts = list(contexts) if contexts else []
+        w.apertures = list(apertures) if apertures else []
+        return w
+
+    @staticmethod
     def ByVertices(vertices, close=False, tolerance=0.0001):
         if vertices is None:
             return None
@@ -105,6 +157,107 @@ class Wire(Topology):
             return False
         return same_vertex(edges[0].start, edges[-1].end, tolerance)
 
+    @staticmethod
+    def ByEdgesCluster(cluster, tolerance: float = 0.0001):
+        """
+        Not part of the guide's minimum checklist and not called by the
+        topologicpy algorithm layer (Wire.ByEdgesCluster there goes through
+        Topology.Edges + Wire.ByEdges directly, never through
+        Core.Wire.ByEdgesCluster; verified: zero call sites). Real
+        best-effort implementation for direct Core callers, matching that
+        same recipe: pull the edges out of the input cluster and hand them to
+        Wire.ByEdges.
+        """
+        edges = []
+        try:
+            cluster.Edges(None, edges)
+        except Exception:
+            return None
+        edges = [e for e in edges if isinstance(e, Edge)]
+        if not edges:
+            return None
+        return Wire.ByEdges(edges, tolerance=tolerance)
+
+    @staticmethod
+    def ByWires(wires, tolerance: float = 0.0001):
+        """
+        Not part of the guide's minimum checklist and not called by the
+        topologicpy algorithm layer (verified: zero call sites). Real
+        best-effort implementation for direct Core callers: pools every edge
+        from every input wire and re-stitches them into (one or more, if the
+        result is disconnected) wire(s) via the existing edge-ordering logic,
+        matching real topologic_core's "concatenate wires that share
+        endpoints into a single wire" semantics. Returns a single Wire if all
+        pooled edges are connected, else a list of Wires (one per connected
+        component) -- callers expecting a single always-Wire result should
+        pre-check connectivity, exactly as with real topologic_core.
+        """
+        pooled_edges = []
+        for w in (wires or []):
+            if isinstance(w, Wire):
+                pooled_edges.extend(getattr(w, "edges", []) or [])
+        pooled_edges = [e for e in pooled_edges if isinstance(e, Edge)]
+        if not pooled_edges:
+            return None
+
+        # Group edges into connected components (shared endpoints), then
+        # order each component into its own wire.
+        remaining = list(pooled_edges)
+        components = []
+        while remaining:
+            comp = [remaining.pop(0)]
+            changed = True
+            while changed:
+                changed = False
+                for e in list(remaining):
+                    if any(
+                        same_vertex(e.start, c.start, tolerance)
+                        or same_vertex(e.start, c.end, tolerance)
+                        or same_vertex(e.end, c.start, tolerance)
+                        or same_vertex(e.end, c.end, tolerance)
+                        for c in comp
+                    ):
+                        comp.append(e)
+                        remaining.remove(e)
+                        changed = True
+            components.append(comp)
+
+        result_wires = [w for w in (Wire.ByEdges(comp, tolerance=tolerance) for comp in components) if w is not None]
+        if not result_wires:
+            return None
+        if len(result_wires) == 1:
+            return result_wires[0]
+        return result_wires
+
+    def Reverse(self, transferDictionaries: bool = False, tolerance: float = 0.0001):
+        """
+        Not part of the guide's minimum checklist and not called by the
+        topologicpy algorithm layer (Wire.Reverse there rebuilds via
+        Wire.ByVertices with a reversed vertex list and never reaches Core;
+        verified: zero call sites). Instance method (not @staticmethod) so
+        both calling conventions work. Real best-effort implementation for
+        direct Core callers: reverses the edge order and swaps each edge's
+        own start/end, so the resulting wire traverses in the opposite
+        direction.
+        """
+        edges = getattr(self, "edges", []) or []
+        if not edges:
+            return None
+        reversed_edges = []
+        for e in reversed(edges):
+            if not isinstance(e, Edge):
+                return None
+            new_edge = Edge.ByStartVertexEndVertex(e.end, e.start)
+            if new_edge is None:
+                return None
+            if transferDictionaries:
+                new_edge.dictionary = e.dictionary
+            reversed_edges.append(new_edge)
+        result = Wire(shape=make_occ_wire(reversed_edges), edges=reversed_edges)
+        if transferDictionaries:
+            result.dictionary = self.dictionary
+        return result
+
 
 class WireUtility:
     @staticmethod
@@ -113,8 +266,238 @@ class WireUtility:
             return wire.IsClosed()
         return False
 
+    @staticmethod
+    def Length(wire):
+        """
+        Not part of the guide's minimum checklist and not called by the
+        topologicpy algorithm layer (Wire.Length there sums Edge.Length over
+        Topology.Edges and never reaches Core; verified: zero call sites).
+        Real best-effort implementation for direct Core callers: sum of the
+        wire's own edge lengths.
+        """
+        from .edge import EdgeUtility
+        if not isinstance(wire, Wire):
+            return None
+        edges = getattr(wire, "edges", []) or []
+        if not edges:
+            return None
+        total = 0.0
+        for e in edges:
+            length = EdgeUtility.Length(e)
+            if length is None:
+                return None
+            total += length
+        return total
+
+    @staticmethod
+    def Cycles(wire, tolerance: float = 0.0001):
+        """
+        Not part of the guide's minimum checklist and not called by the
+        topologicpy algorithm layer (verified: zero call sites). Real
+        best-effort implementation for direct Core callers: finds the
+        elementary cycles in the wire's edge/vertex graph (relevant for
+        non-manifold wires with branches; a simple open or closed wire -- the
+        only kind this backend's Wire.ByEdges/.ByVertices ever build -- has
+        at most one cycle, itself, when closed).
+        """
+        if not isinstance(wire, Wire):
+            return []
+        edges = getattr(wire, "edges", []) or []
+        if not edges:
+            return []
+
+        def vkey(v):
+            return (round(v.x / tolerance), round(v.y / tolerance), round(v.z / tolerance))
+
+        # Build an undirected adjacency list keyed by rounded vertex position.
+        adjacency = {}
+        for e in edges:
+            ka, kb = vkey(e.start), vkey(e.end)
+            adjacency.setdefault(ka, []).append((kb, e))
+            adjacency.setdefault(kb, []).append((ka, e))
+
+        visited_edges = set()
+        cycles = []
+        for e in edges:
+            eid = id(e)
+            if eid in visited_edges:
+                continue
+            # Walk forward from e.start through e until we either return to
+            # the start (a cycle) or run out of unvisited connections (not a
+            # cycle from this edge).
+            path_edges = [e]
+            visited_edges.add(eid)
+            start_key = vkey(e.start)
+            current_key = vkey(e.end)
+            found_cycle = same_vertex(e.start, e.end, tolerance)
+            while not found_cycle:
+                next_edge = None
+                for (other_key, cand) in adjacency.get(current_key, []):
+                    if id(cand) in visited_edges:
+                        continue
+                    next_edge = cand
+                    next_key = other_key
+                    break
+                if next_edge is None:
+                    break
+                path_edges.append(next_edge)
+                visited_edges.add(id(next_edge))
+                current_key = next_key
+                if current_key == start_key:
+                    found_cycle = True
+            if found_cycle and len(path_edges) > 1:
+                cycle_wire = Wire.ByEdges(path_edges, tolerance=tolerance)
+                if cycle_wire is not None:
+                    cycles.append(cycle_wire)
+        return cycles
+
+    @staticmethod
+    def Split(wire, tolerance: float = 0.0001):
+        """
+        Not part of the guide's minimum checklist and not called by the
+        topologicpy algorithm layer (verified: zero call sites). Real
+        best-effort implementation for direct Core callers: splits a
+        (possibly branching / non-manifold) wire at every vertex whose degree
+        is not 2 (i.e. not a simple interior pass-through point) into its
+        maximal simple runs of edges. A simple open or closed wire -- the
+        only kind this backend's own Wire.ByEdges/.ByVertices ever build --
+        has no degree != 2 vertices (besides its own open endpoints) and so
+        splits into just itself.
+        """
+        if not isinstance(wire, Wire):
+            return None
+        edges = getattr(wire, "edges", []) or []
+        if not edges:
+            return None
+
+        def vkey(v):
+            return (round(v.x / tolerance), round(v.y / tolerance), round(v.z / tolerance))
+
+        degree = {}
+        for e in edges:
+            for k in (vkey(e.start), vkey(e.end)):
+                degree[k] = degree.get(k, 0) + 1
+
+        branch_points = {k for k, d in degree.items() if d != 2}
+
+        remaining = list(edges)
+        runs = []
+        while remaining:
+            run = [remaining.pop(0)]
+            # Extend forward and backward while the joining vertex is not a
+            # branch point (degree != 2), matching how a "simple run" between
+            # branch points is conventionally defined.
+            extended = True
+            while extended:
+                extended = False
+                # forward extension
+                last_key = vkey(run[-1].end)
+                if last_key not in branch_points:
+                    for e in list(remaining):
+                        if same_vertex(e.start, run[-1].end, tolerance):
+                            run.append(e)
+                            remaining.remove(e)
+                            extended = True
+                            break
+                        if same_vertex(e.end, run[-1].end, tolerance):
+                            flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
+                            if flipped is not None:
+                                run.append(flipped)
+                                remaining.remove(e)
+                                extended = True
+                                break
+                if extended:
+                    continue
+                # backward extension
+                first_key = vkey(run[0].start)
+                if first_key not in branch_points:
+                    for e in list(remaining):
+                        if same_vertex(e.end, run[0].start, tolerance):
+                            run.insert(0, e)
+                            remaining.remove(e)
+                            extended = True
+                            break
+                        if same_vertex(e.start, run[0].start, tolerance):
+                            flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
+                            if flipped is not None:
+                                run.insert(0, flipped)
+                                remaining.remove(e)
+                                extended = True
+                                break
+            runs.append(run)
+
+        result = [w for w in (Wire.ByEdges(run, tolerance=tolerance) for run in runs) if w is not None]
+        return result if result else None
+
+# Wire -> Shell: find Shells in hostTopology containing this Wire.
+def _adjacent_shells(wire, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(wire, Wire) or hostTopology is None:
+        return 1
+    result, we_src, candidates = [], (getattr(wire, "edges", []) or []), []
+    Topology.Shells(hostTopology, None, candidates)
+    for s in candidates:
+        for sf_face in (getattr(s, "faces", []) or []):
+            wf = [sf_face.external] if getattr(sf_face, "external", None) else []
+            for wf_wire in wf:
+                we = getattr(wf_wire, "edges", []) or []
+                if len(we) == len(we_src) and all(
+                    any(same_vertex(a.start, b.start) and same_vertex(a.end, b.end) for b in we_src)
+                    or any(same_vertex(a.start, b.end) and same_vertex(a.end, b.start) for b in we_src)
+                    for a in we
+                ):
+                    result.append(s); break
+            if result and result[-1] is s: break
+    if output is not None: output.extend(result)
+    return 0
+
+def _adjacent_cells(wire, hostTopology, output):
+    from .topology import Topology
+    from .helpers import same_vertex
+    if not isinstance(wire, Wire) or hostTopology is None:
+        return 1
+    result, we_src, candidates = [], (getattr(wire, "edges", []) or []), []
+    Topology.Cells(hostTopology, None, candidates)
+    for c in candidates:
+        for cs in (getattr(c, "shells", []) or []):
+            for cs_face in (getattr(cs, "faces", []) or []):
+                wf = [cs_face.external] if getattr(cs_face, "external", None) else []
+                for wf_wire in wf:
+                    we = getattr(wf_wire, "edges", []) or []
+                    if len(we) == len(we_src) and all(
+                        any(same_vertex(a.start, b.start) and same_vertex(a.end, b.end) for b in we_src)
+                        or any(same_vertex(a.start, b.end) and same_vertex(a.end, b.start) for b in we_src)
+                        for a in we
+                    ):
+                        result.append(c); break
+                if result and result[-1] is c: break
+            if result and result[-1] is c: break
+    if output is not None: output.extend(result)
+    return 0
+
+
+def _make_adjacent(method_name):
+    """Return a staticmethod that delegates to topology.method(hostTopology, output)."""
+    @staticmethod
+    def _impl(topology, hostTopology, output):
+        if topology is None:
+            return 1
+        return getattr(topology, method_name)(hostTopology, output)
+    return _impl
+
+WireUtility.AdjacentVertices = _make_adjacent("Vertices")
+WireUtility.AdjacentEdges = _make_adjacent("Edges")
+WireUtility.AdjacentWires = _make_adjacent("Wires")
+WireUtility.AdjacentFaces = _make_adjacent("Faces")
+WireUtility.AdjacentCellComplexes = _make_adjacent("CellComplexes")
+
 # ---------------------------------------------------------------------------
-# Explicit unsupported Wire API
+# Wire.ByEdgesCluster, Wire.ByWires, Wire.Reverse, WireUtility.Length,
+# WireUtility.Cycles, and WireUtility.Split now have real implementations
+# defined on the classes above -- do not re-clobber them here (see gotcha
+# about stub assignments silently overriding real implementations added
+# earlier in the file).
 # ---------------------------------------------------------------------------
 from .helpers import not_implemented as _not_implemented
 
@@ -129,11 +512,3 @@ def _wire_utility_not_implemented(name, return_value=None):
     def _method(*args, **kwargs):
         return _not_implemented(f"WireUtility.{name}", return_value)
     return _method
-
-
-Wire.ByEdgesCluster = staticmethod(_wire_not_implemented("ByEdgesCluster"))
-Wire.ByWires = staticmethod(_wire_not_implemented("ByWires"))
-Wire.Reverse = _wire_not_implemented("Reverse")
-WireUtility.Length = staticmethod(_wire_utility_not_implemented("Length"))
-WireUtility.Cycles = staticmethod(_wire_utility_not_implemented("Cycles", []))
-WireUtility.Split = staticmethod(_wire_utility_not_implemented("Split"))

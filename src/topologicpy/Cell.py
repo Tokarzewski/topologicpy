@@ -2196,7 +2196,18 @@ class Cell():
         vertices = [Vertex.ByCoordinates(coords) for coords in geo['vertices']]
         vertices = Vertex.Fuse(vertices)
         coords = [Vertex.Coordinates(v) for v in vertices]
-        dodecahedron = Topology.RemoveCoplanarFaces(Topology.SelfMerge(Topology.ByGeometry(vertices=coords, faces=geo['faces'])))
+        rebuilt = Topology.RemoveCoplanarFaces(Topology.SelfMerge(Topology.ByGeometry(vertices=coords, faces=geo['faces'])))
+        # Under the pythonOCC backend the rebuilt geometry comes back as a Shell;
+        # re-solidify it into a Cell so the constructor honours its contract.
+        if not Topology.IsInstance(rebuilt, "cell"):
+            try:
+                rebuilt = Cell.ByFaces(Topology.Faces(rebuilt, silent=True), tolerance=tolerance, silent=True)
+            except Exception:
+                try:
+                    rebuilt = Cell.ByShell(rebuilt, tolerance=tolerance, silent=True)
+                except Exception:
+                    rebuilt = None
+        dodecahedron = rebuilt
         dodecahedron = Topology.Orient(dodecahedron, origin=Vertex.Origin(), dirA=[0, 0, 1], dirB=direction, tolerance=tolerance)
         dodecahedron = Topology.Place(dodecahedron, originA=Vertex.Origin(), originB=origin)
         return dodecahedron

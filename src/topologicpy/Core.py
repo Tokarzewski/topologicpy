@@ -57,7 +57,15 @@ needed, but doing so exhaustively would require proxy objects and would be a
 larger architectural migration.
 """
 
+import os
 from typing import Any, List, Optional
+
+# Opt-in backend selection. Set the TOPOLOGICPY_CORE_BACKEND environment
+# variable to "pythonocc" before the first Core.Backend() access to use the
+# PythonOCC replacement backend instead of the default topologic_core
+# backend. topologic_core remains the default for existing users; nothing
+# changes unless this variable is explicitly set.
+_BACKEND_ENV_VAR = "TOPOLOGICPY_CORE_BACKEND"
 
 
 class _MissingNamespace:
@@ -242,7 +250,11 @@ class Core:
         ``TopologicCoreBackend``.
         """
         if Core._backend is None:
-            Core._backend = TopologicCoreBackend()
+            if os.environ.get(_BACKEND_ENV_VAR, "").strip().lower() == "pythonocc":
+                from topologicpy.pythonocc_backend import PythonOCCBackend
+                Core._backend = PythonOCCBackend()
+            else:
+                Core._backend = TopologicCoreBackend()
         return Core._backend
     
     @staticmethod

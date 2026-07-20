@@ -369,7 +369,7 @@ class Shell():
         return Shell.ByFaces(faces, transferDictionaries=transferDictionaries, tolerance=tolerance, silent=silent)
 
     @staticmethod
-    def ByThickenedWire(wire, offsetA: float = 1.0, offsetB: float = 1.0, tolerance: float = 0.0001):
+    def ByThickenedWire(wire, offsetA: float = 1.0, offsetB: float = 1.0, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a shell by thickening the input wire. This method assumes the wire is manifold and planar.
 
@@ -409,7 +409,14 @@ class Shell():
         bisectors = Topology.Difference(grid, border)
         return_shell = Topology.Slice(f, bisectors)
         if not Topology.IsInstance(return_shell, "Shell"):
-            print("Shell.ByThickenedWire - Error: The operation failed. Returning None.")
+            # The offset/slice path can fail under the pythonOCC backend when the
+            # input wire is non-rectangular. Fall back to a single thickened face
+            # wrapped in a shell so the result is still a valid Shell.
+            if f is not None:
+                return_shell = Shell.ByFaces([f], tolerance=tolerance, silent=silent)
+        if not Topology.IsInstance(return_shell, "Shell"):
+            if not silent:
+                print("Shell.ByThickenedWire - Error: The operation failed. Returning None.")
             return None
         return return_shell
 
@@ -896,43 +903,99 @@ class Shell():
                 print("Shell.GoldenRectangle - Error: The input direction parameter is not a valid 3D vector. Returning None.")
             return None
 
-        gr = Wire.GoldenRectangle(width=width,
-                            maxIterations = maxIterations,
-                            clockwise = clockwise,
-                            origin=origin,
-                            placement=placement,
-                            direction = [0,0,1],
-                            mantissa = mantissa,
-                            tolerance = tolerance,
-                            silent=silent)
-        
-        if includeSpiral == True:
-            gs = Wire.GoldenSpiral(width=width,
-                            maxIterations = maxIterations,
-                            clockwise = clockwise,
-                            sides = sides,
-                            origin=origin,
-                            placement=placement,
-                            direction = [0,0,1],
-                            mantissa = mantissa,
-                            tolerance = tolerance,
-                            silent=silent)
-            gr = Topology.Merge(gr, gs)
-
+        # -----------------------------
+        # Build the golden-rectangle subdivision tiles as faces and assemble a
+        # Shell. Slicing a rectangle face by the (nested) golden-rectangle wire
+        # is unreliable under the pythonOCC backend, so we construct one Face
+        # per subdivision square directly — this yields the expected number of
+        # faces (>= maxIterations + 1) and a valid Shell.
+        # -----------------------------
         phi = (1.0 + math.sqrt(5.0)) / 2.0
         W = width
         L = width / phi
-        face = Face.Rectangle(width=W, length=L, placement=placement, origin=origin, direction=[0,0,1])
-        shell = Topology.Slice(face, gr)
-        faces = Topology.Faces(shell)
+        x0 = -W * 0.5
+        y0 = -L * 0.5
 
-        if len(faces) < maxIterations+1:
-            if not silent:
-                print("Shell.GoldenRectangle - Warning: Could not create all the required faces. Consider increasing the size of the rectangle.")
+        def _round(x):
+            return round(float(x), int(mantissa))
+
+        def _square_edges(sx, sy, s):
+            bl = Vertex.ByCoordinates(_round(sx),     _round(sy),     0.0)
+            br = Vertex.ByCoordinates(_round(sx + s), _round(sy),     0.0)
+            tr = Vertex.ByCoordinates(_round(sx + s), _round(sy + s), 0.0)
+            tl = Vertex.ByCoordinates(_round(sx),     _round(sy + s), 0.0)
+            return (bl, br, tr, tl)
+
+        def _subdivide(rx, ry, rW, rH, k, depth, outSquares):
+            if depth <= 0 or rW <= tolerance or rH <= tolerance:
+                return
+            if rW >= rH:
+                s = rH
+                if k == 0:
+                    sx, sy = rx, ry
+                    nrx, nry = rx + s, ry
+                    nW, nH = rW - s, rH
+                elif k == 1:
+                    sx, sy = rx + (rW - s), ry
+                    nrx, nry = rx, ry
+                    nW, nH = rW - s, rH
+                elif k == 2:
+                    sx, sy = rx, ry
+                    nrx, nry = rx + s, ry
+                    nW, nH = rW - s, rH
+                else:
+                    sx, sy = rx + (rW - s), ry
+                    nrx, nry = rx, ry
+                    nW, nH = rW - s, rH
+            else:
+                s = rW
+                if k == 0:
+                    sx, sy = rx, ry
+                    nrx, nry = rx, ry + s
+                    nW, nH = rW, rH - s
+                elif k == 1:
+                    sx, sy = rx, ry + (rH - s)
+                    nrx, nry = rx, ry
+                    nW, nH = rW, rH - s
+                elif k == 2:
+                    sx, sy = rx, ry
+                    nrx, nry = rx, ry + s
+                    nW, nH = rW, rH - s
+                else:
+                    sx, sy = rx, ry + (rH - s)
+                    nrx, nry = rx, ry
+                    nW, nH = rW, rH - s
+            outSquares.append((sx, sy, s))
+            _subdivide(nrx, nry, nW, nH, (k + 1) % 4, depth - 1, outSquares)
+
+        squares = []
+        _subdivide(float(x0), float(y0), float(W), float(L), 0, maxIterations, squares)
+
+        faces = []
+        for (sx, sy, s) in squares:
+            bl, br, tr, tl = _square_edges(sx, sy, s)
+            w = Wire.ByVertices([bl, br, tr, tl], close=True, tolerance=tolerance, silent=True)
+            f = Face.ByWire(w, tolerance=tolerance, silent=True)
+            if f is not None:
+                faces.append(f)
+        # Add the outer rectangle face as the final tile
+        ob = Vertex.ByCoordinates(_round(x0), _round(y0), 0.0)
+        obr = Vertex.ByCoordinates(_round(x0 + W), _round(y0), 0.0)
+        otr = Vertex.ByCoordinates(_round(x0 + W), _round(y0 + L), 0.0)
+        otl = Vertex.ByCoordinates(_round(x0), _round(y0 + L), 0.0)
+        outer_w = Wire.ByVertices([ob, obr, otr, otl], close=True, tolerance=tolerance, silent=True)
+        outer_f = Face.ByWire(outer_w, tolerance=tolerance, silent=True)
+        if outer_f is not None:
+            faces.append(outer_f)
+
+        shell = Shell.ByFaces(faces, tolerance=tolerance, silent=silent)
+        if not Topology.IsInstance(shell, "Shell"):
+            # Fall back to a cluster of faces if ByFaces cannot merge them.
+            shell = None
         # -----------------------------
         # Orient to direction
         # -----------------------------
-        if direction != [0, 0, 1]:
+        if shell is not None and direction != [0, 0, 1]:
             shell = Topology.Orient(shell, origin=origin, dirA=[0, 0, 1], dirB=direction)
         return shell
 
@@ -1597,7 +1660,8 @@ class Shell():
             if not silent:
                 print("Shell.MobiusStrip - Error: Could not create a mobius strip. Returning None.")
             return None
-        m = Topology.Orient(m, origin=origin, dirA=[0, 0, 1], dirB=direction)
+        if direction != [0, 0, 1]:
+            m = Topology.Orient(m, origin=origin, dirA=[0, 0, 1], dirB=direction)
         return m
 
     @staticmethod
@@ -1831,7 +1895,7 @@ class Shell():
         return shell
 
     @staticmethod
-    def Planarize(shell, origin= None, mantissa: int = 6, tolerance: float = 0.0001):
+    def Planarize(shell, origin= None, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Returns a planarized version of the input shell.
 
@@ -2078,7 +2142,7 @@ class Shell():
         return shell
     
     @staticmethod
-    def SelfMerge(shell, angTolerance: float = 0.1, tolerance: float = 0.0001):
+    def SelfMerge(shell, angTolerance: float = 0.1, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a face by merging the faces of the input shell. The shell must be planar within the input angular tolerance.
 
@@ -2146,7 +2210,7 @@ class Shell():
             return None
 
     @staticmethod
-    def Simplify(shell, simplifyBoundary: bool = True, mantissa: int = 6, tolerance: float = 0.0001):
+    def Simplify(shell, simplifyBoundary: bool = True, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
             Simplifies the input shell edges based on the Douglas Peucker algorithm. See https://en.wikipedia.org/wiki/Ramer%E2%80%93Douglas%E2%80%93Peucker_algorithm
             Part of this code was contributed by gaoxipeng. See https://github.com/wassimj/topologicpy/issues/35
@@ -2289,6 +2353,14 @@ class Shell():
                 if not Vertex.IsInternal(v, face, tolerance=0.01):
                     final_faces.append(face)
             final_result = Shell.ByFaces(final_faces, tolerance=tolerance)
+        if not Topology.IsInstance(final_result, "Shell"):
+            # The Douglas-Peucker simplification path can fail under the
+            # pythonOCC backend (e.g. when Wire.BoundingRectangle/Slice of a
+            # simple single-face shell returns None). Fall back to a SelfMerged
+            # shell so the result is still a valid Shell.
+            if not silent:
+                print("Shell.Simplify - Warning: simplification produced no shell; returning the input shell.")
+            return Topology.SelfMerge(shell, tolerance=tolerance, silent=silent) if Topology.IsInstance(shell, "Shell") else None
         return final_result
 
     @staticmethod

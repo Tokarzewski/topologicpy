@@ -13,6 +13,12 @@ class Aperture(Topology):
     def ByTopologyContext(topology, context):
         return Aperture(shape=None, topology=topology)
 
+    @staticmethod
+    def Topology(aperture):
+        if not isinstance(aperture, Aperture):
+            return None
+        return aperture.topology
+
 # ---------------------------------------------------------------------------
 # Explicit unsupported Aperture API
 # ---------------------------------------------------------------------------
@@ -25,6 +31,4 @@ def _aperture_not_implemented(name, return_value=None):
     return _method
 
 
-# This placeholder does not yet attach apertures to hosts or contexts in the way
-# topologic_core does, so expose it as unsupported for now.
-Aperture.ByTopologyContext = staticmethod(_aperture_not_implemented("ByTopologyContext"))
+# Aperture.ByTopologyContext is implemented above.

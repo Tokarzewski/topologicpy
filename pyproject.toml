@@ -52,3 +52,8 @@ addopts = "-nauto --strict-markers --strict-config -v"
 # to be defined and raise on invalid config values
 # treat xpasses as test failures so they get converted to regular tests as soon as possible
 xfail_strict = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+]

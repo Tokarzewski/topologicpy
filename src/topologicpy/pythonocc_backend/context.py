@@ -16,6 +16,9 @@ class Context(Topology):
     def ByTopologyParameters(topology, u=0.5, v=0.5, w=0.5):
         return Context(shape=None, topology=topology, x=u, y=v, z=w)
 
+    def Topology(self):
+        return getattr(self, "topology", None)
+
 # ---------------------------------------------------------------------------
 # Explicit unsupported Context API
 # ---------------------------------------------------------------------------
@@ -28,5 +31,4 @@ def _context_not_implemented(name, return_value=None):
     return _method
 
 
-# This placeholder does not yet implement true topologic_core context semantics.
-Context.ByTopologyParameters = staticmethod(_context_not_implemented("ByTopologyParameters"))
+# Context.ByTopologyParameters is implemented above.

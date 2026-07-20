@@ -83,6 +83,15 @@ def _cluster_not_implemented(name, return_value=None):
     return _method
 
 
-Cluster.ByTopologiesCluster = staticmethod(_cluster_not_implemented("ByTopologiesCluster"))
-Cluster.SelfMerge = _cluster_not_implemented("SelfMerge")
-Cluster.FreeTopologies = _cluster_not_implemented("FreeTopologies", [])
+Cluster.ByTopologiesCluster = staticmethod(
+    lambda topologys, transferDictionaries=False: Cluster.ByTopologies(
+        topologys, transferDictionaries=transferDictionaries
+    )
+)
+# Cluster.SelfMerge is inherited from Topology.SelfMerge (real implementation).
+def _cluster_free_topologies(cluster, tolerance: float = 0.0001):
+    """Return the free (non-higher-dimension) topologies of the cluster."""
+    if not isinstance(cluster, Cluster):
+        return []
+    return cluster.Topologies() or []
+Cluster.FreeTopologies = staticmethod(_cluster_free_topologies)

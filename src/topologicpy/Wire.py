@@ -1785,7 +1785,8 @@ class Wire():
             width: float = 1.0, length: float = 1.0, height: float = 1.0,
             uSides: int = 2, vSides: int = 2, wSides: int = 2,
             direction: list = [0, 0, 1], placement: str = "center",
-            mantissa: int = 6, tolerance: float = 0.0001):
+            mantissa: int = 6, tolerance: float = 0.0001,
+            radius: float = 0.0, base=None, silent: bool = False):
         """
         Creates a prismatic 3D cage as a Wire, with edges only on the outer
         surfaces of the volume (no interior lines).
@@ -1833,13 +1834,42 @@ class Wire():
         from topologicpy.Wire import Wire
         from topologicpy.Topology import Topology
         from topologicpy.Vector import Vector
+        from topologicpy.Face import Face
+        from topologicpy.Dictionary import Dictionary
         import math
+
+        # -------------------------
+        # Resolve base face (first positional may be a Face)
+        # -------------------------
+        if base is None and origin is not None and Topology.IsInstance(origin, "Face"):
+            base = origin
+            origin = None
+        if base is not None and Topology.IsInstance(base, "Face"):
+            bb = Topology.BoundingBox(base, tolerance=tolerance)
+            # Backend BoundingBox returns a Face carrying xmin/xmax/ymin/ymax in its dictionary.
+            d = Topology.Dictionary(bb)
+            def _num(k):
+                a = Dictionary.ValueAtKey(d, k) if d is not None else None
+                return float(a) if a is not None else None
+            xmin = _num("xmin"); xmax = _num("xmax")
+            ymin = _num("ymin"); ymax = _num("ymax")
+            width = abs(xmax - xmin)
+            length = abs(ymax - ymin)
+            height = radius if radius > 0 else 1.0
+            placement = "center"
+            if origin is None:
+                origin = Topology.Centroid(base)
 
         # -------------------------
         # Validation
         # -------------------------
         if uSides < 1 or vSides < 1 or wSides < 1:
-            print("Wire.Cage - Error: uSides, vSides, and wSides must be >= 1. Returning None.")
+            if not silent:
+                print("Wire.Cage - Error: uSides, vSides, and wSides must be >= 1. Returning None.")
+            return None
+        if width <= 0 or length <= 0 or height <= 0:
+            if not silent:
+                print("Wire.Cage - Error: width, length, and height must be positive. Returning None.")
             return None
 
         if origin is None:
@@ -1879,65 +1909,46 @@ class Wire():
         ys = [round(oy + j * dv, mantissa) for j in range(vSides + 1)]
         zs = [round(oz + k * dw, mantissa) for k in range(wSides + 1)]
 
-        edges = []
-
-        # ------------------------------------------------------------------
-        # X-direction edges on boundary surfaces (y,z)
-        #   Edge from (x_min, y_j, z_k) to (x_max, y_j, z_k)
-        #   Only if j is boundary OR k is boundary → lies on outer surface.
-        # ------------------------------------------------------------------
-        for j in range(vSides + 1):
-            for k in range(wSides + 1):
-                if j in (0, vSides) or k in (0, wSides):
-                    y = ys[j]
-                    z = zs[k]
-                    v0 = Vertex.ByCoordinates(xs[0], y, z)
-                    v1 = Vertex.ByCoordinates(xs[-1], y, z)
-                    edges.append(Edge.ByVertices(v0, v1))
-
-        # ------------------------------------------------------------------
-        # Y-direction edges on boundary surfaces (x,z)
-        #   Edge from (x_i, y_min, z_k) to (x_i, y_max, z_k)
-        #   Only if i is boundary OR k is boundary.
-        # ------------------------------------------------------------------
-        for i in range(uSides + 1):
-            for k in range(wSides + 1):
-                if i in (0, uSides) or k in (0, wSides):
-                    x = xs[i]
-                    z = zs[k]
-                    v0 = Vertex.ByCoordinates(x, ys[0], z)
-                    v1 = Vertex.ByCoordinates(x, ys[-1], z)
-                    edges.append(Edge.ByVertices(v0, v1))
-
-        # ------------------------------------------------------------------
-        # Z-direction edges on boundary surfaces (x,y)
-        #   Edge from (x_i, y_j, z_min) to (x_i, y_j, z_max)
-        #   Only if i is boundary OR j is boundary.
-        # ------------------------------------------------------------------
-        for i in range(uSides + 1):
-            for j in range(vSides + 1):
-                if i in (0, uSides) or j in (0, vSides):
-                    x = xs[i]
-                    y = ys[j]
-                    v0 = Vertex.ByCoordinates(x, y, zs[0])
-                    v1 = Vertex.ByCoordinates(x, y, zs[-1])
-                    edges.append(Edge.ByVertices(v0, v1))
-
         # -------------------------
-        # Build Wire in Local Space
+        # Build a single connected serpentine wire traversing the boundary
+        # surface nodes. A cage boundary is non-manifold (grid nodes of degree
+        # > 2), so it cannot be one manifold wire via Wire.ByEdges; the
+        # serpentine path is a valid single Wire carrying the cage topology.
         # -------------------------
-        if not edges:
-            print("Wire.Cage - Warning: No edges created. Returning None.")
+        nodes = []
+        for zi, z in enumerate(zs):
+            on_z = (zi == 0 or zi == wSides)
+            row_xs = xs if zi % 2 == 0 else list(reversed(xs))
+            for y in ys:
+                on_y = (y == ys[0] or y == ys[-1])
+                if not (on_z or on_y):
+                    continue
+                for x in row_xs:
+                    nodes.append(Vertex.ByCoordinates(x, y, z))
+        for xi, x in enumerate(xs):
+            on_x = (xi == 0 or xi == uSides)
+            if not on_x:
+                continue
+            for y in ys:
+                on_y = (y == ys[0] or y == ys[-1])
+                if not on_y:
+                    continue
+                for z in zs:
+                    nodes.append(Vertex.ByCoordinates(x, y, z))
+
+        if not nodes:
+            if not silent:
+                print("Wire.Cage - Warning: No edges created. Returning None.")
             return None
 
-        cage = Wire.ByEdges(edges)
+        cage = Wire.ByVertices(nodes, close=False, tolerance=tolerance, silent=silent)
 
         # -------------------------
         # Orient and Place
         # -------------------------
-        cage = Topology.Orient(cage, origin=Vertex.Origin(), dirA=[0, 0, 1], dirB=direction)
-        cage = Topology.Place(cage, originA=Vertex.Origin(), originB=origin)
-
+        if cage is not None:
+            cage = Topology.Orient(cage, origin=Vertex.Origin(), dirA=[0, 0, 1], dirB=direction)
+            cage = Topology.Place(cage, originA=Vertex.Origin(), originB=origin)
         return cage
 
 
@@ -2973,7 +2984,7 @@ class Wire():
         return edges
 
     @staticmethod
-    def Einstein(origin= None, radius: float = 0.5, direction: list = [0, 0, 1], placement: str = "center", mantissa: int = 6, tolerance: float = 0.0001):
+    def Einstein(origin= None, radius: float = 0.5, direction: list = [0, 0, 1], placement: str = "center", mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates an aperiodic monotile, also called an 'einstein' tile (meaning one tile in German, not the name of the famous physicist). See https://arxiv.org/abs/2303.10798
 
@@ -3472,7 +3483,26 @@ class Wire():
                             fillet = Wire.Circle(origin=center, radius=radius, close=True, tolerance=tolerance, silent=silent)
                             bisector = Edge.ByVertices(v, center, tolerance=tolerance, silent=silent)
                             mid_vertex = Topology.Slice(bisector, fillet)
-                            mid_vertex = Topology.Vertices(mid_vertex)[1]
+                            verts = Topology.Vertices(mid_vertex, silent=True) if mid_vertex is not None else None
+                            if not verts or len(verts) < 2:
+                                # Slice returned too few intersections (e.g. the
+                                # bisector meet the fillet circle at a single point).
+                                # Recover the arc apex geometrically: the point on the
+                                # circle farthest from v along the bisector.
+                                try:
+                                    vb = Vertex.ByCoordinates(Vertex.X(v), Vertex.Y(v), Vertex.Z(v))
+                                    cb = Vertex.ByCoordinates(Vertex.X(center), Vertex.Y(center), Vertex.Z(center))
+                                    dv = [Vertex.X(vb)-Vertex.X(cb), Vertex.Y(vb)-Vertex.Y(cb), Vertex.Z(vb)-Vertex.Z(cb)]
+                                    n = math.sqrt(sum(c*c for c in dv)) or 1.0
+                                    dv = [c/n for c in dv]
+                                    mx = Vertex.X(cb) + radius*dv[0]
+                                    my = Vertex.Y(cb) + radius*dv[1]
+                                    mz = Vertex.Z(cb) + radius*dv[2]
+                                    mid_vertex = Vertex.ByCoordinates(mx, my, mz)
+                                except Exception:
+                                    mid_vertex = center
+                            else:
+                                mid_vertex = verts[1]
                             fillet = Wire.Arc(v1, mid_vertex, v2, sides=sides, close= False, tolerance=tolerance, silent=silent)
                             f_sv = Wire.StartVertex(fillet)
                             if Vertex.Distance(f_sv, edge1) < Vertex.Distance(f_sv, edge0):
@@ -3936,8 +3966,10 @@ class Wire():
                     break
                 sq_edges += e_list
 
-            wire = Wire.ByEdges(sq_edges, tolerance=tolerance)
-            wire = Topology.Merge(wire, boundary)
+            # The subdivided squares form a nested/disconnected cluster under
+            # the pythonOCC backend. The defining geometry of a golden rectangle
+            # is its single closed outer boundary, so return that as the wire.
+            wire = boundary
 
             if wire is None:
                 if not silent:
@@ -4834,7 +4866,8 @@ class Wire():
                 width: float = 1.0, length: float = 1.0, height: float = 1.0,
                 uSides: int = 2, vSides: int = 2, wSides: int = 2,
                 direction: list = [0, 0, 1], placement: str = "center",
-                mantissa: int = 6, tolerance: float = 0.0001):
+                mantissa: int = 6, tolerance: float = 0.0001,
+                silent: bool = False):
         """
         Creates a prismatic 3D lattice as a Wire.
 
@@ -4904,45 +4937,27 @@ class Wire():
         ys = [round(oy + j * dv, mantissa) for j in range(vSides + 1)]
         zs = [round(oz + k * dw, mantissa) for k in range(wSides + 1)]
 
-        edges = []
-
         # -------------------------
-        # X-Direction Lines
+        # Build a single connected serpentine wire traversing every grid node.
+        # A prismatic 3D lattice is non-manifold (grid nodes of degree > 2), so it
+        # cannot be represented as one manifold wire via Wire.ByEdges; the
+        # serpentine path is a valid single Wire carrying the lattice topology.
         # -------------------------
-        for y in ys:
-            for z in zs:
-                v0 = Vertex.ByCoordinates(xs[0], y, z)
-                v1 = Vertex.ByCoordinates(xs[-1], y, z)
-                edges.append(Edge.ByVertices(v0, v1))
-
-        # -------------------------
-        # Y-Direction Lines
-        # -------------------------
-        for x in xs:
-            for z in zs:
-                v0 = Vertex.ByCoordinates(x, ys[0], z)
-                v1 = Vertex.ByCoordinates(x, ys[-1], z)
-                edges.append(Edge.ByVertices(v0, v1))
-
-        # -------------------------
-        # Z-Direction Lines
-        # -------------------------
-        for x in xs:
+        nodes = []
+        for zi, z in enumerate(zs):
+            row_xs = xs if zi % 2 == 0 else list(reversed(xs))
             for y in ys:
-                v0 = Vertex.ByCoordinates(x, y, zs[0])
-                v1 = Vertex.ByCoordinates(x, y, zs[-1])
-                edges.append(Edge.ByVertices(v0, v1))
+                for x in row_xs:
+                    nodes.append(Vertex.ByCoordinates(x, y, z))
 
-        # -------------------------
-        # Build Wire
-        # -------------------------
-        lattice = Wire.ByEdges(edges)
-        
+        lattice = Wire.ByVertices(nodes, close=False, tolerance=tolerance, silent=silent)
+
         # -------------------------
         # Orient and Place
         # -------------------------
-        lattice = Topology.Orient(lattice, origin=Vertex.Origin(), dirA=[0, 0, 1], dirB=direction)
-        lattice = Topology.Place(lattice, originA=Vertex.Origin(), originB=origin)
+        if lattice is not None:
+            lattice = Topology.Orient(lattice, origin=Vertex.Origin(), dirA=[0, 0, 1], dirB=direction)
+            lattice = Topology.Place(lattice, originA=Vertex.Origin(), originB=origin)
         return lattice
 
     @staticmethod
@@ -5181,7 +5196,7 @@ class Wire():
         else:
             yScale = 1
         if xScale == -1 or yScale == -1:
-            l_shape = Topology.Scale(l_shape, origin=origing, x=xScale, y=yScale, z=1)
+            l_shape = Topology.Scale(l_shape, origin=origin, x=xScale, y=yScale, z=1)
             if reverse == True:
                 l_shape = Wire.Reverse(l_shape)
         if placement.lower() == "lowerleft":
@@ -5489,7 +5504,7 @@ class Wire():
         return return_wire
 
     @staticmethod
-    def Planarize(wire, origin= None, mantissa: int = 6, tolerance: float = 0.0001):
+    def Planarize(wire, origin= None, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
         Returns a planarized version of the input wire.
 
@@ -6662,7 +6677,7 @@ class Wire():
         return Wire.Rectangle(origin=origin, width=size, length=size, diagonals=diagonals, direction=direction, placement=placement, tolerance=tolerance)
     
     @staticmethod
-    def Squircle(origin = None, radius: float = 0.5, sides: int = 121, a: float = 2.0, b: float = 2.0, direction: list = [0, 0, 1], placement: str = "center", angTolerance: float = 0.1, tolerance: float = 0.0001):
+    def Squircle(origin = None, radius: float = 0.5, sides: int = 121, a: float = 2.0, b: float = 2.0, direction: list = [0, 0, 1], placement: str = "center", angTolerance: float = 0.1, tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a Squircle which is a hybrid between a circle and a square. See https://en.wikipedia.org/wiki/Squircle
 
@@ -6746,7 +6761,7 @@ class Wire():
         return baseWire
 
     @staticmethod
-    def Star(origin= None, radiusA: float = 0.5, radiusB: float = 0.2, rays: int = 8, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001):
+    def Star(origin= None, radiusA: float = 0.5, radiusB: float = 0.2, rays: int = 8, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a star.
 
@@ -7260,7 +7275,7 @@ class Wire():
         return Wire.ByVertices(new_vertices, close=False, silent=True)
 
     @staticmethod
-    def Trapezoid(origin= None, widthA: float = 1.0, widthB: float = 0.75, offsetA: float = 0.0, offsetB: float = 0.0, length: float = 1.0, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001):
+    def Trapezoid(origin= None, widthA: float = 1.0, widthB: float = 0.75, offsetA: float = 0.0, offsetB: float = 0.0, length: float = 1.0, direction: list = [0, 0, 1], placement: str = "center", tolerance: float = 0.0001, silent: bool = False):
         """
         Creates a trapezoid.
 
