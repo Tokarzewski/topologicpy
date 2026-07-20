@@ -2484,6 +2484,558 @@ class Wire():
         return ch
 
     @staticmethod
+    def _CornerVerticesByAngle(
+        wire,
+        cornerType: str = "convex",
+        angTolerance: float = 0.01,
+        mantissa: int = 6,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ) -> list:
+        """
+        Returns convex or concave corner vertices of a closed manifold wire.
+
+        This method only accepts closed manifold wires that form a single
+        non-branching cycle. Every vertex must be incident to exactly two edges.
+        Open wires, disconnected wires, and branched/non-manifold wires are rejected.
+
+        Parameters
+        ----------
+        wire : topologic_core.Wire
+            The input wire.
+        cornerType : str , optional
+            The corner type to return. Options are "convex" and "concave".
+            Default is "convex".
+        angTolerance : float , optional
+            The angular tolerance in degrees. Default is 0.01.
+        mantissa : int , optional
+            The number of decimal places to round computed angles to. Default is 6.
+        tolerance : float , optional
+            The geometric tolerance used for endpoint matching. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        list
+            The list of convex or concave corner vertices.
+        """
+
+        import math
+
+        from topologicpy.Vertex import Vertex
+        from topologicpy.Edge import Edge
+        from topologicpy.Topology import Topology
+
+        if not Topology.IsInstance(wire, "Wire"):
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: The input wire parameter is not a valid wire. Returning None.")
+            return None
+
+        try:
+            if not Wire.IsClosed(wire):
+                if not silent:
+                    print("Wire._CornerVerticesByAngle - Error: The input wire is not closed. Returning None.")
+                return None
+        except Exception:
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: Could not determine if the input wire is closed. Returning None.")
+            return None
+
+        try:
+            if not Wire.IsManifold(wire):
+                if not silent:
+                    print("Wire._CornerVerticesByAngle - Error: The input wire is non-manifold. Returning None.")
+                return None
+        except Exception:
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: Could not determine if the input wire is manifold. Returning None.")
+            return None
+
+        cornerType = str(cornerType).strip().lower()
+        if cornerType not in ["convex", "concave"]:
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: The cornerType parameter must be either 'convex' or 'concave'. Returning None.")
+            return None
+
+        def _xyz(vertex):
+            try:
+                return [
+                    float(Vertex.X(vertex)),
+                    float(Vertex.Y(vertex)),
+                    float(Vertex.Z(vertex)),
+                ]
+            except Exception:
+                return None
+
+        def _sub(a, b):
+            return [
+                a[0] - b[0],
+                a[1] - b[1],
+                a[2] - b[2],
+            ]
+
+        def _dot(a, b):
+            return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+        def _cross(a, b):
+            return [
+                a[1]*b[2] - a[2]*b[1],
+                a[2]*b[0] - a[0]*b[2],
+                a[0]*b[1] - a[1]*b[0],
+            ]
+
+        def _length(v):
+            return math.sqrt(_dot(v, v))
+
+        def _normalise(v):
+            length = _length(v)
+            if length <= max(float(tolerance), 1e-12):
+                return None
+            return [
+                v[0] / length,
+                v[1] / length,
+                v[2] / length,
+            ]
+
+        def _distance_squared(a, b):
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+            dz = a[2] - b[2]
+            return dx*dx + dy*dy + dz*dz
+
+        def _same_point(a, b):
+            if a is None or b is None:
+                return False
+            return _distance_squared(a, b) <= tolerance*tolerance
+
+        def _edge_vertices(edge):
+            sv = None
+            ev = None
+
+            try:
+                sv = Edge.StartVertex(edge)
+                ev = Edge.EndVertex(edge)
+            except Exception:
+                pass
+
+            if sv is not None and ev is not None:
+                return sv, ev
+
+            try:
+                sv = edge.StartVertex()
+                ev = edge.EndVertex()
+            except Exception:
+                pass
+
+            if sv is not None and ev is not None:
+                return sv, ev
+
+            try:
+                vertices = Topology.Vertices(edge)
+                if isinstance(vertices, list) and len(vertices) >= 2:
+                    return vertices[0], vertices[1]
+            except Exception:
+                pass
+
+            return None, None
+
+        def _edges_from_wire(wire):
+            try:
+                edges = Topology.Edges(wire)
+                if isinstance(edges, list):
+                    return edges
+            except Exception:
+                pass
+
+            try:
+                edges = wire.Edges()
+                if isinstance(edges, list):
+                    return edges
+            except Exception:
+                pass
+
+            return []
+
+        def _ordered_vertices_from_closed_wire(wire):
+            """
+            Orders a closed manifold wire as a single vertex cycle.
+
+            Returns an ordered list of vertices without repeating the first vertex at
+            the end. Returns None if the wire cannot be represented as one closed
+            non-branching cycle.
+            """
+
+            edges = _edges_from_wire(wire)
+
+            if len(edges) < 3:
+                if not silent:
+                    print("Wire._CornerVerticesByAngle - Error: The input wire has fewer than three usable edges. Returning None.")
+                return None
+
+            nodes = []
+            node_vertices = []
+            edge_node_pairs = []
+
+            def _node_index(point, vertex):
+                for i, existing_point in enumerate(nodes):
+                    if _same_point(point, existing_point):
+                        if node_vertices[i] is None and vertex is not None:
+                            node_vertices[i] = vertex
+                        return i
+
+                nodes.append(point)
+                node_vertices.append(vertex)
+                return len(nodes) - 1
+
+            for edge in edges:
+                sv, ev = _edge_vertices(edge)
+
+                if sv is None or ev is None:
+                    continue
+
+                p1 = _xyz(sv)
+                p2 = _xyz(ev)
+
+                if p1 is None or p2 is None:
+                    continue
+
+                if _same_point(p1, p2):
+                    continue
+
+                n1 = _node_index(p1, sv)
+                n2 = _node_index(p2, ev)
+
+                if n1 == n2:
+                    continue
+
+                edge_node_pairs.append((n1, n2))
+
+            if len(edge_node_pairs) < 3 or len(nodes) < 3:
+                if not silent:
+                    print("Wire._CornerVerticesByAngle - Error: Could not extract enough non-degenerate edges from the input wire. Returning None.")
+                return None
+
+            adjacency = {}
+            for edge_index, (n1, n2) in enumerate(edge_node_pairs):
+                adjacency.setdefault(n1, []).append((n2, edge_index))
+                adjacency.setdefault(n2, []).append((n1, edge_index))
+
+            # For a single closed manifold cycle, every vertex must have degree 2.
+            for node_index, neighbours in adjacency.items():
+                if len(neighbours) != 2:
+                    if not silent:
+                        print(
+                            "Wire._CornerVerticesByAngle - Error: "
+                            "The input wire is not a single closed manifold cycle. "
+                            "Each vertex must be incident to exactly two edges. Returning None."
+                        )
+                    return None
+
+            start = min(adjacency.keys())
+            ordered_node_indices = [start]
+            used_edges = set()
+            previous_node = None
+            current_node = start
+
+            while True:
+                candidates = adjacency.get(current_node, [])
+
+                next_node = None
+                next_edge_index = None
+
+                for candidate_node, candidate_edge_index in candidates:
+                    if candidate_edge_index in used_edges:
+                        continue
+
+                    if previous_node is not None and candidate_node == previous_node and len(candidates) > 1:
+                        continue
+
+                    next_node = candidate_node
+                    next_edge_index = candidate_edge_index
+                    break
+
+                if next_node is None:
+                    break
+
+                used_edges.add(next_edge_index)
+
+                if next_node == start:
+                    break
+
+                ordered_node_indices.append(next_node)
+                previous_node = current_node
+                current_node = next_node
+
+                if len(ordered_node_indices) > len(edge_node_pairs):
+                    if not silent:
+                        print("Wire._CornerVerticesByAngle - Error: Could not extract a valid closed cycle. Returning None.")
+                    return None
+
+            if len(used_edges) != len(edge_node_pairs):
+                if not silent:
+                    print(
+                        "Wire._CornerVerticesByAngle - Error: "
+                        "The input wire is disconnected or contains more than one cycle. Returning None."
+                    )
+                return None
+
+            if len(ordered_node_indices) != len(nodes):
+                if not silent:
+                    print(
+                        "Wire._CornerVerticesByAngle - Error: "
+                        "The input wire does not form one simple ordered vertex loop. Returning None."
+                    )
+                return None
+
+            ordered_vertices = []
+
+            for node_index in ordered_node_indices:
+                vertex = node_vertices[node_index]
+                if vertex is None:
+                    return None
+                ordered_vertices.append(vertex)
+
+            return ordered_vertices
+
+        def _newell_normal(vertices):
+            points = [_xyz(v) for v in vertices]
+            points = [p for p in points if p is not None]
+
+            if len(points) < 3:
+                return None
+
+            nx = 0.0
+            ny = 0.0
+            nz = 0.0
+            n = len(points)
+
+            for i in range(n):
+                p1 = points[i]
+                p2 = points[(i + 1) % n]
+
+                nx += (p1[1] - p2[1]) * (p1[2] + p2[2])
+                ny += (p1[2] - p2[2]) * (p1[0] + p2[0])
+                nz += (p1[0] - p2[0]) * (p1[1] + p2[1])
+
+            normal = _normalise([nx, ny, nz])
+
+            if normal is not None:
+                return normal
+
+            # Fallback: search for any non-collinear triple.
+            for i in range(n):
+                a = points[i]
+                for j in range(i + 1, n):
+                    b = points[j]
+                    ab = _sub(b, a)
+
+                    if _length(ab) <= tolerance:
+                        continue
+
+                    for k in range(j + 1, n):
+                        c = points[k]
+                        ac = _sub(c, a)
+                        candidate = _normalise(_cross(ab, ac))
+
+                        if candidate is not None:
+                            return candidate
+
+            return None
+
+        def _loop_angles(vertices, normal):
+            if not isinstance(vertices, list) or len(vertices) < 3:
+                return []
+
+            points = [_xyz(v) for v in vertices]
+
+            if any(p is None for p in points):
+                return []
+
+            n = len(points)
+            angles = []
+
+            for i in range(n):
+                previous_point = points[i - 1]
+                current_point = points[i]
+                next_point = points[(i + 1) % n]
+
+                incoming = _sub(current_point, previous_point)
+                outgoing = _sub(next_point, current_point)
+
+                if _length(incoming) <= tolerance or _length(outgoing) <= tolerance:
+                    return []
+
+                cross_product = _cross(incoming, outgoing)
+                dot_product = _dot(incoming, outgoing)
+
+                # Signed exterior turn angle.
+                turn_angle = math.degrees(
+                    math.atan2(
+                        _dot(normal, cross_product),
+                        dot_product,
+                    )
+                )
+
+                # Interior angle of the closed wire loop.
+                angle = 180.0 - turn_angle
+
+                while angle < 0.0:
+                    angle += 360.0
+
+                while angle > 360.0:
+                    angle -= 360.0
+
+                angles.append(round(angle, mantissa))
+
+            expected_sum = float(n - 2) * 180.0
+            angle_sum = sum(angles)
+
+            complement_angles = [round(360.0 - a, mantissa) for a in angles]
+            complement_sum = sum(complement_angles)
+
+            sum_tolerance = max(
+                float(angTolerance) * max(n, 1),
+                (10.0 ** (-mantissa)) * max(n, 1) * 2.0,
+            )
+
+            if abs(complement_sum - expected_sum) + sum_tolerance < abs(angle_sum - expected_sum):
+                angles = complement_angles
+
+            return angles
+
+        vertices = _ordered_vertices_from_closed_wire(wire)
+
+        if vertices is None:
+            return None
+
+        if len(vertices) < 3:
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: The input wire has fewer than three ordered vertices. Returning None.")
+            return None
+
+        normal = _newell_normal(vertices)
+
+        if normal is None:
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: Could not determine a valid wire normal. Returning None.")
+            return None
+
+        angles = _loop_angles(vertices, normal)
+
+        if len(angles) != len(vertices):
+            if not silent:
+                print("Wire._CornerVerticesByAngle - Error: Could not compute valid wire angles. Returning None.")
+            return None
+
+        result = []
+
+        for vertex, angle in zip(vertices, angles):
+            try:
+                angle = float(angle)
+            except Exception:
+                continue
+
+            if cornerType == "convex":
+                if angle < 180.0 - angTolerance:
+                    result.append(vertex)
+            else:
+                if angle > 180.0 + angTolerance:
+                    result.append(vertex)
+
+        return result
+
+
+    @staticmethod
+    def ConvexCornerVertices(
+        wire,
+        angTolerance: float = 0.01,
+        mantissa: int = 6,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ) -> list:
+        """
+        Returns the convex corner vertices of the input wire.
+
+        The wire must be closed, manifold, and represent a single non-branching
+        cycle. A vertex is considered convex if the interior angle of the enclosed
+        region is less than 180 degrees, within the specified tolerance. Collinear
+        vertices close to 180 degrees are not returned.
+
+        Parameters
+        ----------
+        wire : topologic_core.Wire
+            The input wire.
+        angTolerance : float , optional
+            The angular tolerance in degrees. Default is 0.01.
+        mantissa : int , optional
+            The number of decimal places to round computed angles to. Default is 6.
+        tolerance : float , optional
+            The geometric tolerance used for endpoint matching. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        list
+            The list of convex corner vertices.
+        """
+
+        return Wire._CornerVerticesByAngle(
+            wire,
+            cornerType="convex",
+            angTolerance=angTolerance,
+            mantissa=mantissa,
+            tolerance=tolerance,
+            silent=silent,
+        )
+
+
+    @staticmethod
+    def ConcaveCornerVertices(
+        wire,
+        angTolerance: float = 0.01,
+        mantissa: int = 6,
+        tolerance: float = 0.0001,
+        silent: bool = False,
+    ) -> list:
+        """
+        Returns the concave corner vertices of the input wire.
+
+        The wire must be closed, manifold, and represent a single non-branching
+        cycle. A vertex is considered concave if the interior angle of the enclosed
+        region is greater than 180 degrees, within the specified tolerance. Collinear
+        vertices close to 180 degrees are not returned.
+
+        Parameters
+        ----------
+        wire : topologic_core.Wire
+            The input wire.
+        angTolerance : float , optional
+            The angular tolerance in degrees. Default is 0.01.
+        mantissa : int , optional
+            The number of decimal places to round computed angles to. Default is 6.
+        tolerance : float , optional
+            The geometric tolerance used for endpoint matching. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
+        Returns
+        -------
+        list
+            The list of concave corner vertices.
+        """
+
+        return Wire._CornerVerticesByAngle(
+            wire,
+            cornerType="concave",
+            angTolerance=angTolerance,
+            mantissa=mantissa,
+            tolerance=tolerance,
+            silent=silent,
+        )
+
+    @staticmethod
     def CrossShape(origin=None,
             width=1,
             length=1,
@@ -4334,12 +4886,17 @@ class Wire():
 
         return spiral
 
+
     @staticmethod
-    def InteriorAngles(wire, tolerance: float = 0.0001, mantissa: int = 6) -> list:
+    def InteriorAngles(wire, tolerance: float = 0.0001, mantissa: int = 6, silent: bool = False) -> list:
         """
-        Returns the interior angles of the input wire in degrees. The wire must be planar, manifold, and closed.
-        This code has been contributed by Yidan Xue.
-        
+        Returns the interior angles of the input wire in degrees.
+
+        The wire must be planar, manifold, and closed. This implementation does not
+        create a Face from the wire. Instead, it orders the wire vertices, computes a
+        robust polygon normal using Newell's method, and evaluates each interior angle
+        directly in 3D.
+
         Parameters
         ----------
         wire : topologic_core.Wire
@@ -4348,50 +4905,358 @@ class Wire():
             The desired tolerance. Default is 0.0001.
         mantissa : int , optional
             The number of decimal places to round the result to. Default is 6.
-        
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
+
         Returns
         -------
         list
-            The list of interior angles.
-        
+            The list of interior angles in degrees.
+
         """
+
+        import math
+
         from topologicpy.Vertex import Vertex
         from topologicpy.Edge import Edge
-        from topologicpy.Face import Face
         from topologicpy.Topology import Topology
-        from topologicpy.Vector import Vector
-        from topologicpy.Dictionary import Dictionary
 
         if not Topology.IsInstance(wire, "Wire"):
-            print("Wire.InteriorAngles - Error: The input wire parameter is not a valid wire. Returning None")
+            if not silent:
+                print("Wire.InteriorAngles - Error: The input wire parameter is not a valid wire. Returning None.")
             return None
+
         if not Wire.IsManifold(wire):
-            print("Wire.InteriorAngles - Error: The input wire parameter is non-manifold. Returning None")
+            if not silent:
+                print("Wire.InteriorAngles - Error: The input wire parameter is non-manifold. Returning None.")
             return None
+
         if not Wire.IsClosed(wire):
-            print("Wire.InteriorAngles - Error: The input wire parameter is not closed. Returning None")
+            if not silent:
+                print("Wire.InteriorAngles - Error: The input wire parameter is not closed. Returning None.")
             return None
-        
-        f = Face.ByWire(wire)
-        normal = Face.Normal(f)
-        origin = Topology.Centroid(f)
-        w = Topology.Flatten(wire, origin=origin, direction=normal)
+
+        def _xyz(vertex):
+            try:
+                return [
+                    float(Vertex.X(vertex)),
+                    float(Vertex.Y(vertex)),
+                    float(Vertex.Z(vertex)),
+                ]
+            except Exception:
+                return None
+
+        def _sub(a, b):
+            return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+
+        def _dot(a, b):
+            return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+        def _cross(a, b):
+            return [
+                a[1]*b[2] - a[2]*b[1],
+                a[2]*b[0] - a[0]*b[2],
+                a[0]*b[1] - a[1]*b[0],
+            ]
+
+        def _length(v):
+            return math.sqrt(_dot(v, v))
+
+        def _distance_squared(a, b):
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+            dz = a[2] - b[2]
+            return dx*dx + dy*dy + dz*dz
+
+        def _same_point(a, b):
+            return _distance_squared(a, b) <= tolerance*tolerance
+
+        def _edge_vertices(edge):
+            try:
+                sv = Edge.StartVertex(edge)
+                ev = Edge.EndVertex(edge)
+                if sv is not None and ev is not None:
+                    return sv, ev
+            except Exception:
+                pass
+
+            try:
+                vertices = Topology.Vertices(edge)
+                if vertices is not None and len(vertices) >= 2:
+                    return vertices[0], vertices[1]
+            except Exception:
+                pass
+
+            return None, None
+
+        def _ordered_wire_points(wire):
+            try:
+                edges = Topology.Edges(wire)
+            except Exception:
+                return None
+
+            if edges is None or len(edges) < 3:
+                return None
+
+            edge_data = []
+            for edge in edges:
+                sv, ev = _edge_vertices(edge)
+                p1 = _xyz(sv)
+                p2 = _xyz(ev)
+
+                if p1 is None or p2 is None:
+                    continue
+                if _same_point(p1, p2):
+                    continue
+
+                edge_data.append([edge, sv, ev, p1, p2])
+
+            if len(edge_data) < 3:
+                return None
+
+            unused = edge_data[:]
+
+            first = unused.pop(0)
+            start_vertex = first[1]
+            current_vertex = first[2]
+            start_point = first[3]
+            current_point = first[4]
+
+            points = [start_point, current_point]
+
+            while unused:
+                found_index = None
+                next_vertex = None
+                next_point = None
+
+                for i, data in enumerate(unused):
+                    _, sv, ev, p1, p2 = data
+
+                    if _same_point(current_point, p1):
+                        found_index = i
+                        next_vertex = ev
+                        next_point = p2
+                        break
+
+                    if _same_point(current_point, p2):
+                        found_index = i
+                        next_vertex = sv
+                        next_point = p1
+                        break
+
+                if found_index is None:
+                    # The wire passed Topologic's manifold/closed tests, but the
+                    # extracted edges could not be ordered robustly.
+                    return None
+
+                unused.pop(found_index)
+
+                if _same_point(next_point, start_point):
+                    current_vertex = next_vertex
+                    current_point = next_point
+                    continue
+
+                if not _same_point(next_point, points[-1]):
+                    points.append(next_point)
+
+                current_vertex = next_vertex
+                current_point = next_point
+
+            # Remove accidental duplicate closing vertex, if present.
+            if len(points) > 1 and _same_point(points[0], points[-1]):
+                points.pop()
+
+            # Remove consecutive duplicate points, if any.
+            clean_points = []
+            for p in points:
+                if not clean_points or not _same_point(p, clean_points[-1]):
+                    clean_points.append(p)
+
+            if len(clean_points) > 1 and _same_point(clean_points[0], clean_points[-1]):
+                clean_points.pop()
+
+            return clean_points
+
+        def _newell_normal(points):
+            nx = 0.0
+            ny = 0.0
+            nz = 0.0
+            n = len(points)
+
+            for i in range(n):
+                p1 = points[i]
+                p2 = points[(i + 1) % n]
+
+                nx += (p1[1] - p2[1]) * (p1[2] + p2[2])
+                ny += (p1[2] - p2[2]) * (p1[0] + p2[0])
+                nz += (p1[0] - p2[0]) * (p1[1] + p2[1])
+
+            normal = [nx, ny, nz]
+            normal_length = _length(normal)
+
+            if normal_length > max(tolerance*tolerance, 1e-18):
+                return [
+                    normal[0] / normal_length,
+                    normal[1] / normal_length,
+                    normal[2] / normal_length,
+                ]
+
+            # Fallback: search for any non-collinear triple.
+            for i in range(n):
+                a = points[i]
+                for j in range(i + 1, n):
+                    b = points[j]
+                    ab = _sub(b, a)
+
+                    if _length(ab) <= tolerance:
+                        continue
+
+                    for k in range(j + 1, n):
+                        c = points[k]
+                        ac = _sub(c, a)
+                        candidate = _cross(ab, ac)
+                        candidate_length = _length(candidate)
+
+                        if candidate_length > max(tolerance*tolerance, 1e-18):
+                            return [
+                                candidate[0] / candidate_length,
+                                candidate[1] / candidate_length,
+                                candidate[2] / candidate_length,
+                            ]
+
+            return None
+
+        points = _ordered_wire_points(wire)
+
+        if points is None or len(points) < 3:
+            if not silent:
+                print("Wire.InteriorAngles - Error: Could not extract an ordered closed vertex loop from the input wire. Returning None.")
+            return None
+
+        normal = _newell_normal(points)
+
+        if normal is None:
+            if not silent:
+                print("Wire.InteriorAngles - Error: Could not determine a valid normal from the input wire. Returning None.")
+            return None
+
         angles = []
-        edges = Topology.Edges(w)
-        e1 = edges[len(edges)-1]
-        e2 = edges[0]
-        a = Vector.CompassAngle(Vector.Reverse(Edge.Direction(e1)), Edge.Direction(e2))
-        angles.append(a)
-        for i in range(len(edges)-1):
-            e1 = edges[i]
-            e2 = edges[i+1]
-            a = Vector.CompassAngle(Vector.Reverse(Edge.Direction(e1)), Edge.Direction(e2))
-            angles.append(round(a, mantissa))
-        if abs(sum(angles)-(len(angles)-2)*180)<tolerance:
-            return angles
-        else:
-            angles = [360-ang for ang in angles]
-            return angles
+        n = len(points)
+
+        for i in range(n):
+            previous_point = points[i - 1]
+            current_point = points[i]
+            next_point = points[(i + 1) % n]
+
+            previous_edge = _sub(current_point, previous_point)
+            next_edge = _sub(next_point, current_point)
+
+            previous_length = _length(previous_edge)
+            next_length = _length(next_edge)
+
+            if previous_length <= tolerance or next_length <= tolerance:
+                if not silent:
+                    print("Wire.InteriorAngles - Error: The input wire contains a degenerate edge. Returning None.")
+                return None
+
+            cross_product = _cross(previous_edge, next_edge)
+            dot_product = _dot(previous_edge, next_edge)
+
+            # Signed exterior turn angle, measured around the robust polygon normal.
+            turn_angle = math.degrees(
+                math.atan2(
+                    _dot(normal, cross_product),
+                    dot_product,
+                )
+            )
+
+            # Interior angle = 180 - signed exterior turn.
+            interior_angle = 180.0 - turn_angle
+
+            while interior_angle < 0.0:
+                interior_angle += 360.0
+
+            while interior_angle > 360.0:
+                interior_angle -= 360.0
+
+            angles.append(round(interior_angle, mantissa))
+
+        # If numerical orientation issues caused the complementary set to be closer
+        # to the expected polygon angle sum, use the complementary angles.
+        expected_sum = float(n - 2) * 180.0
+        angle_sum = sum(angles)
+        complement_angles = [round(360.0 - a, mantissa) for a in angles]
+        complement_sum = sum(complement_angles)
+
+        angle_sum_tolerance = max(float(tolerance), (10.0 ** (-mantissa)) * max(n, 1) * 2.0)
+
+        if abs(complement_sum - expected_sum) + angle_sum_tolerance < abs(angle_sum - expected_sum):
+            angles = complement_angles
+
+        return angles
+    # @staticmethod
+    # def InteriorAngles_old(wire, tolerance: float = 0.0001, mantissa: int = 6, silent: bool = False) -> list:
+    #     """
+    #     Returns the interior angles of the input wire in degrees. The wire must be planar, manifold, and closed.
+    #     This code has been contributed by Yidan Xue.
+        
+    #     Parameters
+    #     ----------
+    #     wire : topologic_core.Wire
+    #         The input wire.
+    #     tolerance : float , optional
+    #         The desired tolerance. Default is 0.0001.
+    #     mantissa : int , optional
+    #         The number of decimal places to round the result to. Default is 6.
+    #     silent : bool , optional
+    #         If set to True, error and warning messages are suppressed. Default is False.
+        
+    #     Returns
+    #     -------
+    #     list
+    #         The list of interior angles.
+        
+    #     """
+    #     from topologicpy.Vertex import Vertex
+    #     from topologicpy.Edge import Edge
+    #     from topologicpy.Face import Face
+    #     from topologicpy.Topology import Topology
+    #     from topologicpy.Vector import Vector
+    #     from topologicpy.Dictionary import Dictionary
+
+    #     if not Topology.IsInstance(wire, "Wire"):
+    #         if not silent:
+    #             print("Wire.InteriorAngles - Error: The input wire parameter is not a valid wire. Returning None")
+    #         return None
+    #     if not Wire.IsManifold(wire):
+    #         if not silent:
+    #             print("Wire.InteriorAngles - Error: The input wire parameter is non-manifold. Returning None")
+    #         return None
+    #     if not Wire.IsClosed(wire):
+    #         if not silent:
+    #             print("Wire.InteriorAngles - Error: The input wire parameter is not closed. Returning None")
+    #         return None
+        
+    #     f = Face.ByWire(wire)
+    #     normal = Face.Normal(f)
+    #     origin = Topology.Centroid(f)
+    #     w = Topology.Flatten(wire, origin=origin, direction=normal)
+    #     angles = []
+    #     edges = Topology.Edges(w)
+    #     e1 = edges[len(edges)-1]
+    #     e2 = edges[0]
+    #     a = Vector.CompassAngle(Vector.Reverse(Edge.Direction(e1)), Edge.Direction(e2))
+    #     angles.append(a)
+    #     for i in range(len(edges)-1):
+    #         e1 = edges[i]
+    #         e2 = edges[i+1]
+    #         a = Vector.CompassAngle(Vector.Reverse(Edge.Direction(e1)), Edge.Direction(e2))
+    #         angles.append(round(a, mantissa))
+    #     if abs(sum(angles)-(len(angles)-2)*180)<tolerance:
+    #         return angles
+    #     else:
+    #         angles = [360-ang for ang in angles]
+    #         return angles
 
     @staticmethod
     def Interpolate(wires: list, n: int = 5, outputType: str = "default", mapping: str = "default", tolerance: float = 0.0001):

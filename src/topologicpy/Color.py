@@ -159,7 +159,11 @@ class Color:
         return f"#{r:02X}{g:02X}{b:02X}"
 
     @staticmethod
-    def AnyToHex(color, silent: bool = False):
+    def AnyToHex(
+        color,
+        silent: bool = False,
+        colorModel: str = "auto",
+    ):
         """
         Converts a color to a hexadecimal color string.
 
@@ -170,34 +174,77 @@ class Color:
 
             - RGB lists/tuples: [255, 0, 0], [1.0, 0.0, 0.0]
             - RGBA lists/tuples: [255, 0, 0, 0.5], [1.0, 0.0, 0.0, 0.5]
-            - CMYK lists/tuples: [0, 100, 100, 0], [0.0, 1.0, 1.0, 0.0]
+            - CMYK lists/tuples: [0.0, 1.0, 1.0, 0.0]
             - HEX strings: "#RGB", "#RGBA", "#RRGGBB", "#RRGGBBAA"
-            - CSS rgb()/rgba(): "rgb(255,0,0)", "rgba(0,0,0,0)"
+            - CSS rgb()/rgba(): "rgb(255,0,0)", "rgba(0,0,0,0.5)"
             - CSS hsl()/hsla(): "hsl(0,100%,50%)", "hsla(0,100%,50%,0.5)"
             - CSS named colors: "red", "transparent"
             - A list of color strings, in which case their average color is returned.
 
-            Alpha values are accepted but ignored because the return format is '#RRGGBB'.
+            Alpha values are validated but ignored because the return format is
+            '#RRGGBB'.
 
         silent : bool , optional
-            If set to True, error and warning messages are suppressed. Default is False.
+            If set to True, error and warning messages are suppressed. Default is
+            False.
+        colorModel : str , optional
+            The color model used for numeric list or tuple inputs. Valid values are
+            "auto", "rgb", "rgba", and "cmyk". Default is "auto".
+
+            In "auto" mode, three-channel numeric inputs are interpreted as RGB.
+            Four-channel numeric inputs are interpreted as RGBA only when at least
+            one RGB channel is greater than 1 and the fourth channel is between 0
+            and 1. A four-channel input whose values are all between 0 and 1 is
+            ambiguous and requires an explicit "rgba" or "cmyk" colorModel.
 
         Returns
         -------
         str
-            A hexadecimal color string in the format '#RRGGBB'.
+            A hexadecimal color string in the format '#RRGGBB', or None if the
+            input cannot be interpreted unambiguously.
+
         """
+
+        import colorsys
         import inspect
         import re
-        import colorsys
 
-        def _fail():
+        valid_models = {"auto", "rgb", "rgba", "cmyk"}
+
+        if not isinstance(colorModel, str):
             if not silent:
-                print("Color.AnyToHex - Error: Could not recognize the input parameter. Returning None.")
+                print(
+                    "Color.AnyToHex - Error: The input colorModel parameter is "
+                    "not a valid string. Returning None."
+                )
+            return None
+
+        color_model = colorModel.strip().lower()
+
+        if color_model not in valid_models:
+            if not silent:
+                print(
+                    "Color.AnyToHex - Error: The input colorModel parameter must "
+                    'be one of "auto", "rgb", "rgba", or "cmyk". Returning None.'
+                )
+            return None
+
+        def _fail(message=None):
+            if not silent:
+                if message:
+                    print(f"Color.AnyToHex - Error: {message} Returning None.")
+                else:
+                    print(
+                        "Color.AnyToHex - Error: Could not recognize the input "
+                        "parameter. Returning None."
+                    )
+
                 print("Input Color:", color)
+
                 curframe = inspect.currentframe()
                 calframe = inspect.getouterframes(curframe, 2)
                 print("caller name:", calframe[1][3])
+
             return None
 
         def _clamp_int(value, minimum=0, maximum=255):
@@ -210,15 +257,107 @@ class Color:
         def _hex_from_rgb_channels(channels):
             if channels is None or len(channels) < 3:
                 return None
+
             r = _clamp_int(channels[0])
             g = _clamp_int(channels[1])
             b = _clamp_int(channels[2])
+
             if r is None or g is None or b is None:
                 return None
-            return "#{:02X}{:02X}{:02X}".format(r, g, b)
+
+            return f"#{r:02X}{g:02X}{b:02X}"
+
+        def _numeric_sequence(seq):
+            if not isinstance(seq, (list, tuple)):
+                return None
+
+            if not all(Color._is_real(value) for value in seq):
+                return None
+
+            return [float(value) for value in seq]
+
+        def _rgb_to_hex(values):
+            if len(values) != 3:
+                return None
+
+            if not all(0.0 <= value <= 255.0 for value in values):
+                return None
+
+            if all(0.0 <= value <= 1.0 for value in values):
+                values = [value * 255.0 for value in values]
+
+            return _hex_from_rgb_channels(values)
+
+        def _rgba_to_hex(values):
+            if len(values) != 4:
+                return None
+
+            rgb = values[:3]
+            alpha = values[3]
+
+            if not 0.0 <= alpha <= 1.0:
+                return None
+
+            if not all(0.0 <= value <= 255.0 for value in rgb):
+                return None
+
+            if all(0.0 <= value <= 1.0 for value in rgb):
+                rgb = [value * 255.0 for value in rgb]
+
+            return _hex_from_rgb_channels(rgb)
+
+        def _cmyk_to_hex(values):
+            if len(values) != 4:
+                return None
+
+            if not all(0.0 <= value <= 1.0 for value in values):
+                return None
+
+            return Color.CMYKToHex(values, silent=True)
+
+        def _sequence_to_hex(seq):
+            numeric = _numeric_sequence(seq)
+
+            if numeric is None:
+                return None, None
+
+            if color_model == "rgb":
+                return _rgb_to_hex(numeric), None
+
+            if color_model == "rgba":
+                return _rgba_to_hex(numeric), None
+
+            if color_model == "cmyk":
+                return _cmyk_to_hex(numeric), None
+
+            # Automatic interpretation.
+            if len(numeric) == 3:
+                return _rgb_to_hex(numeric), None
+
+            if len(numeric) != 4:
+                return None, None
+
+            # All four values in 0..1 are valid as both normalized RGBA and CMYK.
+            if all(0.0 <= value <= 1.0 for value in numeric):
+                return (
+                    None,
+                    "The four-channel input is ambiguous. Specify "
+                    'colorModel="rgba" or colorModel="cmyk".',
+                )
+
+            # An unambiguous RGBA input has an alpha value in 0..1 and at least one
+            # RGB channel greater than 1.
+            if (
+                0.0 <= numeric[3] <= 1.0
+                and all(0.0 <= value <= 255.0 for value in numeric[:3])
+            ):
+                return _rgba_to_hex(numeric), None
+
+            return None, None
 
         def _parse_rgb_component(token):
             token = str(token).strip()
+
             if token.endswith("%"):
                 try:
                     return _clamp_int(float(token[:-1]) * 2.55)
@@ -230,43 +369,55 @@ class Color:
             except Exception:
                 return None
 
-            # CSS rgb() numeric channels are 0..255.
             return _clamp_int(value)
 
         def _parse_alpha_component(token):
             token = str(token).strip()
+
             if token.endswith("%"):
                 try:
-                    return max(0.0, min(1.0, float(token[:-1]) / 100.0))
+                    value = float(token[:-1]) / 100.0
+                except Exception:
+                    return None
+            else:
+                try:
+                    value = float(token)
                 except Exception:
                     return None
 
-            try:
-                return max(0.0, min(1.0, float(token)))
-            except Exception:
+            if not 0.0 <= value <= 1.0:
                 return None
 
+            return value
+
         def _split_css_function_args(arg_string):
-            # Supports both comma syntax:
-            #   rgba(255, 0, 0, 0.5)
-            # and modern CSS slash alpha syntax:
-            #   rgb(255 0 0 / 50%)
-            arg_string = arg_string.strip()
-            arg_string = arg_string.replace("/", " / ")
+            arg_string = arg_string.strip().replace("/", " / ")
 
             if "," in arg_string:
-                parts = [p.strip() for p in arg_string.split(",") if p.strip()]
-            else:
-                parts = [p.strip() for p in arg_string.split() if p.strip() and p.strip() != "/"]
+                return [
+                    part.strip()
+                    for part in arg_string.split(",")
+                    if part.strip()
+                ]
 
-            return parts
+            return [
+                part.strip()
+                for part in arg_string.split()
+                if part.strip() and part.strip() != "/"
+            ]
 
         def _parse_css_rgb(value):
-            match = re.fullmatch(r"rgba?\((.*)\)", value, flags=re.IGNORECASE)
+            match = re.fullmatch(
+                r"rgba?\((.*)\)",
+                value,
+                flags=re.IGNORECASE,
+            )
+
             if not match:
                 return None
 
             parts = _split_css_function_args(match.group(1))
+
             if len(parts) not in (3, 4):
                 return None
 
@@ -277,9 +428,10 @@ class Color:
             if r is None or g is None or b is None:
                 return None
 
-            # Parse alpha only to validate the input. It is ignored in '#RRGGBB'.
-            if len(parts) == 4 and _parse_alpha_component(parts[3]) is None:
-                return None
+            if len(parts) == 4:
+                alpha = _parse_alpha_component(parts[3])
+                if alpha is None:
+                    return None
 
             return _hex_from_rgb_channels([r, g, b])
 
@@ -288,14 +440,23 @@ class Color:
 
             if is_hue:
                 lower = token.lower()
+
                 try:
                     if lower.endswith("deg"):
                         return float(lower[:-3]) % 360.0
+
                     if lower.endswith("rad"):
-                        return (float(lower[:-3]) * 180.0 / 3.141592653589793) % 360.0
+                        return (
+                            float(lower[:-3])
+                            * 180.0
+                            / 3.141592653589793
+                        ) % 360.0
+
                     if lower.endswith("turn"):
                         return (float(lower[:-4]) * 360.0) % 360.0
+
                     return float(lower) % 360.0
+
                 except Exception:
                     return None
 
@@ -303,32 +464,53 @@ class Color:
                 return None
 
             try:
-                return max(0.0, min(1.0, float(token[:-1]) / 100.0))
+                value = float(token[:-1]) / 100.0
             except Exception:
                 return None
 
+            if not 0.0 <= value <= 1.0:
+                return None
+
+            return value
+
         def _parse_css_hsl(value):
-            match = re.fullmatch(r"hsla?\((.*)\)", value, flags=re.IGNORECASE)
+            match = re.fullmatch(
+                r"hsla?\((.*)\)",
+                value,
+                flags=re.IGNORECASE,
+            )
+
             if not match:
                 return None
 
             parts = _split_css_function_args(match.group(1))
+
             if len(parts) not in (3, 4):
                 return None
 
             h = _parse_hsl_component(parts[0], is_hue=True)
             s = _parse_hsl_component(parts[1])
-            l = _parse_hsl_component(parts[2])
+            lightness = _parse_hsl_component(parts[2])
 
-            if h is None or s is None or l is None:
+            if h is None or s is None or lightness is None:
                 return None
 
-            # Parse alpha only to validate the input. It is ignored in '#RRGGBB'.
-            if len(parts) == 4 and _parse_alpha_component(parts[3]) is None:
-                return None
+            if len(parts) == 4:
+                alpha = _parse_alpha_component(parts[3])
+                if alpha is None:
+                    return None
 
-            r, g, b = colorsys.hls_to_rgb(h / 360.0, l, s)
-            return _hex_from_rgb_channels([r * 255.0, g * 255.0, b * 255.0])
+            r, g, b = colorsys.hls_to_rgb(
+                h / 360.0,
+                lightness,
+                s,
+            )
+
+            return _hex_from_rgb_channels([
+                r * 255.0,
+                g * 255.0,
+                b * 255.0,
+            ])
 
         def _normalize_hex_local(value):
             value = value.strip()
@@ -336,92 +518,56 @@ class Color:
             if not value.startswith("#"):
                 return None
 
-            h = value[1:].strip()
+            hex_value = value[1:].strip()
 
-            if not re.fullmatch(r"[0-9a-fA-F]+", h):
+            if not re.fullmatch(r"[0-9a-fA-F]+", hex_value):
                 return None
 
-            # #RGB
-            if len(h) == 3:
-                return "#" + "".join(ch * 2 for ch in h).upper()
+            if len(hex_value) == 3:
+                return "#" + "".join(
+                    channel * 2 for channel in hex_value
+                ).upper()
 
-            # #RGBA, alpha ignored
-            if len(h) == 4:
-                return "#" + "".join(ch * 2 for ch in h[:3]).upper()
+            if len(hex_value) == 4:
+                return "#" + "".join(
+                    channel * 2 for channel in hex_value[:3]
+                ).upper()
 
-            # #RRGGBB
-            if len(h) == 6:
-                return "#" + h.upper()
+            if len(hex_value) == 6:
+                return "#" + hex_value.upper()
 
-            # #RRGGBBAA, alpha ignored
-            if len(h) == 8:
-                return "#" + h[:6].upper()
+            if len(hex_value) == 8:
+                return "#" + hex_value[:6].upper()
 
             return None
 
-        def _sequence_to_hex(seq):
-            if not isinstance(seq, (list, tuple)):
-                return None
+        if isinstance(color, list) and all(
+            isinstance(item, str) for item in color
+        ):
+            if color_model != "auto":
+                return _fail(
+                    "colorModel applies only to numeric list or tuple inputs."
+                )
 
-            if len(seq) not in (3, 4):
-                return None
-
-            # First try RGB/RGBA interpretation.
-            rgb = None
-            try:
-                numeric = [float(x) for x in seq]
-            except Exception:
-                numeric = None
-
-            if numeric is not None:
-                if len(numeric) == 3:
-                    # [0..1] RGB floats
-                    if all(0.0 <= x <= 1.0 for x in numeric):
-                        rgb = [x * 255.0 for x in numeric]
-                    # [0..255] RGB values
-                    elif all(0.0 <= x <= 255.0 for x in numeric):
-                        rgb = numeric
-
-                    if rgb is not None:
-                        return _hex_from_rgb_channels(rgb)
-
-                if len(numeric) == 4:
-                    first_three = numeric[:3]
-                    alpha = numeric[3]
-
-                    # Strong RGBA signal: alpha is 0..1 and RGB channels are 0..255.
-                    if 0.0 <= alpha <= 1.0 and all(0.0 <= x <= 255.0 for x in first_three):
-                        if all(0.0 <= x <= 1.0 for x in first_three):
-                            return _hex_from_rgb_channels([x * 255.0 for x in first_three])
-                        return _hex_from_rgb_channels(first_three)
-
-            # Fall back to existing class helpers, preserving previous CMYK behaviour.
-            if len(seq) == 4:
-                try:
-                    cmyk = Color._cmyk_channels(seq)
-                    if cmyk is not None:
-                        return Color.CMYKToHex(cmyk, silent=silent).upper()
-                except Exception:
-                    pass
-
-            if len(seq) == 3:
-                try:
-                    rgb = Color._rgb_channels(seq)
-                    if rgb is not None:
-                        return Color.RGBToHex(rgb, silent=silent).upper()
-                except Exception:
-                    pass
-
-            return None
-
-        if isinstance(color, list) and all(isinstance(item, str) for item in color):
             return Color.Average(color, silent=silent)
 
         if isinstance(color, (list, tuple)):
-            result = _sequence_to_hex(color)
-            return result.upper() if isinstance(result, str) else result
+            result, error = _sequence_to_hex(color)
+
+            if error:
+                return _fail(error)
+
+            if result is None:
+                return _fail()
+
+            return result.upper()
 
         if isinstance(color, str):
+            if color_model != "auto":
+                return _fail(
+                    "colorModel applies only to numeric list or tuple inputs."
+                )
+
             value = color.strip()
             lower = value.lower()
 
@@ -442,19 +588,34 @@ class Color:
                 return normalized.upper()
 
             result = _parse_css_rgb(value)
+
             if result is not None:
                 return result.upper()
 
             result = _parse_css_hsl(value)
+
             if result is not None:
                 return result.upper()
 
             try:
                 named_colors = Color.CSSNamedColors()
-                named_lookup = {str(x).lower(): x for x in named_colors}
+                named_lookup = {
+                    str(name).lower(): name
+                    for name in named_colors
+                }
+
                 if lower in named_lookup:
-                    rgb = Color.ByCSSNamedColor(lower, silent=silent)
-                    return Color.RGBToHex(rgb, silent=silent).upper() if rgb else None
+                    rgb = Color.ByCSSNamedColor(
+                        lower,
+                        silent=silent,
+                    )
+
+                    if rgb:
+                        return Color.RGBToHex(
+                            rgb,
+                            silent=silent,
+                        ).upper()
+
             except Exception:
                 pass
 
