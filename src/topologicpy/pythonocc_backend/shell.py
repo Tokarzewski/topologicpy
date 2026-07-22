@@ -482,11 +482,12 @@ class Shell(Topology):
     def Divide(self, otherTopology, transferDictionary: bool = False):
         return self.Slice(otherTopology, transferDictionary=transferDictionary)
 
-    def Impose(self, otherTopology, transferDictionary: bool = False):
-        return self.Slice(otherTopology, transferDictionary=transferDictionary)
-
-    def Imprint(self, otherTopology, transferDictionary: bool = False):
-        return self.Slice(otherTopology, transferDictionary=transferDictionary)
+    # Impose and Imprint intentionally do NOT alias Slice here (unlike
+    # Divide): Impose has its own distinct semantics (keep self's exclusive
+    # material AND otherTopology's whole, unsplit material -- see
+    # Topology.Impose), and Imprint is already handled correctly by the base
+    # Topology._split_by_tool. Aliasing both to Slice used to shadow those
+    # base-class implementations for every Shell operand.
 
 
 class ShellUtility:

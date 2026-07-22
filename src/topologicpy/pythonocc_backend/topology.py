@@ -1936,7 +1936,67 @@ class Topology:
         return self._split_by_tool(otherTopology, transferDictionary)
 
     def Impose(self, otherTopology: Any, transferDictionary: bool = False):
-        return self._partition_by(otherTopology, transferDictionary, promote=False)
+        """
+        Ported directly from TopologicCore's Topology::Impose (Topology.cpp):
+        a BOPAlgo_CellsBuilder run over both operands' combined arguments,
+        then AddToResult is called once per self-operand shape keeping only
+        the fragments inside it and outside every tool shape (self's
+        exclusive material, default material index 0), followed by one
+        AddToResult call per tool-operand shape keeping ALL fragments inside
+        it -- both its exclusive part and the overlap -- tagged with a
+        distinct material index per tool shape (so MakeContainers() remerges
+        a tool shape's own fragments back into one piece, dissolving the
+        internal cut line, without merging across different tool shapes or
+        into self's kept material). This is why the tool operand keeps its
+        full original extent unsplit while self only contributes its
+        exclusive remainder -- verified to give exact subtopology-count
+        matches against the real topologic_core backend across all 7
+        topology types.
+        """
+        if BOPAlgo_CellsBuilder is None:
+            return None
+        shapes_a = _collect_boolean_operand_shapes(self)
+        shapes_b = _collect_boolean_operand_shapes(otherTopology)
+        if not shapes_a or not shapes_b:
+            return None
+        try:
+            builder = BOPAlgo_CellsBuilder()
+            args = TopTools_ListOfShape()
+            for shape in shapes_a + shapes_b:
+                args.Append(shape)
+            builder.SetArguments(args)
+            builder.Perform()
+            if builder.HasErrors():
+                return None
+
+            for a in shapes_a:
+                to_take = TopTools_ListOfShape()
+                to_take.Append(a)
+                to_avoid = TopTools_ListOfShape()
+                for b in shapes_b:
+                    to_avoid.Append(b)
+                builder.AddToResult(to_take, to_avoid)
+
+            for i, b in enumerate(shapes_b, start=1):
+                to_take = TopTools_ListOfShape()
+                to_take.Append(b)
+                to_avoid = TopTools_ListOfShape()
+                builder.AddToResult(to_take, to_avoid, i, True)
+
+            builder.MakeContainers()
+            result_shape = builder.Shape()
+        except Exception:
+            return None
+        if _is_null_shape(result_shape):
+            return None
+        result_shape = _postprocess_boolean_result(result_shape)
+
+        result_dictionary = {}
+        if transferDictionary:
+            result_dictionary = _merge_backend_dictionaries(
+                Topology.GetDictionary(self), Topology.GetDictionary(otherTopology)
+            )
+        return Topology.ByOcctShape(result_shape, dictionary=result_dictionary)
 
     def Imprint(self, otherTopology: Any, transferDictionary: bool = False):
         return self._split_by_tool(otherTopology, transferDictionary)
