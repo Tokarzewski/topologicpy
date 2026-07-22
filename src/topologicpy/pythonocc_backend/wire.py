@@ -420,7 +420,13 @@ class WireUtility:
                             extended = True
                             break
                         if same_vertex(e.end, run[-1].end, tolerance):
-                            flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
+                            flipped = None
+                            try:
+                                flipped = Edge.ByOcctShape(e.shape.Reversed())
+                            except Exception:
+                                flipped = None
+                            if flipped is None:
+                                flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
                             if flipped is not None:
                                 run.append(flipped)
                                 remaining.remove(e)
@@ -438,7 +444,13 @@ class WireUtility:
                             extended = True
                             break
                         if same_vertex(e.start, run[0].start, tolerance):
-                            flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
+                            flipped = None
+                            try:
+                                flipped = Edge.ByOcctShape(e.shape.Reversed())
+                            except Exception:
+                                flipped = None
+                            if flipped is None:
+                                flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
                             if flipped is not None:
                                 run.insert(0, flipped)
                                 remaining.remove(e)
