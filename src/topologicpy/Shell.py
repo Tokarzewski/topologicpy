@@ -22,20 +22,6 @@ import os
 import warnings
 
 try:
-    from tqdm.auto import tqdm
-except:
-    print("Shell - Installing required tqdm library.")
-    try:
-        os.system("pip install tqdm")
-    except:
-        os.system("pip install tqdm --user")
-    try:
-        from tqdm.auto import tqdm
-        print("Shell - tqdm library installed correctly.")
-    except:
-        warnings.warn("Shell - Error: Could not import tqdm.")
-
-try:
     from scipy.spatial import Delaunay
     from scipy.spatial import Voronoi
 except:
@@ -106,7 +92,7 @@ class Shell():
 
         def removeShards(edges, hostTopology, maximumGap=0.5):
             returnEdges = []
-            for e in tqdm(edges, desc="Removing Shards", leave=False):
+            for e in edges:
                 if Edge.Length(e) < maximumGap:
                     sv = Edge.StartVertex(e)
                     ev = Edge.EndVertex(e)
@@ -122,7 +108,7 @@ class Shell():
 
         def extendEdges(edges, hostTopology, maximumGap=0.5):
             returnEdges = []
-            for e in tqdm(edges, desc="Extending Edges", leave=False):
+            for e in edges:
                 sv = Edge.StartVertex(e)
                 ev = Edge.EndVertex(e)
                 sEdges = Topology.SuperTopologies(sv, hostTopology, "edge")
@@ -151,7 +137,7 @@ class Shell():
         grid = Topology.Slice(internalBoundary, grid, tolerance=tolerance)
         grid_faces = Topology.Faces(grid)
         skeletons = []
-        for ib in tqdm(grid_faces, desc="Processing "+str(len(grid_faces))+" tiles", leave=False):
+        for ib in grid_faces:
             building_shell = Topology.Slice(ib, facesCluster, tolerance=tolerance)
             wall_faces = Topology.Faces(building_shell)
             walls = []

@@ -25,17 +25,6 @@ from os.path import exists
 from datetime import datetime, timezone
 import warnings
 
-try:
-    from tqdm.auto import tqdm
-except Exception:
-    class tqdm:  # lightweight fallback; avoids import-time installation side effects
-        def __init__(self, *args, **kwargs):
-            self.total = kwargs.get("total", None)
-        def update(self, *args, **kwargs):
-            return None
-        def close(self):
-            return None
-
 class EnergyModel:
     '''
     @staticmethod
@@ -992,7 +981,6 @@ class EnergyModel:
         outputFolder = os.path.join(outputFolder, timestamp)
         os.makedirs(outputFolder, exist_ok=True)
 
-        pbar = tqdm(desc="Running Simulation", total=100, leave=False)
         try:
             try:
                 building_name = model.getBuilding().name().get()
@@ -1002,41 +990,34 @@ class EnergyModel:
             osmPath = os.path.join(outputFolder, building_name + ".osm")
             oswPath = os.path.join(outputFolder, building_name + ".osw")
 
-            pbar.update(10)
             try:
                 model.save(EnergyModel._OSPath(osmPath, openstudio), True)
             except TypeError:
                 model.save(osmPath, True)
 
-            pbar.update(20)
             workflow = model.workflowJSON()
             try:
                 workflow.setSeedFile(EnergyModel._OSPath(osmPath, openstudio))
             except TypeError:
                 workflow.setSeedFile(osmPath)
 
-            pbar.update(30)
             try:
                 workflow.setWeatherFile(EnergyModel._OSPath(weatherFilePath, openstudio))
             except TypeError:
                 workflow.setWeatherFile(weatherFilePath)
 
-            pbar.update(40)
             try:
                 workflow.saveAs(EnergyModel._OSPath(oswPath, openstudio))
             except TypeError:
                 workflow.saveAs(oswPath)
 
-            pbar.update(50)
             cmd = [osBinaryPath, "run", "-w", oswPath]
             result = subprocess.run(cmd, capture_output=True, text=True)
-            pbar.update(60)
             if result.returncode != 0:
                 warnings.warn("EnergyModel.Run - Error: OpenStudio simulation failed. Returning None.")
                 return None
 
             sqlPath = os.path.join(outputFolder, "run", "eplusout.sql")
-            pbar.update(100)
             if not os.path.exists(sqlPath):
                 warnings.warn("EnergyModel.Run - Error: Simulation SQL file was not created. Returning None.")
                 return None
@@ -1048,7 +1029,7 @@ class EnergyModel:
             model.setSqlFile(osSqlFile)
             return model
         finally:
-            pbar.close()
+            pass
     
     @staticmethod
     def SpaceDictionaries(model):

@@ -62,20 +62,6 @@ except:
     except:
         warnings.warn("Topology - Error: Could not import scipy.")
 
-try:
-    from tqdm.auto import tqdm
-except:
-    print("Topology - Installing required tqdm library.")
-    try:
-        os.system("pip install tqdm")
-    except:
-        os.system("pip install tqdm --user")
-    try:
-        from tqdm.auto import tqdm
-        print("Topology - tqdm library installed correctly.")
-    except:
-        warnings.warn("Topology - Error: Could not import tqdm.")
-
 QueueItem = namedtuple('QueueItem', ['ID', 'sinkKeys', 'sinkValues'])
 SinkItem = namedtuple('SinkItem', ['ID', 'sink_str'])
 
@@ -1998,7 +1984,8 @@ class Topology():
         for cellA in cellsA_2:
             for cellB in cellsB_2:
                 # cellC = cellA.Intersect(Topology.Copy(cellB)) # H to Core
-                cellC = Core.InstanceCall(cellA, 'Intersect', Topology.Copy(cellB))
+                # cellC = Core.InstanceCall(cellA, 'Intersect', Topology.Copy(cellB)) # H to Core
+                cellC = Core.InstanceCall(cellA, 'Intersect', cellB) # H to Core, Trying without the Copy hack
                 results.append(cellC)
         results = [x for x in results if x is not None]
         if len(results) == 0:
@@ -2210,7 +2197,9 @@ class Topology():
                 topologyC = None
             else:
                 # topologyC = topologyA.Difference(Topology.Copy(topologyB), False) # H to Core
-                topologyC = Core.InstanceCall(topologyA, 'Difference', Topology.Copy(topologyB), False)
+                topologyC = Core.InstanceCall(topologyA, 'Difference', Topology.Copy(topologyB), False) # H to Core
+                topologyC = Core.InstanceCall(topologyA, 'Difference', topologyB, False) # H to Core
+
         elif operation.lower() == "intersect": #Intersect in Topologic (Core) is faulty. This is a workaround.
             #topologyC = topologyA.Intersect(topologyB, False)
             if topologyA == topologyB or topologyB is None:
@@ -5421,9 +5410,14 @@ class Topology():
             The created topology.
 
         """
+
+        import inspect
         if not isinstance(string, str):
             if not silent:
                 print("Topology.ByBREPString - Error: the input string parameter is not a valid string. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print('caller name:', calframe[1][3])
             return None
         returnTopology = None
         try:
@@ -6328,6 +6322,8 @@ class Topology():
 
         """
         from topologicpy.Dictionary import Dictionary
+        import inspect
+
         if not Topology.IsInstance(topology, "Topology"):
             if not silent:
                 print("Topology.Copy - Error: the input topology parameter is not a valid topology. Returning None.")
@@ -6339,6 +6335,9 @@ class Topology():
         if not Topology.IsInstance(return_topology, "Topology"):
             if not silent:
                 print("Topology.Copy - Error: Could not copy the topology. Returning None.")
+                curframe = inspect.currentframe()
+                calframe = inspect.getouterframes(curframe, 2)
+                print('caller name:', calframe[1][3])
             return None
         keys = Dictionary.Keys(d)
         if len(keys) > 0:

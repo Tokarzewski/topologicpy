@@ -1764,9 +1764,16 @@ class CellComplex():
     
     @staticmethod
     def Prism(origin= None,
-              width: float = 1.0, length: float = 1.0, height: float = 1.0,
-              uSides: int = 2, vSides: int = 2, wSides: int = 2,
-              direction: list = [0, 0, 1], placement: str = "center", mantissa: int = 6, tolerance: float = 0.0001):
+              width: float = 1.0,
+              length: float = 1.0,
+              height: float = 1.0,
+              uSides: int = 2,
+              vSides: int = 2,
+              wSides: int = 2,
+              direction: list = [0, 0, 1],
+              placement: str = "center",
+              mantissa: int = 6,
+              tolerance: float = 0.0001):
         """
         Creates a prismatic cellComplex with internal cells.
 
@@ -1862,6 +1869,7 @@ class CellComplex():
         else:
             print("CellComplex.Prism - Error: Could not create a prism. Returning None.")
             return None
+
 
     @staticmethod
     def RemoveCollinearEdges(cellComplex, angTolerance: float = 0.1, tolerance: float = 0.0001, silent: bool = True):

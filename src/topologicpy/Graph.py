@@ -37,18 +37,6 @@ try:
 except Exception as e:
     pd = None
     warnings.warn(f"Graph - Error: Could not import pandas. Install pandas manually if required. Original error: {e}")
-
-try:
-    from tqdm.auto import tqdm
-except Exception:
-    class tqdm:
-        """No-op fallback used when tqdm is unavailable."""
-        def __init__(self, *args, **kwargs):
-            self.total = kwargs.get("total", None)
-        def update(self, *args, **kwargs):
-            return None
-        def close(self):
-            return None
     
 GraphQueueItem = namedtuple('GraphQueueItem', ['edges'])
 
@@ -27087,7 +27075,7 @@ class Graph:
             
         
         final_edges = []
-        for i in tqdm(range(len(viewpointsA))):
+        for i in range(len(viewpointsA)):
             va = viewpointsA[i]
             for j in range(len(viewpointsB)):
                 vb = viewpointsB[j]
