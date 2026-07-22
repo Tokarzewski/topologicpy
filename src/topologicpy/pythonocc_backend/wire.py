@@ -36,6 +36,16 @@ class Wire(Topology):
         is OCCT's dedicated connectivity-ordered wire walker -- use it so the
         rebuilt .edges list is always in true head-to-tail order regardless
         of the order the underlying edges were originally added in.
+
+        wire_explorer.Current() already carries the correct orientation for
+        this wire's walk direction, and Edge.ByOcctShape (via CumOri=True)
+        reports start/end consistent with that orientation. Do NOT fabricate
+        a new edge shape for reversed edges here: a reversed occ_edge is
+        still IsSame()/hash-equal to its forward counterpart in a neighbouring
+        wire (Orientation is ignored by both), so reusing it preserves shared
+        edge identity across adjacent, non-manifold cells/faces. Building a
+        fresh edge via Edge.ByStartVertexEndVertex used to sever that shared
+        identity, silently doubling shared-edge counts on every seam.
         """
         edges = []
         try:
@@ -47,9 +57,6 @@ class Wire(Topology):
                 occ_edge = wire_explorer.Current()
                 e = Edge.ByOcctShape(occ_edge)
                 if e is not None:
-                    if wire_explorer.Orientation() == 1:  # TopAbs_REVERSED
-                        flipped = Edge.ByStartVertexEndVertex(e.end, e.start)
-                        e = flipped if flipped is not None else e
                     edges.append(e)
                 wire_explorer.Next()
         except Exception:
@@ -114,7 +121,20 @@ class Wire(Topology):
                     break
                 if same_vertex(edge.end, last, tolerance):
                     found_index = i
-                    found_edge = Edge.ByStartVertexEndVertex(edge.end, edge.start)
+                    # Reuse the original edge's shape (just orientation-
+                    # flipped via .Reversed(), which OCCT keeps IsSame/hash-
+                    # equal to the original) instead of fabricating a brand
+                    # new edge shape -- Edge.ByStartVertexEndVertex would
+                    # sever this edge's identity from any other reference to
+                    # it elsewhere in the same result, silently duplicating
+                    # its vertices when the two are later merged/deduped.
+                    found_edge = None
+                    try:
+                        found_edge = Edge.ByOcctShape(edge.shape.Reversed())
+                    except Exception:
+                        found_edge = None
+                    if found_edge is None:
+                        found_edge = Edge.ByStartVertexEndVertex(edge.end, edge.start)
                     if found_edge is not None:
                         found_edge.dictionary = edge.dictionary
                     break

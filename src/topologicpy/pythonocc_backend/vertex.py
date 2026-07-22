@@ -58,6 +58,24 @@ class Vertex(Topology):
             return 0
         return result
 
+    def AdjacentVertices(self, hostTopology=None, output=None):
+        """Vertices in hostTopology connected to self by a shared edge."""
+        result = []
+        if hostTopology is not None:
+            edges = Topology.Edges(hostTopology) or []
+            for e in edges:
+                if not hasattr(e, "start") or not hasattr(e, "end"):
+                    continue
+                if same_vertex(e.start, self):
+                    result.append(e.end)
+                elif same_vertex(e.end, self):
+                    result.append(e.start)
+            result = unique_by_uuid(result)
+        if output is not None:
+            output.extend(result)
+            return 0
+        return result
+
     @staticmethod
     def ByCoordinatesString(coordinatesString, separator=","):
         """

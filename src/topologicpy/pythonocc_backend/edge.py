@@ -84,8 +84,17 @@ class Edge(Topology):
     def ByOcctShape(shape, dictionary=None, contents=None, contexts=None, apertures=None):
         try:
             from OCC.Core.TopExp import topexp
-            v1 = topexp.FirstVertex(shape)
-            v2 = topexp.LastVertex(shape)
+            # CumOri=True makes FirstVertex/LastVertex honor the edge's own
+            # Orientation flag. Without it, a REVERSED edge (e.g. the shared
+            # boundary edge of two adjacent, non-manifold cells, which is
+            # FORWARD on one side and REVERSED on the other) reports the same
+            # start/end regardless of orientation, which used to force
+            # Wire.ByOcctShape to fabricate a brand-new edge shape just to get
+            # walk-order-correct start/end -- silently breaking edge identity
+            # (IsSame/hash) between the two cells and doubling shared-edge
+            # counts on every non-manifold seam.
+            v1 = topexp.FirstVertex(shape, True)
+            v2 = topexp.LastVertex(shape, True)
             start = Vertex.ByOcctShape(v1)
             end = Vertex.ByOcctShape(v2)
         except Exception:
@@ -116,6 +125,26 @@ class Edge(Topology):
         result = [self]
         if edges is not None:
             edges.extend(result)
+            return 0
+        return result
+
+    def AdjacentEdges(self, hostTopology=None, output=None):
+        """Edges in hostTopology (other than self) that share a vertex with self."""
+        from .helpers import unique_by_uuid
+        result = []
+        if hostTopology is not None:
+            candidates = Topology.Edges(hostTopology) or []
+            for other in candidates:
+                if other is self or not isinstance(other, Edge) or same_vertex(other.start, self.start) and same_vertex(other.end, self.end):
+                    continue
+                if (
+                    same_vertex(self.start, other.start) or same_vertex(self.start, other.end)
+                    or same_vertex(self.end, other.start) or same_vertex(self.end, other.end)
+                ):
+                    result.append(other)
+            result = unique_by_uuid(result)
+        if output is not None:
+            output.extend(result)
             return 0
         return result
 

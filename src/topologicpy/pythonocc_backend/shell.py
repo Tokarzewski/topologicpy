@@ -34,6 +34,23 @@ class Shell(Topology):
             if not silent:
                 print("Shell.ByFaces - Error: Could not create an OpenCascade shell. Returning None.")
             return None
+        # Re-derive the Face wrappers from the sewn occ_shell rather than
+        # keeping the original, independently-built valid_faces list.
+        # make_occ_shell welds coincident vertices/edges across face
+        # boundaries via BRepBuilderAPI_Sewing, but that welding is only
+        # useful if the Shell's own Faces()/Edges() (which iterate
+        # self.faces, not self.shape) actually see the welded topology. Two
+        # faces coming from separately-computed boolean fragments (e.g. each
+        # face-pair of Topology.Intersect's per-face decomposition) are
+        # geometrically coincident along their shared boundary but were
+        # never the same OCCT edge/vertex until sewn -- keeping the
+        # pre-sewing faces here silently discarded that welding and doubled
+        # edge counts along every such seam.
+        from .topology import _iter_occ_subshapes, TopAbs_FACE
+        sewn_faces = [Topology.ByOcctShape(f) for f in _iter_occ_subshapes(occ_shell, TopAbs_FACE)]
+        sewn_faces = [f for f in sewn_faces if isinstance(f, Face)]
+        if len(sewn_faces) == len(valid_faces):
+            valid_faces = sewn_faces
         shell = Shell(shape=occ_shell, faces=valid_faces)
         Shell._patch_edge_face_membership(shell, valid_faces, tolerance=tolerance)
         return shell
@@ -125,11 +142,16 @@ class Shell(Topology):
                         host_map = getattr(self, "_shell_faces_by_host", None) or {}
                         if hostTopology is not None:
                             host_key = getattr(hostTopology, "_uuid", None)
-                            # A specific host was asked for: only answer for a
-                            # recognised one. Returning another Shell's data
-                            # here would be silently wrong, so an unrecognised
-                            # host gets an empty result instead of a guess.
-                            result = list(host_map.get(host_key, [])) if host_key is not None else []
+                            if host_key is not None and host_key in host_map:
+                                result = list(host_map[host_key])
+                            else:
+                                # hostTopology is not one of the individual
+                                # Shells this edge was recorded against (e.g.
+                                # it's the owning CellComplex/Cell instead) --
+                                # fall back to the general-purpose vertex-set
+                                # SuperTopologies query rather than guessing
+                                # or returning an empty list.
+                                result = Topology.SuperTopologies(self, hostTopology, "Face") or []
                         elif host_map:
                             # No host given at all: fall back to the most
                             # recently recorded context for this edge.
