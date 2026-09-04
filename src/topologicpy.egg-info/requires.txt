@@ -6,6 +6,8 @@ plotly
 lark
 webcolors
 nbformat
+requests
+packaging
 
 [test]
 pytest-xdist>=2.4.0
