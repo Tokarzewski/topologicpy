@@ -1608,7 +1608,505 @@ class Vertex():
             return None
         return not (Vertex.IsPeripheral(vertex, topology, tolerance=tolerance, silent=silent) or Vertex.IsInternal(vertex, topology, tolerance=tolerance, silent=silent))
 
+    # @staticmethod
+    # def IsInternal(
+    #     vertex,
+    #     topology,
+    #     maxLeafSize: int = 4,
+    #     identify: bool = False,
+    #     tolerance: float = 0.0001,
+    #     silent: bool = False,
+    # ):
+    #     """
+    #     Returns True if the input vertex lies inside the input topology.
 
+    #     Parameters
+    #     ----------
+    #     vertex : topologic_core.Vertex
+    #         The input vertex.
+    #     topology : topologic_core.Topology
+    #         The input topology.
+    #     maxLeafSize: int , optional
+    #         Retained for backward compatibility. This implementation avoids building
+    #         a BVH for every call because that is expensive for single-point queries.
+    #         Default is 4.
+    #     identify: bool, optional
+    #         If set to True, a tuple is returned where the identified subTopology is
+    #         returned (e.g. (True, edge)). Default is False.
+    #     tolerance : float, optional
+    #         The desired tolerance. Default 0.0001.
+    #     silent : bool , optional
+    #         If set to True, error and warning messages are suppressed. Default is False.
+
+    #     Returns
+    #     -------
+    #     bool or tuple
+    #         True/False, or (True/False, topology) if identify is True.
+    #     """
+
+    #     from topologicpy.Topology import Topology
+    #     from topologicpy.Vertex import Vertex
+    #     from topologicpy.Face import Face
+    #     from topologicpy.Cell import Cell
+
+    #     def _return(status, item=None):
+    #         if identify:
+    #             return (status, item)
+    #         return status
+
+    #     def _warn(message):
+    #         if not silent:
+    #             print("Vertex.IsInternal - Warning:", message)
+
+    #     if not Topology.IsInstance(vertex, "Vertex"):
+    #         if not silent:
+    #             print("Vertex.IsInternal - Error: The input vertex is not a valid vertex. Returning False.")
+    #         return _return(False, None)
+
+    #     if not Topology.IsInstance(topology, "Topology"):
+    #         if not silent:
+    #             print("Vertex.IsInternal - Error: The input topology is not a valid topology. Returning False.")
+    #         return _return(False, None)
+
+    #     try:
+    #         vertex_coords = Vertex.Coordinates(vertex)
+    #     except Exception:
+    #         vertex_coords = None
+
+    #     if vertex_coords is None:
+    #         return _return(False, None)
+
+    #     # ------------------------------------------------------------------
+    #     # Small vector helpers
+    #     # ------------------------------------------------------------------
+
+    #     def _dot(a, b):
+    #         return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
+
+    #     def _cross(a, b):
+    #         return (
+    #             a[1]*b[2] - a[2]*b[1],
+    #             a[2]*b[0] - a[0]*b[2],
+    #             a[0]*b[1] - a[1]*b[0],
+    #         )
+
+    #     def _sub(a, b):
+    #         return (
+    #             a[0] - b[0],
+    #             a[1] - b[1],
+    #             a[2] - b[2],
+    #         )
+
+    #     def _length(a):
+    #         return (_dot(a, a))**0.5
+
+    #     def _dominant_axis(n):
+    #         ax = abs(n[0])
+    #         ay = abs(n[1])
+    #         az = abs(n[2])
+
+    #         if ax >= ay and ax >= az:
+    #             return 0
+    #         if ay >= ax and ay >= az:
+    #             return 1
+    #         return 2
+
+    #     def _project_2d(p, drop_axis):
+    #         if drop_axis == 0:
+    #             return (p[1], p[2])
+    #         if drop_axis == 1:
+    #             return (p[0], p[2])
+    #         return (p[0], p[1])
+
+    #     def _ring_area_2d(ring):
+    #         if not ring or len(ring) < 3:
+    #             return 0.0
+
+    #         area = 0.0
+    #         n = len(ring)
+
+    #         for i in range(n):
+    #             x1, y1 = ring[i]
+    #             x2, y2 = ring[(i + 1) % n]
+    #             area += x1*y2 - x2*y1
+
+    #         return 0.5 * area
+
+    #     def _point_on_segment_2d(p, a, b, tol):
+    #         px, py = p
+    #         ax, ay = a
+    #         bx, by = b
+
+    #         minx = min(ax, bx) - tol
+    #         maxx = max(ax, bx) + tol
+    #         miny = min(ay, by) - tol
+    #         maxy = max(ay, by) + tol
+
+    #         if px < minx or px > maxx or py < miny or py > maxy:
+    #             return False
+
+    #         abx = bx - ax
+    #         aby = by - ay
+    #         apx = px - ax
+    #         apy = py - ay
+
+    #         cross = apx*aby - apy*abx
+    #         if abs(cross) > tol:
+    #             return False
+
+    #         return True
+
+    #     def _point_in_ring_2d(point, ring, tol):
+    #         if not ring or len(ring) < 3:
+    #             return False
+
+    #         x, y = point
+    #         inside = False
+    #         n = len(ring)
+
+    #         for i in range(n):
+    #             a = ring[i]
+    #             b = ring[(i + 1) % n]
+
+    #             if _point_on_segment_2d(point, a, b, tol):
+    #                 return True
+
+    #             x1, y1 = a
+    #             x2, y2 = b
+
+    #             if (y1 > y) != (y2 > y):
+    #                 xinters = ((x2 - x1) * (y - y1) / ((y2 - y1) + 1e-300)) + x1
+    #                 if x <= xinters + tol:
+    #                     inside = not inside
+
+    #         return inside
+
+    #     def _topology_vertices(topo):
+    #         try:
+    #             return Topology.Vertices(topo, silent=True) or []
+    #         except TypeError:
+    #             try:
+    #                 return Topology.Vertices(topo) or []
+    #             except Exception:
+    #                 return []
+    #         except Exception:
+    #             return []
+
+    #     def _topology_edges(topo):
+    #         try:
+    #             return Topology.Edges(topo, silent=True) or []
+    #         except TypeError:
+    #             try:
+    #                 return Topology.Edges(topo) or []
+    #             except Exception:
+    #                 return []
+    #         except Exception:
+    #             return []
+
+    #     def _topology_faces(topo):
+    #         try:
+    #             return Topology.Faces(topo, silent=True) or []
+    #         except TypeError:
+    #             try:
+    #                 return Topology.Faces(topo) or []
+    #             except Exception:
+    #                 return []
+    #         except Exception:
+    #             return []
+
+    #     def _topology_cells(topo):
+    #         try:
+    #             return Topology.Cells(topo, silent=True) or []
+    #         except TypeError:
+    #             try:
+    #                 return Topology.Cells(topo) or []
+    #             except Exception:
+    #                 return []
+    #         except Exception:
+    #             return []
+
+    #     # ------------------------------------------------------------------
+    #     # Primitive containment tests
+    #     # ------------------------------------------------------------------
+
+    #     def _point_in_vertex(vtx, other_vertex):
+    #         try:
+    #             return Vertex.Distance(vtx, other_vertex) <= tolerance
+    #         except Exception:
+    #             return False
+
+    #     def _point_in_edge(vtx, edge):
+    #         try:
+    #             return Vertex.Distance(vtx, edge) <= tolerance
+    #         except Exception:
+    #             return False
+
+    #     def _point_in_cell(vtx, cell):
+    #         try:
+    #             return Cell.ContainmentStatus(cell, vtx, tolerance=tolerance) == 0
+    #         except TypeError:
+    #             try:
+    #                 return Cell.ContainmentStatus(cell, vtx) == 0
+    #             except Exception:
+    #                 return False
+    #         except Exception:
+    #             return False
+
+    #     def _face_rings(face):
+    #         wires = []
+
+    #         try:
+    #             external_boundary = Face.ExternalBoundary(face)
+    #             if external_boundary is not None:
+    #                 wires.append(external_boundary)
+    #         except Exception:
+    #             pass
+
+    #         try:
+    #             internal_boundaries = Face.InternalBoundaries(face)
+    #             if internal_boundaries:
+    #                 wires.extend([w for w in internal_boundaries if w is not None])
+    #         except Exception:
+    #             pass
+
+    #         if not wires:
+    #             try:
+    #                 wires = Topology.Wires(face, silent=True) or []
+    #             except TypeError:
+    #                 try:
+    #                     wires = Topology.Wires(face) or []
+    #                 except Exception:
+    #                     wires = []
+    #             except Exception:
+    #                 wires = []
+
+    #         rings = []
+
+    #         for wire in wires:
+    #             verts = _topology_vertices(wire)
+    #             if len(verts) < 3:
+    #                 continue
+
+    #             coords = []
+
+    #             for v in verts:
+    #                 try:
+    #                     c = Vertex.Coordinates(v)
+    #                     if c is not None:
+    #                         coords.append(c)
+    #                 except Exception:
+    #                     continue
+
+    #             if len(coords) >= 3:
+    #                 rings.append(coords)
+
+    #         return rings
+
+    #     def _point_in_face_fast(vtx, face):
+    #         # First reject non-coplanar points.
+    #         try:
+    #             if Vertex.PerpendicularDistance(vtx, face) > tolerance:
+    #                 return False
+    #         except Exception:
+    #             pass
+
+    #         try:
+    #             projected_vertex = Vertex.Project(vtx, face)
+    #             if projected_vertex is not None:
+    #                 point_3d = Vertex.Coordinates(projected_vertex)
+    #             else:
+    #                 point_3d = Vertex.Coordinates(vtx)
+    #         except Exception:
+    #             point_3d = Vertex.Coordinates(vtx)
+
+    #         if point_3d is None:
+    #             return False
+
+    #         try:
+    #             normal = Face.Normal(face)
+    #         except Exception:
+    #             normal = None
+
+    #         if normal is None or len(normal) < 3 or _length(normal) <= tolerance:
+    #             return _point_in_face_fallback(vtx, face)
+
+    #         drop_axis = _dominant_axis(normal)
+    #         point_2d = _project_2d(point_3d, drop_axis)
+
+    #         rings_3d = _face_rings(face)
+    #         if not rings_3d:
+    #             return _point_in_face_fallback(vtx, face)
+
+    #         rings_2d = []
+
+    #         for ring_3d in rings_3d:
+    #             ring_2d = [_project_2d(p, drop_axis) for p in ring_3d]
+    #             area = abs(_ring_area_2d(ring_2d))
+
+    #             if area > tolerance * tolerance:
+    #                 rings_2d.append((area, ring_2d))
+
+    #         if not rings_2d:
+    #             return _point_in_face_fallback(vtx, face)
+
+    #         # Largest ring is treated as the external boundary.
+    #         rings_2d.sort(key=lambda item: item[0], reverse=True)
+
+    #         outer = rings_2d[0][1]
+    #         holes = [item[1] for item in rings_2d[1:]]
+
+    #         if not _point_in_ring_2d(point_2d, outer, tolerance):
+    #             return False
+
+    #         for hole in holes:
+    #             if _point_in_ring_2d(point_2d, hole, tolerance):
+    #                 return False
+
+    #         return True
+
+    #     def _point_in_face_fallback(vtx, face):
+    #         # Original transform-based method retained as a safety fallback.
+    #         try:
+    #             from topologicpy.Vector import Vector
+
+    #             v = Vertex.ByCoordinates(Vertex.Coordinates(vtx))
+
+    #             if Vertex.PerpendicularDistance(v, face) > tolerance:
+    #                 return False
+
+    #             v = Vertex.Project(v, face)
+    #             centroid = Topology.Centroid(face)
+
+    #             x_tran = -Vertex.X(centroid)
+    #             y_tran = -Vertex.Y(centroid)
+    #             z_tran = -Vertex.Z(centroid)
+
+    #             face_2 = Topology.Translate(face, x_tran, y_tran, z_tran)
+    #             vertex_2 = Topology.Translate(v, x_tran, y_tran, z_tran)
+
+    #             face_normal = Face.Normal(face_2)
+    #             up = [0, 0, 1]
+    #             tran_mat = Vector.TransformationMatrix(face_normal, up)
+
+    #             flat_face = Topology.Transform(face_2, tran_mat, transferDictionaries=False)
+    #             flat_vertex = Topology.Transform(vertex_2, tran_mat)
+    #             flat_vertex = Topology.Translate(flat_vertex, 0, 0, -Vertex.Z(flat_vertex))
+
+    #             return Vertex.IsInternal2D(flat_vertex, flat_face)
+    #         except Exception:
+    #             return False
+
+    #     # ------------------------------------------------------------------
+    #     # Fast direct paths.
+    #     # These avoid AABB construction, primitive collection, BVH construction,
+    #     # BVH querying, and candidate sorting for simple topologies.
+    #     # ------------------------------------------------------------------
+
+    #     if Topology.IsInstance(topology, "Vertex"):
+    #         return _return(_point_in_vertex(vertex, topology), topology if _point_in_vertex(vertex, topology) else None)
+
+    #     if Topology.IsInstance(topology, "Edge"):
+    #         status = _point_in_edge(vertex, topology)
+    #         return _return(status, topology if status else None)
+
+    #     if Topology.IsInstance(topology, "Face"):
+    #         status = _point_in_face_fast(vertex, topology)
+    #         return _return(status, topology if status else None)
+
+    #     if Topology.IsInstance(topology, "Cell"):
+    #         status = _point_in_cell(vertex, topology)
+    #         return _return(status, topology if status else None)
+
+    #     # ------------------------------------------------------------------
+    #     # Composite topology path.
+    #     # Avoid building a BVH per call. For a single vertex query, direct
+    #     # iteration is usually faster than constructing a temporary BVH.
+    #     # ------------------------------------------------------------------
+
+    #     if Topology.IsInstance(topology, "Cluster"):
+    #         vertices = _topology_vertices(topology)
+    #         edges = _topology_edges(topology)
+    #         faces = _topology_faces(topology)
+    #         cells = _topology_cells(topology)
+    #     else:
+    #         cells = _topology_cells(topology)
+
+    #         if cells:
+    #             vertices = []
+    #             edges = []
+    #             faces = []
+    #         else:
+    #             faces = _topology_faces(topology)
+
+    #             if faces:
+    #                 vertices = []
+    #                 edges = []
+    #             else:
+    #                 edges = _topology_edges(topology)
+
+    #                 if edges:
+    #                     vertices = []
+    #                 else:
+    #                     vertices = _topology_vertices(topology)
+
+    #     if not vertices and not edges and not faces and not cells:
+    #         return _return(False, None)
+
+    #     # Optional coarse AABB rejection for composite topologies only.
+    #     # This is much cheaper than building a BVH and helps reject obvious misses.
+    #     all_vertices = []
+
+    #     if vertices:
+    #         all_vertices = vertices
+    #     else:
+    #         all_vertices = _topology_vertices(topology)
+
+    #     if all_vertices:
+    #         try:
+    #             xs = []
+    #             ys = []
+    #             zs = []
+
+    #             for v in all_vertices:
+    #                 c = Vertex.Coordinates(v)
+    #                 if c is None:
+    #                     continue
+    #                 xs.append(c[0])
+    #                 ys.append(c[1])
+    #                 zs.append(c[2])
+
+    #             if xs and ys and zs:
+    #                 x, y, z = vertex_coords
+
+    #                 if (
+    #                     x < min(xs) - tolerance or x > max(xs) + tolerance or
+    #                     y < min(ys) - tolerance or y > max(ys) + tolerance or
+    #                     z < min(zs) - tolerance or z > max(zs) + tolerance
+    #                 ):
+    #                     return _return(False, None)
+    #         except Exception:
+    #             pass
+
+    #     # Priority: vertices, edges, faces, cells.
+    #     # This preserves the intent of the original sorted candidate loop without
+    #     # calling Helper.Sort or repeatedly querying Topology.Type.
+    #     for candidate in vertices:
+    #         if _point_in_vertex(vertex, candidate):
+    #             return _return(True, candidate)
+
+    #     for candidate in edges:
+    #         if _point_in_edge(vertex, candidate):
+    #             return _return(True, candidate)
+
+    #     for candidate in faces:
+    #         if _point_in_face_fast(vertex, candidate):
+    #             return _return(True, candidate)
+
+    #     for candidate in cells:
+    #         if _point_in_cell(vertex, candidate):
+    #             return _return(True, candidate)
+
+    #     return _return(False, None)
 
 
     @staticmethod
@@ -2013,6 +2511,33 @@ class Vertex():
             return _return(status, topology if status else None)
 
         if Topology.IsInstance(topology, "Face"):
+            # --------------------------------------------------------------
+            # PythonOCC curved / trimmed Face fast path.
+            #
+            # The legacy Python-level test below assumes a globally planar
+            # Face because it projects the Face to 2D. That remains suitable
+            # for the TopologicCore fallback, but it rejects valid points on
+            # curved NURBS / analytic surfaces.
+            #
+            # PythonOCC FaceUtility.IsInside classifies the point in the
+            # Face's actual trimmed UV domain, so use it first when available.
+            # --------------------------------------------------------------
+            if not Topology._IsTopologicCoreBackend():
+                try:
+                    status = bool(
+                        Core.FaceUtility.IsInside(
+                            topology,
+                            vertex,
+                            tolerance
+                        )
+                    )
+                    return _return(
+                        status,
+                        topology if status else None
+                    )
+                except Exception:
+                    pass
+
             status = _point_in_face_fast(vertex, topology)
             return _return(status, topology if status else None)
 
@@ -2110,11 +2635,6 @@ class Vertex():
                 return _return(True, candidate)
 
         return _return(False, None)
-
-
-
-
-
 
     @staticmethod
     def IsInternal_old(
@@ -3141,74 +3661,197 @@ class Vertex():
         
         return Vertex.ByCoordinates(x, y, z)
 
+    # @staticmethod
+    # def Project(vertex, face, direction: bool = None, mantissa: int = 6):
+    #     """
+    #     Returns a vertex that is the projection of the input vertex unto the input face.
+
+    #     Parameters
+    #     ----------
+    #     vertex : topologic_core.Vertex
+    #         The input vertex to project unto the input face.
+    #     face : topologic_core.Face
+    #         The input face that receives the projection of the input vertex.
+    #     direction : vector, optional
+    #         The direction in which to project the input vertex unto the input face. If not specified, the direction of the projection is the normal of the input face. Default is None.
+    #     mantissa : int , optional
+    #         The length of the desired mantissa. Default is 6.
+
+    #     Returns
+    #     -------
+    #     topologic_core.Vertex
+    #         The projected vertex.
+
+    #     """
+    #     from topologicpy.Face import Face
+    #     from topologicpy.Topology import Topology
+        
+    #     def project_point_onto_plane(point, plane_coeffs, direction_vector):
+    #         """
+    #         Project a 3D point onto a plane defined by its coefficients and using a direction vector.
+
+    #         Parameters:
+    #             point (tuple or list): The 3D point coordinates (x, y, z).
+    #             plane_coeffs (tuple or list): The coefficients of the plane equation (a, b, c, d).
+    #             direction_vector (tuple or list): The direction vector (vx, vy, vz).
+
+    #         Returns:
+    #             tuple: The projected point coordinates (x_proj, y_proj, z_proj).
+    #         """
+    #         # Unpack point coordinates
+    #         x, y, z = point
+
+    #         # Unpack plane coefficients
+    #         a, b, c, d = plane_coeffs
+
+    #         # Unpack direction vector
+    #         vx, vy, vz = direction_vector
+
+    #         # Calculate the distance from the point to the plane
+    #         distance = (a * x + b * y + c * z + d) / (a * vx + b * vy + c * vz)
+
+    #         # Calculate the projected point coordinates
+    #         x_proj = x - distance * vx
+    #         y_proj = y - distance * vy
+    #         z_proj = z - distance * vz
+
+    #         return [x_proj, y_proj, z_proj]
+
+    #     if not Topology.IsInstance(vertex, "Vertex"):
+    #         return None
+    #     if not Topology.IsInstance(face, "Face"):
+    #         return None
+    #     eq = Face.PlaneEquation(face, mantissa= mantissa)
+    #     if eq is None:
+    #         return None
+    #     if direction == None or direction == []:
+    #         direction = Face.Normal(face)
+    #     pt = project_point_onto_plane(Vertex.Coordinates(vertex), [eq["a"], eq["b"], eq["c"], eq["d"]], direction)
+    #     return Vertex.ByCoordinates(pt[0], pt[1], pt[2])
+
     @staticmethod
-    def Project(vertex, face, direction: bool = None, mantissa: int = 6):
+    def Project(vertex, face, direction: list = None, mantissa: int = 6, tolerance: float = 0.0001, silent: bool = False):
         """
-        Returns a vertex that is the projection of the input vertex unto the input face.
+        Returns the projection of the input vertex onto the supporting geometry of
+        the input face. On the PythonOCC backend this operation is delegated to OCCT.
 
         Parameters
         ----------
         vertex : topologic_core.Vertex
-            The input vertex to project unto the input face.
+            The input vertex to project.
         face : topologic_core.Face
-            The input face that receives the projection of the input vertex.
-        direction : vector, optional
-            The direction in which to project the input vertex unto the input face. If not specified, the direction of the projection is the normal of the input face. Default is None.
+            The input face receiving the projection.
+        direction : list , optional
+            The projection direction. If None, normal/nearest-surface projection is
+            used. For a planar face an explicit direction intersects the infinite
+            supporting plane. Default is None.
         mantissa : int , optional
-            The length of the desired mantissa. Default is 6.
+            The number of decimal places to round the returned coordinates to. Default is 6.
+        tolerance : float , optional
+            The desired tolerance. Default is 0.0001.
+        silent : bool , optional
+            If set to True, error and warning messages are suppressed. Default is False.
 
         Returns
         -------
         topologic_core.Vertex
-            The projected vertex.
-
+            The projected vertex, or None if the projection cannot be computed.
         """
         from topologicpy.Face import Face
         from topologicpy.Topology import Topology
-        
-        def project_point_onto_plane(point, plane_coeffs, direction_vector):
-            """
-            Project a 3D point onto a plane defined by its coefficients and using a direction vector.
-
-            Parameters:
-                point (tuple or list): The 3D point coordinates (x, y, z).
-                plane_coeffs (tuple or list): The coefficients of the plane equation (a, b, c, d).
-                direction_vector (tuple or list): The direction vector (vx, vy, vz).
-
-            Returns:
-                tuple: The projected point coordinates (x_proj, y_proj, z_proj).
-            """
-            # Unpack point coordinates
-            x, y, z = point
-
-            # Unpack plane coefficients
-            a, b, c, d = plane_coeffs
-
-            # Unpack direction vector
-            vx, vy, vz = direction_vector
-
-            # Calculate the distance from the point to the plane
-            distance = (a * x + b * y + c * z + d) / (a * vx + b * vy + c * vz)
-
-            # Calculate the projected point coordinates
-            x_proj = x - distance * vx
-            y_proj = y - distance * vy
-            z_proj = z - distance * vz
-
-            return [x_proj, y_proj, z_proj]
+        import math
 
         if not Topology.IsInstance(vertex, "Vertex"):
+            if not silent:
+                print("Vertex.Project - Error: The input vertex parameter is not a valid vertex. Returning None.")
             return None
         if not Topology.IsInstance(face, "Face"):
+            if not silent:
+                print("Vertex.Project - Error: The input face parameter is not a valid face. Returning None.")
             return None
-        eq = Face.PlaneEquation(face, mantissa= mantissa)
-        if eq is None:
-            return None
-        if direction == None or direction == []:
-            direction = Face.Normal(face)
-        pt = project_point_onto_plane(Vertex.Coordinates(vertex), [eq["a"], eq["b"], eq["c"], eq["d"]], direction)
-        return Vertex.ByCoordinates(pt[0], pt[1], pt[2])
 
+        tol = abs(float(tolerance))
+        if direction is not None:
+            if not isinstance(direction, (list, tuple)) or len(direction) != 3:
+                if not silent:
+                    print("Vertex.Project - Error: The input direction parameter is not a valid 3D vector. Returning None.")
+                return None
+            try:
+                direction = [float(direction[0]), float(direction[1]), float(direction[2])]
+                if math.sqrt(sum(value * value for value in direction)) <= tol:
+                    if not silent:
+                        print("Vertex.Project - Error: The input direction vector has zero magnitude. Returning None.")
+                    return None
+            except Exception:
+                if not silent:
+                    print("Vertex.Project - Error: The input direction parameter is not a valid numerical vector. Returning None.")
+                return None
+
+        native_projection = Core.HasAttribute("VertexUtility", "DistanceToTopology")
+        if native_projection and Core.HasAttribute("Vertex", "Project"):
+            try:
+                projected = Core.Vertex.Project(vertex, face, direction, tol)
+            except TypeError:
+                try:
+                    projected = Core.Vertex.Project(vertex, face, direction)
+                except Exception:
+                    projected = None
+            except Exception:
+                projected = None
+
+            if Topology.IsInstance(projected, "Vertex"):
+                coords = Vertex.Coordinates(projected, mantissa=mantissa)
+                return Vertex.ByCoordinates(coords) if coords is not None else projected
+
+            # If the active backend exposes the native Project implementation,
+            # failure is authoritative; do not substitute a different numerical
+            # geometry model.
+            if Core.HasAttribute("VertexUtility", "DistanceToTopology"):
+                if not silent:
+                    print("Vertex.Project - Warning: The native backend could not project the vertex. Returning None.")
+                return None
+
+        # Legacy TopologicCore compatibility path.
+        if direction is None:
+            try:
+                direction = Face.Normal(face)
+            except Exception:
+                direction = None
+        if direction is None or len(direction) != 3:
+            if not silent:
+                print("Vertex.Project - Error: Could not determine a valid projection direction. Returning None.")
+            return None
+
+        try:
+            equation = Face.PlaneEquation(face, mantissa=max(12, mantissa if mantissa is not None else 12))
+        except Exception:
+            equation = None
+        if not isinstance(equation, dict):
+            if not silent:
+                print("Vertex.Project - Error: Could not determine the supporting plane of the input face. Returning None.")
+            return None
+
+        try:
+            a = float(equation["a"])
+            b = float(equation["b"])
+            c = float(equation["c"])
+            d = float(equation["d"])
+            dx, dy, dz = float(direction[0]), float(direction[1]), float(direction[2])
+            denominator = a*dx + b*dy + c*dz
+            if abs(denominator) <= tol:
+                if not silent:
+                    print("Vertex.Project - Warning: The projection direction is parallel to the face. Returning None.")
+                return None
+            x, y, z = Vertex.Coordinates(vertex, mantissa=None)
+            parameter = -(a*x + b*y + c*z + d) / denominator
+            coords = [x + parameter*dx, y + parameter*dy, z + parameter*dz]
+            if mantissa is not None:
+                coords = [round(float(value), mantissa) for value in coords]
+            return Vertex.ByCoordinates(coords)
+        except Exception:
+            if not silent:
+                print("Vertex.Project - Error: Could not project the input vertex. Returning None.")
+            return None
 
     @staticmethod
     def Quadrance(vertex, topology, includeCentroid: bool = True, mantissa: int = 6) -> float:

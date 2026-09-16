@@ -184,10 +184,10 @@ def test_line_creates_open_wire_with_requested_subdivision():
 
 
 def test_circle_and_arc_constructors_create_expected_wire_types():
-    circle = Wire.Circle(radius=1, sides=16, close=True, silent=True)
-    open_arc = Wire.Circle(radius=1, sides=8, fromAngle=0, toAngle=180, close=False, silent=True)
-    chord_arc = Wire.Arc(_v(-1, 0, 0), _v(0, 1, 0), _v(1, 0, 0), sides=8, close=False, silent=True)
-    edge_arc = Wire.ArcByEdge(_edge((-1, 0, 0), (1, 0, 0)), sagitta=1, sides=8, close=False, silent=True)
+    circle = Wire.Circle(radius=1, sides=16, close=True, silent=True, polyline=True)
+    open_arc = Wire.Circle(radius=1, sides=8, fromAngle=0, toAngle=180, close=False, silent=True, polyline=True)
+    chord_arc = Wire.Arc(_v(-1, 0, 0), _v(0, 1, 0), _v(1, 0, 0), sides=8, close=False, silent=True, polyline=True)
+    edge_arc = Wire.ArcByEdge(_edge((-1, 0, 0), (1, 0, 0)), sagitta=1, sides=8, close=False, silent=True, polyline=True)
 
     for wire in [circle, open_arc, chord_arc, edge_arc]:
         _assert_wire(wire)
@@ -195,16 +195,16 @@ def test_circle_and_arc_constructors_create_expected_wire_types():
 
     assert Wire.IsClosed(circle) is True
     assert Wire.IsClosed(open_arc) is False
-    assert Wire.Circle(radius=0, silent=True) is None
-    assert Wire.Circle(radius=1, placement="invalid", silent=True) is None
-    assert Wire.Circle(radius=1, direction=[0, 0, 0], silent=True) is None
-    assert Wire.Arc(None, _v(0, 1, 0), _v(1, 0, 0), silent=True) is None
-    assert Wire.ArcByEdge(None, silent=True) is None
-    assert Wire.ArcByEdge(_edge((0, 0, 0), (1, 0, 0)), sagitta=0, silent=True) is None
+    assert Wire.Circle(radius=0, silent=True, polyline=True) is None
+    assert Wire.Circle(radius=1, placement="invalid", silent=True, polyline=True) is None
+    assert Wire.Circle(radius=1, direction=[0, 0, 0], silent=True, polyline=True) is None
+    assert Wire.Arc(None, _v(0, 1, 0), _v(1, 0, 0), silent=True, polyline=True) is None
+    assert Wire.ArcByEdge(None, silent=True, polyline=True) is None
+    assert Wire.ArcByEdge(_edge((0, 0, 0), (1, 0, 0)), sagitta=0, silent=True, polyline=True) is None
 
 
 def test_arc_respects_close_parameter():
-    arc = Wire.Arc(_v(-1, 0, 0), _v(0, 1, 0), _v(1, 0, 0), sides=8, close=True, silent=True)
+    arc = Wire.Arc(_v(-1, 0, 0), _v(0, 1, 0), _v(1, 0, 0), sides=8, close=True, silent=True, polyline=True)
 
     _assert_wire(arc)
     assert Wire.IsClosed(arc) is True
@@ -219,7 +219,7 @@ def test_shape_constructors_return_closed_wires():
         Wire.TShape(width=4, length=4, silent=True),
         Wire.Trapezoid(widthA=4, widthB=2, length=3),
         Wire.Star(radiusA=2, radiusB=1, rays=5),
-        Wire.Squircle(radius=1, sides=25),
+        Wire.Squircle(radius=1, sides=25, polyline=True),
         Wire.Einstein(radius=1),
         Wire.GoldenRectangle(width=2, maxIterations=3, silent=True),
     ]
@@ -360,7 +360,7 @@ def test_bounding_rectangle_dictionary_reports_extents(rectangle):
 
 
 def test_by_offset_and_bisectors_for_closed_rectangle(rectangle):
-    offset_wire = Wire.ByOffset(rectangle, offset=0.1, silent=True)
+    offset_wire = Wire.ByOffset(rectangle, offset=0.1, smooth=True, silent=True)
     bisectors = Wire.Bisectors(rectangle, offset=0.1, silent=True)
 
     _assert_wire(offset_wire)
@@ -487,8 +487,8 @@ def test_roof_and_skeleton_return_topologies_for_simple_face(rectangle):
 
 
 def test_spiral_and_golden_spiral_create_open_or_nonzero_wires():
-    spiral = Wire.Spiral(radiusA=0.1, radiusB=1.0, height=1, turns=2, sides=24)
-    golden_spiral = Wire.GoldenSpiral(width=1, maxIterations=4, sides=32, silent=True)
+    spiral = Wire.Spiral(radiusA=0.1, radiusB=1.0, height=1, turns=2, sides=24, polyline=True)
+    golden_spiral = Wire.GoldenSpiral(width=1, maxIterations=4, sides=32, silent=True, polyline=True)
 
     _assert_wire(spiral)
     _assert_wire(golden_spiral)
@@ -528,7 +528,6 @@ def test_by_tgraph_vertices_builds_wire_from_minimal_tgraph_records():
 
 def test_invalid_inputs_for_higher_level_wire_methods(rectangle):
     assert Wire.ByOffset(None) is None
-    assert Wire.ByOffsetArea(None, area=1, silent=True) is None
     assert Wire.Close(None, silent=True) is None
     assert Wire.ExternalBoundary(None, silent=True) is None
     assert Wire.Project(rectangle, None) is None
